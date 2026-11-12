@@ -1,0 +1,185 @@
+{
+  "title": "HSM ARC*: mapowanie komunikatow jednej grupy (member)",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "member": {
+      "description": "Nazwa grupy (do odwolan @MEMBER w influx-select); domyslnie nazwa pliku",
+      "type": "string",
+      "pattern": "^[A-Z@#$][A-Z0-9@#$]{0,7}$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "messages": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "description": "false = komunikat w ogole nie jest przetwarzany (ani InfluxDB, ani SQLite)",
+            "type": "boolean"
+          },
+          "measurement": {
+            "description": "Nadpisuje influx.measurement",
+            "type": "string",
+            "minLength": 1
+          },
+          "pattern": {
+            "description": "Regex (lub lista - pierwszy pasujacy) dopasowywany do tresci bez ID komunikatu; linie (CONT.) sa doklejane spacja. Brak = kazde wystapienie pasuje, bez wartosci",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "ignoreCase": {
+            "default": false,
+            "type": "boolean"
+          },
+          "extract": {
+            "default": {},
+            "description": "Grupa regexu -> jak zapisac",
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "tag",
+                    "int",
+                    "float",
+                    "string",
+                    "bool",
+                    "duration",
+                    "sqlite"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "to": {
+                      "type": "string",
+                      "enum": [
+                        "tag",
+                        "int",
+                        "float",
+                        "string",
+                        "bool",
+                        "duration",
+                        "sqlite"
+                      ],
+                      "description": "Jako co zapisac wartosc grupy"
+                    },
+                    "name": {
+                      "description": "Nazwa tagu / pola (domyslnie nazwa grupy)",
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                    },
+                    "map": {
+                      "description": "Zamiana wartosci przed konwersja, np. {\"MCDS CONTROL\": \"MCDS\"}; wartosci spoza mapy bez zmian",
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "default": {
+                      "description": "Wartosc, gdy grupa nie wystapila lub jest pusta",
+                      "type": "string"
+                    },
+                    "multiply": {
+                      "description": "Mnoznik dla int / float, np. 56664 = sciezki 3390 -> bajty (wynik int zaokraglany)",
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "to"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "constTags": {
+            "default": {},
+            "description": "Stale tagi dla tego komunikatu",
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "time": {
+            "type": "object",
+            "properties": {
+              "time": {
+                "description": "Grupa z godzina (hh:mm:ss); domyslnie grupa \"time\"",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "date": {
+                "description": "Grupa z data (yy/mm/dd, yyyy/mm/dd, yyyy.ddd); domyslnie grupa \"date\"",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "fallback": {
+                "type": "string",
+                "enum": [
+                  "previous",
+                  "next",
+                  "file"
+                ],
+                "description": "Czas dla komunikatu bez czasu w tresci: previous = ostatni czas z wczesniejszego komunikatu w pliku, next = czas najblizszego pozniejszego komunikatu, file = czas z nazwy zbioru logu (Dyyddd.Thhmmss)"
+              }
+            },
+            "additionalProperties": false
+          },
+          "onNoMatch": {
+            "type": "string",
+            "enum": [
+              "skip",
+              "warn",
+              "count"
+            ],
+            "description": "Gdy zaden wzorzec nie pasuje: skip = pomin po cichu, warn = pomin i zglos, count = zapisz punkt tylko z tagami wspolnymi"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "ID komunikatu (np. ARC0723I) -> mapowanie"
+    }
+  },
+  "required": [
+    "messages"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,97 @@
+{
+  "$schema": "./durations.schema.json",
+  "description": "Czas trwania calych zadan HSM (pary start / koniec z HSM_ARC_KOMUNIKATY.md) + liczniki z komunikatow w oknie zadania (aggregate). Punkt w MF.HSM.DURATION: duration [s], exact=false gdy start lub koniec nie ma czasu w tresci (czas zastepczy z sasiednich komunikatow), oraz pola z aggregate (int). Gdy start i koniec dostaja ten sam czas zastepczy - punktu nie ma.",
+  "measurement": "MF.HSM.DURATION",
+  "tasks": {
+    "PSM": {
+      "description": "Primary Space Management. Start = czas pierwszego ARC0522I, koniec = ostatni komunikat z czasem przed ARC0521I (start ostatniego wolumenu) - przyblizone",
+      "start": "ARC0520I",
+      "end": { "ARC0521I": { "statusFrom": "status" } },
+      "aggregate": {
+        "volumes": { "op": "count", "msg": "ARC0523I" },
+        "volumes_failed": { "op": "count", "msg": "ARC0570I", "when": { "function": "^(PRIMARY SPACE MANAGEMENT|INTERVAL MIGRATION|ON-DEMAND MIGRATION)$" } },
+        "datasets": { "op": "sum", "msg": "ARC0523I", "value": "ds_count" },
+        "freed_bytes": { "op": "sum", "msg": "ARC0523I", "value": "freed_bytes" }
+      }
+    },
+    "SSM": {
+      "description": "Secondary Space Management (bez komunikatow z czasem - zwykle bez punktu)",
+      "start": "ARC0517I",
+      "end": { "ARC0518I": { "statusFrom": "status" } }
+    },
+    "AUTOBACKUP": {
+      "description": "Automatic backup. Start = pierwszy ARC0722I, koniec = ostatni ARC0723I (AT time)",
+      "start": "ARC0720I",
+      "end": { "ARC0721I": "OK" },
+      "aggregate": {
+        "volumes": { "op": "count", "msg": "ARC0723I" },
+        "volumes_failed": { "op": "count", "msg": "ARC0570I", "when": { "function": "^AUTOMATIC BACKUP$" } },
+        "datasets": { "op": "sum", "msg": "ARC0723I", "value": "ds_backed_up" }
+      }
+    },
+    "AUTODUMP": {
+      "description": "Automatic dump. Start = pierwszy ARC0622I, koniec = ostatni ARC0623I (ENDING AT)",
+      "start": "ARC0620I",
+      "end": { "ARC0621I": "OK", "ARC0625I": "TERMINATED" },
+      "aggregate": {
+        "volumes": { "op": "count", "msg": "ARC0623I" },
+        "volumes_failed": { "op": "count", "msg": "ARC0623I", "when": { "result": "^(ERRORS OCCURRED|FAILED)$" } }
+      }
+    },
+    "CDSBACKUP": {
+      "description": "Backup CDS (MCDS, BCDS, OCDS, JRNL)",
+      "start": "ARC0740I",
+      "end": { "ARC0741I": { "statusFrom": "status" } },
+      "aggregate": {
+        "datasets": { "op": "count", "msg": "ARC0743I" },
+        "datasets_failed": { "op": "count", "msg": "ARC0744E" }
+      }
+    },
+    "EXPIREBV": {
+      "description": "EXPIREBV",
+      "start": "ARC0680I",
+      "end": { "ARC0681I": "OK" },
+      "key": ["ebv_type"],
+      "aggregate": {
+        "versions": { "op": "sum", "msg": "ARC0681I", "value": "versions_expired" }
+      }
+    },
+    "FRBACKUP": {
+      "description": "Fast replication copy poola (koniec logiczny - bez background copy); wolumeny z ARC1805I / ARC1803E",
+      "start": "ARC1801I",
+      "end": { "ARC1802I": "COMPLETED" },
+      "key": ["fr_function", "copy_pool"],
+      "aggregate": {
+        "volumes": { "op": "sum", "msg": "ARC1805I", "value": "ok_volumes" },
+        "volumes_failed": { "op": "sum", "msg": "ARC1803E", "value": "failed_volumes" }
+      }
+    },
+    "FRAUTODUMP": {
+      "description": "Auto dump copy poola (start bez czasu w tresci)",
+      "start": "ARC1841I",
+      "end": { "ARC1842I": "OK", "ARC1818I": "TERMINATED" },
+      "key": ["copy_pool"],
+      "aggregate": {
+        "volumes_failed": { "op": "sum", "msg": "ARC1818I", "value": "not_processed" }
+      }
+    },
+    "AUDIT": {
+      "description": "AUDIT (bez komunikatow z czasem - zwykle bez punktu)",
+      "start": "ARC0801I",
+      "end": { "ARC0802I": "OK" }
+    },
+    "ABACKUP": {
+      "description": "Aggregate backup (ABARS)",
+      "start": "ARC6054I",
+      "end": { "ARC6055I": "OK" },
+      "key": ["agg_group"]
+    },
+    "ARECOVER": {
+      "description": "Aggregate recovery (ABARS) - parowanie po control file, tag agg_group z ARC6103I",
+      "start": "ARC6102I",
+      "end": { "ARC6103I": "OK" },
+      "key": ["control_file"],
+      "tags": ["agg_group"]
+    }
+  }
+}

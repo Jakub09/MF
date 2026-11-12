@@ -1,0 +1,19 @@
+{
+  "$schema": "../hsm-messages.schema.json",
+  "member": "CMDREQ",
+  "description": "Mapowanie komunikatow z members/CMDREQ.txt",
+  "messages": {
+    "ARC1000I": {
+      "description": "Zadanie zakonczone",
+      "pattern": "^(?<object>\\S+) (?<operation>.+?) PROCESSING ENDED",
+      "extract": {"object": "sqlite", "operation": "tag"},
+      "constTags": {"status": "ENDED"}
+    },
+    "ARC1001I": {
+      "description": "Zadanie nieudane",
+      "pattern": "^(?<object>\\S+) (?<operation>.+?) FAILED,\\s*RC=\\s*(?<rc>\\d+)\\s*,?\\s*REAS=\\s*(?<reason>\\d+)",
+      "extract": {"object": "sqlite", "operation": "tag", "rc": "int", "reason": "int"},
+      "constTags": {"status": "FAILED"}
+    }
+  }
+}

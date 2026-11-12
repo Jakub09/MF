@@ -1,0 +1,28 @@
+{
+  "$schema": "../hsm-messages.schema.json",
+  "member": "AUDIT",
+  "description": "Mapowanie komunikatow z members/AUDIT.txt",
+  "messages": {
+    "ARC0801I": {
+      "description": "AUDIT - start",
+      "pattern": "^DFSMSHSM AUDIT STARTING",
+      "constTags": {"function": "AUDIT", "status": "STARTING"},
+      "time": {"fallback": "next"}
+    },
+    "ARC0802I": {
+      "description": "AUDIT - koniec",
+      "pattern": "^DFSMSHSM AUDIT ENDING",
+      "constTags": {"function": "AUDIT", "status": "ENDING"}
+    },
+    "ARC0808I": {
+      "description": "AUDIT - nie mozna audytowac wolumenu",
+      "pattern": "^UNABLE TO AUDIT (?<audit_target>VOLUME \\S+)",
+      "extract": {"audit_target": "tag"}
+    },
+    "ARC0813I": {
+      "description": "AUDIT niekompletny",
+      "pattern": "^INCOMPLETE AUDIT OF (?<audit_target>.+?),\\s*RC=\\s*(?<rc>\\d+),\\s*REAS=\\s*(?<reason>\\d+)",
+      "extract": {"audit_target": "tag", "rc": "int", "reason": "int"}
+    }
+  }
+}

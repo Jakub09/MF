@@ -1,0 +1,29 @@
+{
+  "$schema": "../hsm-messages.schema.json",
+  "member": "MIGVOL",
+  "description": "Mapowanie komunikatow z members/MIGVOL.txt",
+  "messages": {
+    "ARC0522I": {
+      "description": "Space management na wolumenie - start",
+      "pattern": "^SPACE MANAGEMENT STARTING ON VOLUME (?<volser>[A-Z0-9@#$]+)\\s*(?:\\((?<sms>SMS|SMSI|NONSMS)\\))?\\s+AT (?<time>[\\d:]+) ON (?<date>[\\d/.]+),?\\s+SYSTEM (?<system>[^,\\s]+)",
+      "extract": {"volser": "tag", "sms": "tag", "system": "sqlite"}
+    },
+    "ARC0523I": {
+      "description": "Space management na wolumenie - koniec (TIME = czas trwania; TRACK(S) FREED -> bajty: 56664 B / sciezke 3390)",
+      "pattern": "^SPACE MANAGEMENT ENDED ON VOLUME (?<volser>[A-Z0-9@#$]+),\\s*(?<ds_count>\\d+) DATA SET\\(S\\) MIGRATED/DELETED,\\s*(?<tracks_freed>\\d+) TRACK\\(S\\) FREED,\\s*MINAGE\\s*(?<minage>\\d+)(?:,\\s*(?<cloud_pct>\\d+)% CLOUD DATA SETS)?(?:,\\s*TIME\\s*(?<elapsed>[\\d:]+))?",
+      "extract": {
+        "volser": "tag",
+        "ds_count": "int",
+        "tracks_freed": {"to": "int", "name": "freed_bytes", "multiply": 56664},
+        "minage": "int",
+        "cloud_pct": "int",
+        "elapsed": "duration"
+      }
+    },
+    "ARC0570I": {
+      "description": "Funkcja na wolumenie przerwana (MIGLOG, BAKLOG, DMPLOG)",
+      "pattern": "^(?<function>.+?) FOR (?<scope>.+?) VOLUME\\(S\\) TERMINATED,\\s*RC=\\s*(?<rc>\\d+),\\s*REASON=\\s*(?<reason>\\d+)",
+      "extract": {"function": "tag", "scope": "tag", "rc": "int", "reason": "int"}
+    }
+  }
+}

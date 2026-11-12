@@ -1,0 +1,329 @@
+{
+  "title": "HSM ARC* -> InfluxDB: ustawienia ogolne",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "timezone": {
+      "default": "UTC",
+      "description": "Strefa czasu LPAR (IANA), np. Europe/Warsaw",
+      "type": "string"
+    },
+    "influx": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "measurement": {
+          "default": "MF.HSM.EVENT",
+          "type": "string",
+          "minLength": 1
+        },
+        "commonTags": {
+          "default": [
+            "sysname",
+            "host_id",
+            "log_type",
+            "msg_id"
+          ],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "sysname",
+              "host_id",
+              "log_type",
+              "msg_id",
+              "severity"
+            ]
+          }
+        },
+        "countField": {
+          "default": "events",
+          "description": "Pole int = 1 w kazdym punkcie (zliczanie zdarzen sum())",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        },
+        "uniqueTimestamps": {
+          "default": true,
+          "description": "Dodaje GROUP ID jako nanosekundy do czasu, zeby zdarzenia z tym samym czasem sie nie nadpisywaly",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "input": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "fileNamePattern": {
+          "default": "\\.H(?<host_id>[A-Z0-9@#$]+)\\.(?<log_type>[A-Z]+)\\.D(?<date>\\d{5})\\.T(?<time>\\d{6})",
+          "description": "Regex dla nazwy pliku (bez rozroznienia wielkosci liter); grupy host_id, log_type, date (yyddd), time (hhmmss)",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "defaults": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "timeFallback": {
+          "default": "previous",
+          "type": "string",
+          "enum": [
+            "previous",
+            "next",
+            "file"
+          ],
+          "description": "Czas dla komunikatu bez czasu w tresci: previous = ostatni czas z wczesniejszego komunikatu w pliku, next = czas najblizszego pozniejszego komunikatu, file = czas z nazwy zbioru logu (Dyyddd.Thhmmss)"
+        },
+        "onNoMatch": {
+          "default": "warn",
+          "type": "string",
+          "enum": [
+            "skip",
+            "warn",
+            "count"
+          ],
+          "description": "Gdy zaden wzorzec nie pasuje: skip = pomin po cichu, warn = pomin i zglos, count = zapisz punkt tylko z tagami wspolnymi"
+        },
+        "unknownMessages": {
+          "default": "skip",
+          "description": "Komunikaty spoza \"messages\" (lub enabled=false): skip = pomin, count = punkt tylko z tagami wspolnymi",
+          "type": "string",
+          "enum": [
+            "skip",
+            "count"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "messageFiles": {
+      "default": [],
+      "description": "Pliki z mapowaniem (wzgledem katalogu tego pliku); * i ? tylko w nazwie pliku, np. \"messages/*.json\"",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "influxSelect": {
+      "description": "Plik include/exclude (wzgledem katalogu tego pliku) albo obiekt; brak = wszystkie zmapowane do InfluxDB",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "$schema": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "include": {
+              "description": "Co trafia do InfluxDB: ID (ARC0723I), wzorzec z * i ? (ARC18*), grupa (@BACKUP). Brak = wszystkie",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "exclude": {
+              "default": [],
+              "description": "Wyjatki od include (maja pierwszenstwo); te same formy",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "messages": {
+      "default": {},
+      "description": "Mapowanie wpisane bezposrednio (oprocz messageFiles)",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "description": "false = komunikat w ogole nie jest przetwarzany (ani InfluxDB, ani SQLite)",
+            "type": "boolean"
+          },
+          "measurement": {
+            "description": "Nadpisuje influx.measurement",
+            "type": "string",
+            "minLength": 1
+          },
+          "pattern": {
+            "description": "Regex (lub lista - pierwszy pasujacy) dopasowywany do tresci bez ID komunikatu; linie (CONT.) sa doklejane spacja. Brak = kazde wystapienie pasuje, bez wartosci",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "ignoreCase": {
+            "default": false,
+            "type": "boolean"
+          },
+          "extract": {
+            "default": {},
+            "description": "Grupa regexu -> jak zapisac",
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "tag",
+                    "int",
+                    "float",
+                    "string",
+                    "bool",
+                    "duration",
+                    "sqlite"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "to": {
+                      "type": "string",
+                      "enum": [
+                        "tag",
+                        "int",
+                        "float",
+                        "string",
+                        "bool",
+                        "duration",
+                        "sqlite"
+                      ],
+                      "description": "Jako co zapisac wartosc grupy"
+                    },
+                    "name": {
+                      "description": "Nazwa tagu / pola (domyslnie nazwa grupy)",
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                    },
+                    "map": {
+                      "description": "Zamiana wartosci przed konwersja, np. {\"MCDS CONTROL\": \"MCDS\"}; wartosci spoza mapy bez zmian",
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "default": {
+                      "description": "Wartosc, gdy grupa nie wystapila lub jest pusta",
+                      "type": "string"
+                    },
+                    "multiply": {
+                      "description": "Mnoznik dla int / float, np. 56664 = sciezki 3390 -> bajty (wynik int zaokraglany)",
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "to"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "constTags": {
+            "default": {},
+            "description": "Stale tagi dla tego komunikatu",
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "time": {
+            "type": "object",
+            "properties": {
+              "time": {
+                "description": "Grupa z godzina (hh:mm:ss); domyslnie grupa \"time\"",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "date": {
+                "description": "Grupa z data (yy/mm/dd, yyyy/mm/dd, yyyy.ddd); domyslnie grupa \"date\"",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "fallback": {
+                "type": "string",
+                "enum": [
+                  "previous",
+                  "next",
+                  "file"
+                ],
+                "description": "Czas dla komunikatu bez czasu w tresci: previous = ostatni czas z wczesniejszego komunikatu w pliku, next = czas najblizszego pozniejszego komunikatu, file = czas z nazwy zbioru logu (Dyyddd.Thhmmss)"
+              }
+            },
+            "additionalProperties": false
+          },
+          "onNoMatch": {
+            "type": "string",
+            "enum": [
+              "skip",
+              "warn",
+              "count"
+            ],
+            "description": "Gdy zaden wzorzec nie pasuje: skip = pomin po cichu, warn = pomin i zglos, count = zapisz punkt tylko z tagami wspolnymi"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "durations": {
+      "description": "Zadania start / koniec do liczenia czasu trwania: plik (wzgledem katalogu tego pliku) albo obiekt",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": {}
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

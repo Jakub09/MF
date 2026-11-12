@@ -1,0 +1,68 @@
+{
+  "$schema": "../hsm-messages.schema.json",
+  "member": "FCCOPY",
+  "description": "Mapowanie komunikatow z members/FCCOPY.txt",
+  "messages": {
+    "ARC1833I": {
+      "description": "Withdraw zakonczony",
+      "pattern": "^WITHDRAW COMPLETED FOR COPY POOL (?<copy_pool>[^,\\s]+),\\s*BACKUP VERSION NUMBER (?<version>\\d+) WAS (?<withdraw_result>UNCHANGED|INVALIDATED)",
+      "extract": {"copy_pool": "tag", "version": "int", "withdraw_result": "tag"}
+    },
+    "ARC1834I": {
+      "description": "Withdraw relacji incremental FlashCopy - wersja nadal odtwarzalna",
+      "pattern": "^INCREMENTAL FLASHCOPY RELATIONSHIPS WITHDRAWN FOR COPY POOL (?<copy_pool>[^,\\s]+),\\s*VERSION NUMBER (?<version>\\d+)",
+      "extract": {"copy_pool": "tag", "version": "int"},
+      "constTags": {"withdraw_result": "RECOVERABLE"}
+    },
+    "ARC1835I": {
+      "description": "Brak waznych wersji backupu copy poola",
+      "pattern": "^NO VALID BACKUP VERSIONS EXIST FOR COPY POOL (?<copy_pool>\\S+)",
+      "extract": {"copy_pool": "tag"}
+    },
+    "ARC1819I": {
+      "description": "Withdraw nieudany - relacja FlashCopy zostala (alert krytyczny)",
+      "pattern": "^WITHDRAW PROCESSING FAILED FOR SOURCE DEVICE <?(?<src_devn>[0-9A-F]+)>? AND TARGET DEVICE <?(?<tgt_devn>[0-9A-F]+)>?,\\s*RC=\\s*(?<sdm_rc>\\d+),\\s*REAS=\\s*(?<sdm_reas>\\d+)",
+      "extract": {"src_devn": "tag", "tgt_devn": "tag", "sdm_rc": "int", "sdm_reas": "int"}
+    },
+    "ARC1839I": {
+      "description": "Withdraw nieudany",
+      "pattern": "^WITHDRAW PROCESSING FAILED,\\s*RC=\\s*(?<sdm_rc>\\d+),\\s*RSN=\\s*(?<sdm_reas>\\d+)",
+      "extract": {"sdm_rc": "int", "sdm_reas": "int"}
+    },
+    "ARC1838I": {
+      "description": "Reinicjalizacja wolumenu po withdraw (RC=12 - VTOC moze byc nieuzywalny)",
+      "pattern": "^INITIALIZATION ATTEMPT OF COPY POOL BACKUP STORAGE GROUP VOLUME (?<volser>\\S+) HAS COMPLETED,\\s*RC=\\s*(?<reinit_rc>\\d+),\\s*RSN\\s*=\\s*(?<rsn>\\d+)",
+      "extract": {"volser": "tag", "reinit_rc": "int", "rsn": "int"}
+    },
+    "ARC1849I": {
+      "description": "Reverse restore nieudany",
+      "pattern": "^REVERSE RESTORE FAILED FROM VOLUME (?<frb_volser>\\S+) TO VOLUME (?<src_volser>[^,\\s]+),\\s*RC=\\s*(?<rc>\\d+)",
+      "extract": {"frb_volser": "sqlite", "src_volser": "sqlite", "rc": "int"}
+    },
+    "ARC1850I": {
+      "description": "Wolumen z wieloma targetami FlashCopy (lista w liniach CONT.)",
+      "pattern": "^VOLUME (?<volser>\\S+) IN COPY POOL (?<copy_pool>\\S+) HAS MULTIPLE FLASHCOPY TARGETS, AS FOLLOWS(?:\\s+(?<fc_targets>.*))?",
+      "extract": {"volser": "tag", "copy_pool": "tag", "fc_targets": "sqlite"}
+    },
+    "ARC1851I": {
+      "description": "Wersja backupu copy poola uniewazniona",
+      "pattern": "^BACKUP VERSION (?<invalidated_version>\\d+) FOR COPY POOL (?<copy_pool>[^,\\s]+) WAS INVALIDATED,\\s*RC=\\s*(?<rc>\\d+)",
+      "extract": {"invalidated_version": "int", "copy_pool": "tag", "rc": "int"}
+    },
+    "ARC1870I": {
+      "description": "Message data set FR utworzony (.I = w toku)",
+      "pattern": "^MESSAGE DATA SET (?<msg_dsn>\\S+) CREATED FOR (?:FAST REPLICATION )?(?<fr_function>.+?) OF (?:COPY POOL|VOLUME) (?<copy_pool>\\S+)",
+      "extract": {"msg_dsn": "sqlite", "fr_function": "tag", "copy_pool": "tag"}
+    },
+    "ARC0640I": {
+      "description": "Komunikaty DFSMSdss (ADRnnnn) przekazane przez HSM; linie bez ADR pomijane",
+      "pattern": [
+        "^(?<task_id>\\S+)\\s+(?<adr_msg_id>ADR\\d{3}[A-Z])\\s.*?,\\s*(?<dss_date>\\d{4}\\.\\d{3}) (?<dss_time>\\d{2}:\\d{2}:\\d{2})(?:.*RETURN CODE (?<dss_rc>\\d+))?",
+        "^(?<task_id>\\S+)\\s+(?<adr_msg_id>ADR\\d{3}[A-Z])\\b"
+      ],
+      "extract": {"task_id": "tag", "adr_msg_id": "tag", "dss_rc": "int"},
+      "time": {"time": "dss_time", "date": "dss_date"},
+      "onNoMatch": "skip"
+    }
+  }
+}
