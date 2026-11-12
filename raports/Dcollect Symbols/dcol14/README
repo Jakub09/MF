@@ -1,0 +1,29 @@
+DFSORT Release 14 gives your site a powerful, simple and flexible way to use
+symbols in DFSORT and ICETOOL statements.  For details on DFSORT symbol 
+processing, visit the DFSORT home page at URL:
+
+http://www.ibm.com/storage/dfsort/
+
+To increase your productivity, IBM's DFSORT and DFSMS teams have already 
+created DFSORT R14 symbol mappings and sample jobs for data associated with 
+DCOLLECT.
+
+DCOL14.ZIP in this directory contains the symbol mappings and jobs for 
+DFSMS Version 1 Release 4 DCOLLECT as follows:
+
+  - The HEADER and TYPE* files are the DFSORT R14 symbol mappings for the 
+    various DCOLLECT records.
+  - The JOB* files are sample jobs that illustrate how the DCOLLECT symbol 
+    mappings can be used in DFSORT and ICETOOL statements.
+
+Follow these steps to make the symbol mappings and sample jobs available on
+your target system:
+
+  - Download the DCOL14.ZIP file and unzip it.
+  - Create a partitioned data set (for example, userid.DCOL14.SYM) with
+    RECFM=FB and LRECL=80.
+  - Upload the HEADER, TYPE* and JOB* files as members of your partitioned 
+    data set.
+
+
+

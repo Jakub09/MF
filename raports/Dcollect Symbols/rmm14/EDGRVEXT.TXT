@@ -1,0 +1,296 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM REPORT EXTRACT FILE VOLUME RECORD (RVEXT) - TYPE 'V'.          *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+RVRDW,1,4               RDW
+RVEXT,*,724
+**********************************************************************
+* RVEXT:    This file maps the information produced for volume       *
+*           records in the RMM report extract file.                  *
+*           In this record the date format depends on the DATEFORM   *
+*           selected by EDGHSKP execution parameter or the parmlib   *
+*           specified value.                                         *
+**********************************************************************
+  RVTYPE,=,1,CH         RECORD TYPE
+    RVTYPEID,'V'          TYPE 'V'
+  SKIP,3                RESERVED
+  RVVOLSER,*,6,CH       VOLUME SERIAL NUMBER
+  RVPVOL,*,6,CH         PREVIOUS VOLUME IN SEQUENCE
+  RVNVOL,*,6,CH         NEXT VOLUME IN SEQUENCE
+  SKIP,6                RESERVED
+**********************************************************************
+* RVMDMVID: Is a unique token assigned to every volume and every     *
+*           data set in a multi-volume set.                          *
+**********************************************************************
+  RVMDMVID,*,8,CH       MULTI-DSET MULT-VOL ID
+  SKIP,12               RESERVED
+**********************************************************************
+*  Start of common fields:                                           *
+*  The common fields are in the same place in each record type       *
+*  in the report extract file.  This allows common processing of     *
+*  these field across multiple record types.                         *
+**********************************************************************
+  RVCRDATE,*,10,CH      CREATE DATE of volume record
+  RVCRTIME,*,6,CH       CREATE TIME HHMMSS of volume record
+  RVCRSID,*,8,CH        CREATE SYSTEM ID of volume record
+  RVLCDATE,*,10,CH      LAST CHANGE DATE of volume record
+  RVLCTIME,*,6,CH       LAST CHANGE TIME HHMMSS of volume record
+  RVLCUID,*,8,CH        LAST CHANGE USER ID of volume record
+  RVLCSID,*,8,CH        LAST CHANGE SYSTEM ID of volume record
+**********************************************************************
+*  End of common fields                                              *
+**********************************************************************
+  RVEXPDTO,*,10,CH      EXPIRATION DATE  - original
+  RVEXPDT,*,10,CH       EXPIRATION DATE  - current
+  RVDEN,*,4,CH          RECORDING DENSITY
+  RVCOMP,*,1,CH         COMPACTION USED
+    RVYES,'Y'             YES
+    RVNO,'N'              NO
+  RVDSNNO,*,4,CH        NUMBER OF DATASETS ON VOLUME
+  RVTUSE,*,10,CH        TAPE USAGE IN KBYTES
+  RVUSE,*,4,CH          VOLUME USE COUNT
+  RVLABNO1,*,4,CH       LABEL NO OF FIRST FILE
+  RVSTORID,*,8,CH       CURRENT LOCATION NAME
+    RVSHL,'SHELF'         SHELF
+    RVLOC,'LOCAL'         LOCAL
+    RVREM,'REMOTE'        REMOTE
+**  CAN ALSO BE:
+**    DISTANT INSTALLATION DEFINED STORE
+**    SMS-DEFINED LIBRARY NAME
+  RVDEST,*,8,CH         DESTINATION NAME
+*   RVLOC,'LOCAL'         LOCAL
+*   RVREM,'REMOTE'        REMOTE
+**  CAN ALSO BE:
+**    DISTANT INSTALLATION DEFINED STORE
+**    SMS-DEFINED LIBRARY NAME
+**********************************************************************
+* Bin Numbers: If a volume is not moving (RVTRANS=N), and is in a    *
+*              storage location, RVSTBIN contains the current bin    *
+*              number and RVOBIN the bin number in the previous      *
+*              location.                                             *
+*              If a volume is moving (RVTRANS=Y), and moving to a    *
+*              storage location, RVSTBIN contains the target bin     *
+*              number and RVOBIN the bin number in the source        *
+*              location.                                             *
+**********************************************************************
+  RVSTBIN,*,6,CH        BIN NUMBER
+  RVOBIN,*,6,CH         PREVIOUS BIN NUMBER
+  RVSTDATE,*,10,CH      MOVEMENT TRACKING DATE
+  RVRETDAT,*,10,CH      RETENTION DATE CALCULATED BY VRS PROCESSING
+  RVLONLOC,*,8,CH       LOAN LOCATION
+  RVOLNLOC,*,8,CH       PREVIOUS LOAN LOCATION
+  RVLRDDAT,*,10,CH      DATE VOLUME LAST READ
+  RVLWTDAT,*,10,CH      DATE VOLUME LAST WRITTEN
+**********************************************************************
+* Assigned date and time:                                            *
+*    These fields are set each time a volume changes either from     *
+*    or to scratch status.                                           *
+**********************************************************************
+  RVASDATE,*,10,CH      ASSIGNED DATE
+  RVASTIME,*,6,CH       ASSIGNED TIME HHMMSS
+  RVOWNID,*,8,CH        VOLUME OWNER USERID
+  RVCRUID,*,8,CH        CREATING USERID
+  RVCRJOB,*,8,CH        CREATING JOBNAME
+  RVSECLEV,*,8,CH       SECURITY LEVEL - SHORT
+  RVSECLNG,*,30,CH      SECURITY LEVEL - LONG
+  RVVOLSEQ,*,4,CH       VOLUME SEQUENCE NUMBER
+  RVSTATUS,*,8,CH       VOLUME STATUS
+    RVMST,'MASTER'        MASTER
+    RVUSR,'USER'          USER
+    RVSCR,'SCRATCH'       SCRATCH
+    RVINI,'INIT'          INIT
+    RVENT,'ENTRY'         ENTRY
+  RVPENDRS,*,1,CH       VOLUME PENDING RELEASE
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVVRS,*,1,CH          VOLUME RETAINED BY VRS
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVLOAN,*,1,CH         VOLUME ON LOAN
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVOPEN,*,1,CH         VOLUME IS OPENED
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVOCER,*,1,CH         VOLUME RECORDED BY O/C/EOV
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVDEFRET,*,1,CH       PARMLIB DEFAULT RETENTION USED TO GENERATE
+*                          THE VOLUME EXPDT
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVPPTAPE,*,1,CH       PROGRAM PRODUCT TAPE
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+**********************************************************************
+* Labels: The RVLABEL field provides information about what label    *
+*         types may be written on the volume.  If BLP output has     *
+*         been used, the volume may no longer match this             *
+*         information.  Any BLP output beyond file 1 on a volume     *
+*         is not recorded by RMM.                                    *
+**********************************************************************
+  RVLABEL,*,3,CH        LABEL TYPE
+    RVSL,'SL'             SL
+    RVAL,'AL'             AL
+    RVNL,'NL'             NL
+    RVSUL,'SUL'           SUL
+    RVAUL,'AUL'           AUL
+  RVBLP,*,1,CH          VOLUME LAST WRITTEN BLP
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+**********************************************************************
+* Release Actions:  The following 5 fields list the actions to be    *
+*              set for the volume when it is released.  These are    *
+*              not the current actions.  See RVACTION for the        *
+*              pending actions.                                      *
+**********************************************************************
+  RVRETS,*,8,CH         RETURN ACTION
+    RVOWN,'OWNER'         OWNER
+*   RVSCR,'SCRATCH'       SCRATCH
+  RVREPL,*,1,CH         REPLACE ON RELEASE
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVINIT,*,1,CH         REINITIALISE
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVERASE,*,1,CH        SECURITY ERASE
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVNTFY,*,1,CH         NOTIFY OWNER
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVOWNAC,*,1,CH        OWNER ACCESS
+    RVRD,'R'              READ
+    RVUPD,'U'             UPDATE
+    RVADD,'A'             ADD
+  RVUSERAC,*,1,CH       USER ACCESS
+*   RVRD,'R'              READ
+*   RVUPD,'U'             UPDATE
+  RVVMUSE,*,1,CH        VM USE
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVMVSUSE,*,1,CH       MVS USE
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVNAME,*,8,CH         MEDIA NAME
+    RVUNIT,=,8,CH       Old name for RVNAME field
+  RVRACK,*,6,CH         RACK NUMBER
+  RVTRERR,*,4,CH        TEMPORARY READ ERRORS
+  RVTWERR,*,4,CH        TEMPORARY WRITE ERRORS
+  RVPRERR,*,4,CH        PERMANENT READ ERRORS
+  RVPWERR,*,4,CH        PERMANENT WRITE ERRORS
+**********************************************************************
+* Product Information: Includes number, release and feature code     *
+**********************************************************************
+  RVPPNUM,*,8,CH        PROGRAM PRODUCT NUMBER
+  RVVER,*,6,CH          VERSION/RELEASE/MOD NUMBER
+  RVFEAT,*,4,CH         FEATURE CODE
+  RVACCINF,*,40,CH      ACCOUNTING INFORMATION
+  RVUSEFLD,*,30,CH      USER DESCRIPTION
+  RVACCLST,*,3,CH       NUMBER OF ACCESS LIST ENTRIES
+  RVAUTIDS,*,96,CH      AUTHORISED USER IDS AREA
+  RVHLOC,*,8,CH         HOME LOCATION NAME
+  RVTRANS,*,1,CH        VOLUME IN TRANSIT
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVLOCTYP,*,1,CH       LOCATION TYPE
+    RVAUT,'A'             AUTO
+    RVMAN,'M'             MANUAL
+    RVSTR,'S'             STORE
+    RVBLK,' '             BLANK
+  RVDESTYP,*,1,CH       DESTINATION TYPE
+*   RVAUT,'A'             AUTO
+*   RVMAN,'M'             MANUAL
+*   RVSTR,'S'             STORE
+*   RVBLK,' '             BLANK
+  RVOLOC,*,8,CH         THE PREVIOUS LOCATION NAME
+  RVSGNAME,*,8,CH       STORAGE GROUP NAME
+  RVMEDREC,*,8,CH       VOLUME RECORDING FORMAT
+    RV18,'18TRACK'        18 TRACK
+    RV36,'36TRACK'        36 TRACK
+    RV128,'128TRACK'      128 TRACK
+  RVMEDTY,*,8,CH        VOLUME MEDIA TYPE
+    RVAST,'*'              *
+    RVCST,'CST'            CST
+    RVEC,'ECCST'           ECCST
+    RVHP,'HPCT'            HPCT
+    RVEH,'EHPCT'           EHPCT
+**********************************************************************
+* EHPCT IS RESERVED FOR EXTENDED HIGH PERFORMANCE                    *
+* CARTRIDGE TAPE.                                                    *
+**********************************************************************
+  RVMEDCMP,*,8,CH       COMPACTION TECHNIQUE
+*   RVAST,'*'              *
+    RVNON,'NONE'           NONE
+*   RVYES,'Y'              YES
+  RVMEDATR,*,8,CH       SPECIAL ATTRIBUTES
+*   RVNON,'NONE'           NONE
+*   RVRDC,'RDCOMPAT'       RDCOMPAT
+  RVDSNAM1,*,44,CH      FIRST FILE DATA SET NAME
+  RVMVMODE,*,1,CH       MOVE MODE
+*   RVAUT,'A'             AUTO
+*   RVMAN,'M'             MANUAL
+  RVDSNREC,*,1,CH       DS RECORDING
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  SKIP,2                RESERVED
+  RVBMEDN,*,8,CH        BIN MEDIA NAME
+  RVOBMEDN,*,8,CH       PREVIOUS BIN MEDIA NAME
+  RVNLOC,*,8,CH         REQUIRED LOCATION NAME - AS DETERMINED BY
+*                          VRS OR COMMAND
+  RVLUDEV,*,4,CH        LAST USED DRIVE
+**********************************************************************
+* Pending Actions:  The following fields list the actions required   *
+*              for the volume.  See RVRETS for the actions set       *
+*              when the volume is released.                          *
+**********************************************************************
+  RVACTION,*,8,CH       PENDING ACTIONS
+    RVACTSCR,=,1,CH     RETURN TO SCRATCH
+*     RVYES,'Y'           YES
+*     RVNO,'N'            NO
+    RVACTREP,*,1,CH     REPLACE VOLUME
+*     RVYES,'Y'           YES
+*     RVNO,'N'            NO
+    RVACTRET,*,1,CH     RETURN TO OWNER
+*     RVYES,'Y'           YES
+*     RVNO,'N'            NO
+    RVACTINI,*,1,CH     INITIALIZE
+*     RVYES,'Y'           YES
+*     RVNO,'N'            NO
+    RVACTERA,*,1,CH     ERASE
+*     RVYES,'Y'           YES
+*     RVNO,'N'            NO
+    RVACTNOT,*,1,CH     NOTIFY
+*     RVYES,'Y'           YES
+*     RVNO,'N'            NO
+    SKIP,2              RESERVED
+  RVABEND,*,1,CH        DATA SET CLOSED BY ABEND
+*   RVYES,'Y'             YES
+*   RVNO,'N'              NO
+  RVHOMTYP,*,1,Ch       HOME LOCATION TYPE
+*   RVAUT,'A'             AUTO
+*   RVMAN,'M'             MANUAL
+*   RVBLK,' '             BLANK
+  RVNEXTYP,*,1,CH       NEXT LOCATION TYPE
+*   RVAUT,'A'             AUTO
+*   RVMAN,'M'             MANUAL
+*   RVSTR,'S'             STORE
+*   RVBLK,' '             BLANK
+  SKIP,1                RESERVED
+  RVVRSREL,*,8,CH       VRS RELEASE OPTIONS
+    RVRELIXD,=,1,CH     IGNORE EXPDT
+*     RVYES,'Y'           YES
+*     RVNO,'N'            NO
+    RVRELSI,*,1,CH      SCRATCH IMMEDIATE
+*     RVYES,'Y'           YES
+*     RVNO,'N'            NO
+    SKIP,6              RESERVED
+**********************************************************************
+* END OF REPORT EXTRACT VOLUME RECORD                                *
+**********************************************************************
+RVRCEND,*               END OF RVEXT
+

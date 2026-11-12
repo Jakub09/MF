@@ -1,0 +1,206 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM Inventory Management Activity File Record.                     *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR FIELD DETAILS ON RMM RECORDS.           *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+ACTRC,1,443
+**********************************************************************
+* ACTRC: RMM ACTIVITY file records                                   *
+**********************************************************************
+  ACTRC_RDW,1,4,BI                          record descriptor word
+    ACTRC_RDW_LEN,=,2,BI                    record descriptor - length
+    ACTRC_RDW_SEG,*,2,BI                    record descriptor - segment
+**********************************************************************
+* Common record prefix                                               *
+**********************************************************************
+  ACTRC_PREFIX,*,4                          common prefix
+    ACTRC_PRE_TYPE,=,1,CH                   activity file record type
+      ACTRC_PRE_TYPE_HDR,'H'                  header record
+      ACTRC_PRE_TYPE_DSN,'D'                  data set details record
+      ACTRC_PRE_TYPE_VOL,'V'                  volume details record
+    SKIP,3                                  reserved
+**********************************************************************
+* Start overlay area                                                 *
+**********************************************************************
+  ACTRC_DATA,*                              start overlay for details area
+**********************************************************************
+* Header Record                                                      *
+**********************************************************************
+    POSITION,ACTRC_DATA                     start at ACTRC_DATA
+    ACTRC_HDR_DATA,=                        overlay for header data
+      ACTRC_HDR_RUN_DATE,=,10,CH            inventory management date
+      ACTRC_HDR_RUN_TIME,*,6,CH             inventory management time
+      ACTRC_HDR_VERIFY_DATE,*,10,CH         inventory mgmt. VERIFY date
+      ACTRC_HDR_EXEC_PARMS,*,16             execution parameters
+        ACTRC_HDR_BACKUP,=,1,CH             BACKUP
+          ACTRC_HDR_BACKUP_YES,'Y'            yes
+          ACTRC_HDR_BACKUP_NO,'N'             no
+        ACTRC_HDR_DSTORE,*,1,CH             DSTORE
+          ACTRC_HDR_DSTORE_YES,'Y'            yes
+          ACTRC_HDR_DSTORE_NO,'N'             no
+        ACTRC_HDR_EXPROC,*,1,CH             EXPROC
+          ACTRC_HDR_EXPROC_YES,'Y'            yes
+          ACTRC_HDR_EXPROC_NO,'N'             no
+        ACTRC_HDR_RPTEXT,*,1,CH             RPTEXT
+          ACTRC_HDR_RPTEXT_YES,'Y'            yes
+          ACTRC_HDR_RPTEXT_NO,'N'             no
+        ACTRC_HDR_VRSEL,*,1,CH              VRSEL
+          ACTRC_HDR_VRSEL_YES,'Y'             yes
+          ACTRC_HDR_VRSEL_NO,'N'              no
+        ACTRC_HDR_VERIFY,*,1,CH             VERIFY
+          ACTRC_HDR_VERIFY_YES,'Y'            yes
+          ACTRC_HDR_VERIFY_NO,'N'             no
+        ACTRC_HDR_DATE,*,1,CH               DATE for VERIFY run
+          ACTRC_HDR_DATE_YES,'Y'              yes
+          ACTRC_HDR_DATE_NO,'N'               no
+        ACTRC_HDR_DATEFORM,*,1,CH           DATEFORM
+          ACTRC_HDR_DATEFORM_AMERICAN,'A'     American
+          ACTRC_HDR_DATEFORM_EUROPEAN,'E'     European
+          ACTRC_HDR_DATEFORM_ISO,'I'          ISO
+          ACTRC_HDR_DATEFORM_JULIAN,'J'       Julian
+        SKIP,8                              reserved
+      ACTRC_HDR_OPTIONS,*,28                parmlib options
+        ACTRC_HDR_VRSJOBNAME,=,1,CH         VRSJOBNAME priority
+          ACTRC_HDR_VRSJOBNAME_FIRST,'1'      jobname first
+          ACTRC_HDR_VRSJOBNAME_SECOND,'2'     jobname second
+        ACTRC_HDR_VRSCHANGE,*,1,CH          VRSCHANGE
+          ACTRC_HDR_VRSCHANGE_VERIFY,'V'      verify
+          ACTRC_HDR_VRSCHANGE_INFO,'I'        information
+        ACTRC_HDR_CATRETPD,*,4,CH           CATRETPD hours
+        ACTRC_HDR_VRSMIN_COUNT,*,10,CH      VRSMIN min. number of VRSs
+        ACTRC_HDR_VRSMIN_ACTION,*,1,CH      VRSMIN action
+          ACTRC_HDR_VRSMIN_ACTION_FAIL,'F'    fail
+          ACTRC_HDR_VRSMIN_ACTION_WARN,'W'    warning
+          ACTRC_HDR_VRSMIN_ACTION_INFO,'I'    information
+        ACTRC_HDR_OPT_VRSEL,*,1,CH          VRSEL
+          ACTRC_HDR_OPT_VRSEL_NEW,'N'         new
+          ACTRC_HDR_OPT_VRSEL_OLD,'O'         old
+          ACTRC_HDR_OPT_VRSEL_BLANK,' '       blank -> old
+        ACTRC_HDR_UNCATALOG,*,1,CH          UNCATALOG
+          ACTRC_HDR_UNCATALOG_NO,'N'          no
+          ACTRC_HDR_UNCATALOG_YES,'Y'         yes
+          ACTRC_HDR_UNCATALOG_SCRATCH,'S'     scratch volume only
+        ACTRC_HDR_TPRACF,*,1,CH             TPRACF
+          ACTRC_HDR_TPRACF_NONE,'N'           none
+          ACTRC_HDR_TPRACF_PREDEFINED,'P'     predefined profiles
+          ACTRC_HDR_TPRACF_AUTOMATIC,'A'      automatic profiles
+        ACTRC_HDR_SYSID,*,8,CH              SYSID
+  ACTRC_HDR_END,*                           End of header record
+**********************************************************************
+* Data Set Record                                                    *
+**********************************************************************
+    POSITION,ACTRC_DATA                     start at ACTRC_DATA
+    ACTRC_DSN_DATA,=                        overlay for data set data
+      ACTRC_DSN_DSNAME,=,44,CH              data set name
+      ACTRC_DSN_JOBNAME,*,8,CH              creating job name
+      ACTRC_DSN_VOL,*,6,CH                  volume serial number
+      ACTRC_DSN_DSEQ,*,4,CH                 data set sequence number
+      ACTRC_DSN_FILESEQ,*,4,CH              physical file sequence number
+      ACTRC_DSN_CRDATE,*,10,CH              data set creation date
+      ACTRC_DSN_CRTIME,*,6,CH               data set creation time
+      ACTRC_DSN_LOC,*,8,CH                  volume location
+      ACTRC_DSN_DEST,*,8,CH                 volume destination
+      ACTRC_DSN_SMS_MC,*,8,CH               SMS management class name
+      ACTRC_DSN_VRS_MV,*,8,CH               VRS management value name
+      ACTRC_DSN_CATLG,*,1,CH                data set catalog status
+        ACTRC_DSN_CATLG_YES,'Y'               cataloged
+        ACTRC_DSN_CATLG_NO,'N'                not cataloged
+        ACTRC_DSN_CATLG_FAILED,'F'            locate failed
+        ACTRC_DSN_CATLG_UNKNOWN,'U'           no locate issued
+      ACTRC_DSN_CYCLE,*,10,CH               primary vrs data set
+*                                              cycle number
+      ACTRC_DSN_2CYCLE,*,10,CH              secondary vrs data set
+*                                              cycle number
+      ACTRC_DSN_SUBCHAIN_DROP,*,1,CH        primary subchain drop reason
+      ACTRC_DSN_2SUBCHAIN_DROP,*,1,CH       secondary subchain drop reason
+      SKIP,33                               reserved
+      ACTRC_DSN_CHANGE,*,8                  changes to data set details
+        ACTRC_DSN_CHNG_VRS,=,1,CH           vital rec status
+          ACTRC_DSN_CHNG_VRS_YES,'Y'          yes
+          ACTRC_DSN_CHNG_VRS_NO,'N'           no
+        ACTRC_DSN_CHNG_RETDATE,*,1,CH       retention date
+          ACTRC_DSN_CHNG_RETDATE_YES,'Y'      yes
+          ACTRC_DSN_CHNG_RETDATE_NO,'N'       no
+        ACTRC_DSN_CHNG_MATCH,*,1,CH         matching VRS
+          ACTRC_DSN_CHNG_MATCH_YES,'Y'        yes
+          ACTRC_DSN_CHNG_MATCH_NO,'N'         no
+        ACTRC_DSN_CHNG_SUBCHAIN,*,1,CH      retaining Subchain
+          ACTRC_DSN_CHNG_SUBCHAIN_YES,'Y'     yes
+          ACTRC_DSN_CHNG_SUBCHAIN_NO,'N'      no
+        SKIP,4                              reserved
+      ACTRC_DSN_OLD_VITAL,*,1,CH            old vital record status
+          ACTRC_DSN_OLD_VITAL_YES,'Y'         yes
+          ACTRC_DSN_OLD_VITAL_NO,'N'          no
+      ACTRC_DSN_NEW_VITAL,*,1,CH            new vital record status
+          ACTRC_DSN_NEW_VITAL_YES,'Y'         yes
+          ACTRC_DSN_NEW_VITAL_NO,'N'          no
+      ACTRC_DSN_DROP,*,1,CH                 reason for non-retention
+        ACTRC_DSN_DROP_WHILECATALOG,'W'       WHILECATALOG
+        ACTRC_DSN_DROP_UNTILEXPIRED,'U'       UNTILEXPIRED
+        ACTRC_DSN_DROP_CYCLES,'C'             cycles exeeded
+        ACTRC_DSN_DROP_DAYS,'D'               days since creation exceeded
+        ACTRC_DSN_DROP_LASTREF,'L'            days since last reference
+*                                                exceeded
+        ACTRC_DSN_DROP_EXTRADAYS,'X'          days since subchain start
+*                                                exceeded
+        ACTRC_DSN_DROP_BYDAYSCYCLE,'B'        by-days-cycles exeeded
+        ACTRC_DSN_DROP_NO_MATCH,'N'           No VRS match
+        ACTRC_DSN_DROP_DUP_GDG,'G'            GDG cycle; duplicate GDG
+        ACTRC_DSN_DROP_VOL_RELEASED,'V'       Volume released / scratch
+        ACTRC_DSN_DROP_BLANK,' '
+      ACTRC_DSN_NEW_LOC,*,8,CH              new required data set location
+      ACTRC_DSN_OLD_RETDATE,*,10,CH         old data set retention date
+*                                              Format: as per DATEFORM parm.
+*                                              Special date formats:
+*                                                WHILECATLG
+*                                                CYCL/nnnnn
+*                                                CATRETPD
+      ACTRC_DSN_NEW_RETDATE,*,10,CH         new data set retention date
+*                                              Format: as per DATEFORM parm.
+*                                              Special date formats:
+*                                                WHILECATLG
+*                                                CYCL/nnnnn
+*                                                CATRETPD
+      ACTRC_DSN_OLD_MATCH,*,113             old matching VRS
+        ACTRC_DSN_OLD_MTYPE,=,1,CH          old primary VRS type
+          ACTRC_DSN_OLD_MTYPE_DSN,'D'         data set name
+          ACTRC_DSN_OLD_MTYPE_SMS,'S'         SMS mamagement class
+          ACTRC_DSN_OLD_MTYPE_VRS,'V'         VRS management value
+          ACTRC_DSN_OLD_MTYPE_MIX,'M'         DSN and VRS mgmt value
+          ACTRC_DSN_OLD_MTYPE_DSNSMS,'C'      DSN and SMS mgmt class
+        ACTRC_DSN_OLD_MMASK,*,44,CH         old primary VRS mask
+        ACTRC_DSN_OLD_MJOB,*,8,CH           old primary VRS job name
+        ACTRC_DSN_OLD_M2MASK,*,8,CH         old second. VRS mask
+        ACTRC_DSN_OLD_M2JOB,*,8,CH          old second. VRS job name
+        ACTRC_DSN_OLD_MNAME,*,8,CH          old primary VRS subchain name
+        ACTRC_DSN_OLD_MDATE,*,10,CH         old primary VRS subchain
+*                                              start date
+        ACTRC_DSN_OLD_M2NAME,*,8,CH         old second. VRS subchain name
+        ACTRC_DSN_OLD_M2DATE,*,10,CH        old second. VRS subchain
+*                                              start date
+        SKIP,8                              reserved
+      ACTRC_DSN_NEW_MATCH,*,113             new matching VRS
+        ACTRC_DSN_NEW_MTYPE,=,1,CH          old primary VRS type
+          ACTRC_DSN_NEW_MTYPE_DSN,'D'         data set name
+          ACTRC_DSN_NEW_MTYPE_SMS,'S'         SMS mamagement class
+          ACTRC_DSN_NEW_MTYPE_VRS,'V'         VRS management value
+          ACTRC_DSN_NEW_MTYPE_MIX,'M'         DSN and VRS mgmt value
+        ACTRC_DSN_NEW_MMASK,*,44,CH         new primary VRS mask
+        ACTRC_DSN_NEW_MJOB,*,8,CH           new primary VRS job name
+        ACTRC_DSN_NEW_M2MASK,*,8,CH         new second. VRS mask
+        ACTRC_DSN_NEW_M2JOB,*,8,CH          new second. VRS job name
+        ACTRC_DSN_NEW_MNAME,*,8,CH          new primary VRS subchain name
+        ACTRC_DSN_NEW_MDATE,*,10,CH         new primary VRS subchain
+*                                              start date
+        ACTRC_DSN_NEW_M2NAME,*,8,CH         new second. VRS subchain name
+        ACTRC_DSN_NEW_M2DATE,*,10,CH        new second. VRS subchain
+*                                              start date
+        SKIP,8                              reserved
+  ACTRC_DSN_END,*                           End of data set record
+**********************************************************************
+* End of ACTRC                                                       *
+**********************************************************************
+

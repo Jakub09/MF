@@ -1,0 +1,33 @@
+**********************************************************************
+* SYMBOLE ROBOCZE DLA JOBA DCRPTQLF (RAPORT DCOLLECT)                *
+* UZYWANE RAZEM Z HEADER, TYPED I DCRWORK                            *
+**********************************************************************
+* DSNL/DSC (FB 166) - JEDEN REKORD NA ZBIOR Z MASKA POZIOMU LVL
+D_Q1,1,9,CH
+D_Q2,10,9,CH
+D_Q3,19,9,CH
+D_Q4,28,9,CH
+D_Q5,37,9,CH
+D_Q6,46,9,CH
+D_MASK,1,60,CH                PO SQZ: MASKA, NP. ABC.DEF.GHI.**
+D_LVL,61,1,CH                 POZIOM (Z PARAMETRU LVL)
+D_VALID,62,1,CH               Y = ZBIOR MA >= LVL KWALIFIKATOROW
+D_ALLKB,63,15,ZD              ALOKACJA KB
+D_TRK,78,15,ZD                ALOKACJA W SCIEZKACH
+D_SMALL,93,15,ZD              1 = MALY ZBIOR
+D_LARGE,108,15,ZD             1 = DUZY ZBIOR
+D_SMLG,93,30                  D_SMALL + D_LARGE
+D_DSNAM,123,44,CH             NAZWA ZBIORU (NA KONCU - DLA PARSE)
+* CAND (FB 93) - MASKI KANDYDACI
+C_MASK,1,60,CH
+C_COUNT,61,15,ZD              LICZBA ZBIOROW
+C_SMCNT,76,15,ZD              LICZBA MALYCH ZBIOROW
+C_PCT,91,3,ZD                 % MALYCH ZBIOROW
+* QX (FB 115), QSUM/QSRT (FB 118, + Q_PCT) - MASKA+POZYCJA+KWALIF.
+Q_MASK,1,60,CH
+Q_POS,61,2,ZD                 POZYCJA KWALIFIKATORA W NAZWIE
+Q_QUAL,63,8,CH                KWALIFIKATOR
+Q_SMALL,71,15,ZD              LICZBA MALYCH ZBIOROW Z KWALIFIKATOREM
+Q_LARGE,86,15,ZD              LICZBA DUZYCH ZBIOROW Z KWALIFIKATOREM
+Q_TOTAL,101,15,ZD             RAZEM
+Q_PCT,116,3,ZD                % MALYCH

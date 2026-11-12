@@ -1,0 +1,226 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF Z/OS 3.2 DFSMS AMS DCOLLECT RECORDS.      *
+**********************************************************************
+* DATA CLASS CONSTRUCT INFORMATION - RECORD TYPE 'DC'.               *
+*   SEE "Z/OS DFSMS ACCESS METHOD SERVICES COMMANDS" - FIELDS.       *
+*   SEE "Z/OS DFSORT APPLICATION PROGRAMMING GUIDE" - SYMBOLS.       *
+**********************************************************************
+POSITION,29                  START AFTER HEADER
+DDCDATA,*,540                DATA CLASS DEFINITION
+  DDCNMFLD,=,32              SPACE FOR NAME AND LENGTH
+    DDCNMLEN,=,2,FI          LENGTH OF NAME
+    DDCNAME,*,30,CH          NAME OF DATA CLASS
+  DDCUSER,*,8,CH             USERID OF LAST UPDATER
+  DDCDATE,*,10,CH            DATE OF LAST UPDATE
+  SKIP,2                     RESERVED
+  DDCTIME,*,8,CH             TIME OF LAST UPDATE
+  DDCDESC,*,120,CH           DESCRIPTION
+* DATA CLASS PARAMETERS SPECIFICATION BITS
+  DDCSPEC,*,4,CH             FLAG #1
+    DDCSPEC1,=,1,BI
+      DDCFRORG,B'1.......'     RECORG SPECIFIED
+      DDCFLREC,B'.1......'     LRECL SPECIFIED
+      DDCFRFM,B'..1.....'      RECFM SPECIFIED
+      DDCFKLEN,B'...1....'     KEYLEN SPECIFIED
+      DDCFKOFF,B'....1...'     KEYOFF SPECIFIED
+      DDCFEXP,B'.....1..'      EXPIRATION ATTRIB SPECIFIED
+      DDCFRET,B'......1.'      RETENTION ATTRIB SPECIFIED
+      DDCFPSP,B'.......1'      PRIMARY SPACE SPECIFIED
+    DDCSPEC2,*,1,BI          FLAG #2
+      DDCFSSP,B'1.......'      SECONDARY SPACE SPECIFIED
+      DDCFDIR,B'.1......'      DIRECTORY BLOCKS SPECIFIED
+      DDCFAUN,B'..1.....'      ALLOCATION UNIT SPECIFIED
+      DDCFAVR,B'...1....'      AVGREC SPECIFIED
+      DDCFVOL,B'....1...'      VOLUME CNT SPECIFIED
+      DDCFCIS,B'.....1..'      DATA CI SIZE SPECIFIED
+      DDCFCIF,B'......1.'      FREE CI % SPECIFIED
+      DDCFCAF,B'.......1'      FREE CA % SPECIFIED
+    DDCSPEC3,*,1,BI          FLAG #3
+      DDCFXREG,B'1.......'     SHAREOPT XREGION SPECIFIED
+      DDCFXSYS,B'.1......'     SHAREOPT XSYSTEM SPECIFIED
+      DDCFIMBD,B'..1.....'     VSAM IMBED SPECIFIED
+      DDCFRPLC,B'...1....'     VSAM REPLICATE SPECIFIED
+      DDCFCOMP,B'....1...'     COMPACTION SPECIFIED
+      DDCFMEDI,B'.....1..'     MEDIA TYPE SPECIFIED
+      DDCFRECT,B'......1.'     RECORDING TECHNOLOGY
+      DDCFVEA,B'.......1'      VSAM EXTENDED ADDRESSING
+    DDCSPEC4,*,1,BI          FLAG #4
+      DDCSPRLF,B'1.......'     SPACE CONSTRAINT RELIEF
+      DDCREDUS,B'.1......'     REDUCE SPACE BY % SPECIFIED
+      DDCRABS,B'..1.....'      REC ACCESS BIAS SPECIFIED
+      DDCFCT,B'...1....'       COMPRESSION TYPE SPECIFIED
+      DDCBLMT,B'....1...'      BLOCK SIZE LIMIT SPECIFIED
+      DDCCFS,B'.....1..'       RLS CF CACHE SPECIFIED
+      DDCDVCS,B'......1.'      DYNAMIC VOLUME COUNT SPECIFIED
+      DDCFSCAL,B'.......1'     PERFORMANCE SCALING SPECIFIED
+* DATA SET ATTRIBUTES
+  DDCRCORG,*,1,FI            DATA SET RECORG
+    DDCORGNL,0                 NULL - SAM
+    DDCORGKS,1                 VSAM KSDS
+    DDCORGES,2                 VSAM ESDS
+    DDCORGRR,3                 VSAM RRDS
+    DDCORGLS,4                 VSAM LDS
+  DDCRECFM,*,1,FI            DATA SET RECFM
+    DDCFMNUL,0                 NULL
+    DDCFMU,1                   UNDEFINED
+    DDCFMV,2                   VARIABLE
+    DDCFMVS,3                  VARIABLE SPANNED
+    DDCFMVB,4                  VARIABLE BLOCKED
+    DDCFMVBS,5                 VARIABLE BLOCKED SPANNED
+    DDCFMF,6                   FIXED
+    DDCFMFS,7                  FIXED STANDARD
+    DDCFMFB,8                  FIXED BLOCKED
+    DDCFMFBS,9                 FIXED BLOCKED SPANNED
+  DDCDSFLG,*,1,BI            FLAGS FOR NON-VSAM DATA SETS
+    DDCBLK,B'1.......'         BLOCKED
+    DDCSTSP,B'.1......'        STANDARD OR SPANNED
+  DDCCNTL,*,1,FI             CARRIAGE CONTROL
+    DDCCNTLA,1                 ANSI
+    DDCCNTLM,2                 MACHINE
+    DDCCNTLN,3                 NULL
+  DDCRETPD,*,4,FI            RETENTION PERIOD - TIME ACCESSIBLE TO SYS
+    DDCEXPYR,=,2,FI          EXPIRATION DATE - YEAR
+    DDCEXPDY,*,2,FI          EXPIRATION DATE - ABSOLUTE DAY OF YEAR
+  DDCVOLCT,*,2,FI            MAXIMUM VOL COUNT FOR EXTEND
+  DDCDSNTY,*,2,FI            DSNTYPE
+    DDCDSNUL,0                 NULL
+    DDCDSPDS,1                 PDS
+    DDCDSLIB,2                 LIBRARY
+    DDCDSHFS,3                 HFS
+    DDCDSEXR,4                 EXTENDED(R)
+    DDCDSEXC,5                 EXTENDED(C)
+* DATA SET SPACE ATTRIBUTES
+  DDCSPPRI,*,4,FI            PRIMARY SPACE AMOUNT
+  DDCSPSEC,*,4,FI            SECONDARY SPACE AMOUNT
+  DDCDIBLK,*,4,FI            DIRECTORY BLOCKS
+  DDCAVREC,*,1,FI            AVGREC - M, K, U
+    DDCBYTES,1                 BYTES
+    DDCKB,2                    KB
+    DDCMB,3                    MB
+  DDCREDUC,*,1,BI            REDUCE PRIMARY OR SECONDARY SPACE
+  DDCRBIAS,*,1,FI            VSAM RECORD ACCESS BIAS
+    DDCRABUS,0                 USER
+    DDCRABSY,1                 SYSTEM
+  DDCDVC,*,1,BI              DYNAMIC VOLUME COUNT
+  DDCAUNIT,*,4,FI            ALLOCATION UNIT AMOUNT
+  DDCBSZLM,*,4,FI            DATA SET BLOCKSIZE LIMIT
+  DDCLRECL,*,4,FI            RECORD LENGTH
+* VSAM ATTRIBUTES
+  DDCCISZ,*,4,FI             CISIZE FOR KS, ES OR RR
+  DDCFRSP,*,4                FREESPACE
+    DDCCIPCT,=,2,FI          CI FREESPACE %
+    DDCCAPCT,*,2,FI          CA FREESPACE %
+  DDCSHROP,*,2               VSAM SHARE OPTIONS
+    DDCXREG,=,1,BI           VSAM XREGION SHARE OPTIONS
+    DDCXSYS,*,1,BI           VSAM XSYSTEM SHARE OPTIONS
+  DDCVINDX,*,1,BI            VSAM SHARE OPTIONS
+    DDCIMBED,B'1.......'       IMBED
+    DDCREPLC,B'.1......'       REPLICATE
+  DDCKLEN,*,1,BI             VSAM KEY LENGTH
+  DDCKOFF,*,2,FI             VSAM KEY OFFSET
+  DDCCAMT,*,1,BI             VSAM CANDIDATE AMOUNT
+  SKIP,1                     RESERVED
+* MOUNTABLE DEVICE ATTRIBUTES
+  DDCCOMP,*,1,FI             COMPACTION TYPE
+    DDCCNUL,0                  NULL COMPACTION
+    DDCNOCMP,1                 NO COMPACTION
+    DDCIDRC,2                  IDRC COMPACTION
+  DDCMEDIA,*,1,FI            MEDIA TYPE
+    DDCMENUL,0                 NULL
+    DDCMEDA1,1                 MEDIA1 - CARTRIDGE SYSTEM
+    DDCMEDA2,2                 MEDIA2 - ENHANCED CAPACITY CARTRIDGE
+*                                SYSTEM TAPE
+    DDCMEDA3,3                 MEDIA3 - HIGH PERFORMANCE
+    DDCMEDA4,4                 MEDIA4 - EXTENDED HIGH PERFORMANCE
+  DDCRECTE,*,1,FI            RECORDING TECHNOLOGY
+    DDCRTNUL,0                 NULL
+    DDC18TRK,1                 18 TRACK
+    DDC36TRK,2                 36 TRACK
+  SKIP,1                     RESERVED
+  DDCRLS1,*,4                RLS SUPPORT
+    DDCBWOTP,=,1,FI          BWO TYPE
+      DDCBWOCI,1               CICS
+      DDCBWONO,2               NONE
+      DDCBWOIM,3               IMS
+    DDCLOGRC,*,1,FI          SPHERE RECOVERABILITY
+      DDCLOGNO,1               NON-RECOVERABLE SPHERE
+      DDCLOGUN,2               UNDO - USE EXTERNAL LOG
+      DDCLOGAL,3               ALL - (UNDO) AND FORWARD
+    DDCSPAND,*,1,FI          RECORD SPANS CI ABILITY
+      DDCSPANN,0               RECORD CANNOT SPAN CI
+      DDCSPANY,1               RECORD MAY SPAN CI
+    DDCFRLOG,*,1,BI          CICSVR FRLOG TYPE
+*                            1=NONE 2=REDO 4=UNDO 6=ALL
+  DDCLOGNM,*,28              LOG STREAM ID
+    DDCLOGLN,=,2,FI          ID LENGTH
+    DDCLOGID,*,26,CH         ID
+  DDCSPECX,*,4               ADDITIONAL SPECIFICATION FLAGS
+    DDCSPECA,=,1,BI          ADDITONAL SPECIFICATION FLAGS
+      DDCBWOS,B'1.......'      BWO SPECIFIED
+      DDCLOGRS,B'.1......'     SPHERE RECOVERABILITY SPEC'D
+      DDCSPANS,B'..1.....'     CI SPAN SPECIFIED
+      DDCLSIDS,B'...1....'     LOGSTREAMID SPECIFIED
+      DDCFRLGS,B'....1...'     CICSVR FRLOG SPECIFIED
+      DDCFEXTC,B'.....1..'     EXTENT CONSTRAINT SPECIFIED
+      DDCFA2GB,B'......1.'     RLS ABOVE 2GB BAR SPECIFIED
+      DDCFPSEG,B'.......1'     PERF. SEGMENTATION SPECIFIED
+    DDCSPECB,*,1,BI          SPECIFICATION FLAGS B
+      DDCFKYL1,B'1.......'     KEYLABEL 1 SPECIFIED
+      DDCFKYC1,B'.1......'     KEYCODE 1 SPECIFIED
+      DDCFKYL2,B'..1.....'     KEYLABEL 2 SPECIFIED
+      DDCFKYC2,B'...1....'     KEYCODE 2 SPECIFIED
+      DDCFVSP,B'....1...'      SMBVSP SPECIFIED
+      DDCFSDB,B'.....1..'      SDB SPECIFIED
+      DDCFOVRD,B'......1.'     OVERRIDE JCL SPECIFIED
+      DDCFCAR,B'.......1'      CA RECLAIM SPECIFIED
+    DDCSPECC,*,1,BI          SPECIFICATION FLAGS C
+      DDCFATTR,B'1.......'     EATTR SPECIFIED
+      DDCFLOGR,B'.1......'     LOG REPLICATION SPECIFIED
+      DDCFRMOD,B'..1.....'     VSAM SMB RMODE31 SPECIFIED
+      DDCGSRDU,B'...1....'     GUARANTEED SPACE REDUCTION
+      DDCFKLBL,B'....1...'     DASD DATA SET KEY LABEL SPEC'D
+    DDCSPECD,*,1,BI          SPECIFICATION FLAGS D (RESERVED)
+  DDCSFLG,*,1,BI             SPECIFICATION VALUE FLAGS
+    DDCOVRD,B'1.......'        OVERRIDE JCL (SEE DDCFOVRD)
+    DDCSDB,B'.1......'         SDB (SEE DDCFSDB)
+  DDCVSAM1,*,4               VSAM ATTRIBUTES
+    DDCVBYT1,=,1,BI          VSAM ATTRIBUTE BYTE 1
+      DDCREUSE,B'1.......'     1=RE-ACCESS DATA ON OPEN (REUSE)
+      DDCSPEED,B'.1......'     1=SPEED, 0=RECOVERY
+      DDCEX255,B'..1.....'     OVER 255 EXTENTS ALLOWED
+      DDCLOGRP,B'...1....'     LOG REPLICATION
+    SKIP,3                   RESERVED
+  DDCEATTR,*,1,CH            EXTENDED ATTRIBUTE (EATTR)
+  DDCCT,*,1,BI               COMPRESSION TYPE
+*                            0=GENERIC 1=TAILORED 2=ZR 3=ZP
+  DDCDSCF,*,1,BI             RLS CF CACHE VALUE
+*                            0=ALL 1=UPDATESONLY 2=NONE
+  DDCRBYTE,*,1,BI            RLS BYTE
+    DDCA2GB,B'1.......'        RLS ABOVE 2GB BAR (VERIFY BIT)
+    DDCRECLM,B'.1......'       CA RECLAIM DISABLED (VERIFY BIT)
+  DDCBLKLM,*,8,BI            BLKSZLIM (VALUE IN LOWER 4 BYTES)
+  DDCTAPE1,*,8               TAPE ATTRIBUTES
+    DDCPSCA,=,1,BI           PERFORMANCE SCALING
+    DDCPSEG,*,1,BI           PERFORMANCE SEGMENTATION
+    SKIP,5                   RESERVED
+  DDCVSP,*,1,BI              SMBVSP UNIT
+    DDCVSPUK,B'1.......'       UNIT IN KB
+    DDCVSPUM,B'.1......'       UNIT IN MB
+  DDCVSPV,*,3,BI             SMBVSP VALUE
+  DDCKYLB1,*,66              KEY LABEL 1
+    DDCKLBL1,=,2,FI          KEY LABEL 1 LENGTH
+    DDCKLBN1,*,64,CH         KEY LABEL 1 NAME
+  DDCKYCD1,*,1,BI            KEYCODE 1
+  SKIP,1                     RESERVED
+  DDCKYLB2,*,66              KEY LABEL 2
+    DDCKLBL2,=,2,FI          KEY LABEL 2 LENGTH
+    DDCKLBN2,*,64,CH         KEY LABEL 2 NAME
+  DDCKYCD2,*,1,BI            KEYCODE 2
+  SKIP,2                     RESERVED
+  DDCRMODE,*,1,BI            VSAM SMB RMODE31
+*                            0=BLANK 1=ALL 2=BUFF 3=CB 4=NONE
+  DDCDKYBL,*,66              DASD DATA SET KEY LABEL
+    DDCDKLBL,=,2,FI          KEY LABEL LENGTH
+    DDCDKLBN,*,64,CH         KEY LABEL NAME
+  SKIP,28                    RESERVED
+DDCDATAE,*                   END OF DDCDATA

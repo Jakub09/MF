@@ -1,0 +1,1595 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM PROGRAM PRODUCT INFORMATION - TYPE 'P'.                        *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,SMFADREC            START AFTER EDGSMFAR
+MPREC,*,8420
+**********************************************************************
+* KEY FIELD                                                          *
+**********************************************************************
+  MPKEY,=,56                 KEY FIELD
+    MPTYPE,=,1,CH            RECORD TYPE
+      MPTYPEID,'P'             PP RECORD ID SYMBOL
+**********************************************************************
+* START OF RMM MPREC                                                 *
+**********************************************************************
+  MPPPNUM,*,8,CH             PP NUMBER (NNNN-CCC)
+  MPVER,*,6,CH               VERSION/RELEASE/MOD NUMBER
+  SKIP,41                    RESERVED
+**********************************************************************
+* CONTROL INFORMATION                                                *
+**********************************************************************
+  MPRECLN,*,2,FI             RECORD LENGTH
+  SKIP,2                     RESERVED
+  MPCRDATE,*,4,PD            PP CREATE DATE - YYYYDDD
+  MPCRTIME,*,4,PD            PP CREATE TIME - HHMMSST
+  MPCRSID,*,8,CH             CREATE SYSTEM ID
+  MPRCCDS,*,8,CH             RECORD CREATE CDS ID
+  MPLCDATE,*,4,PD            LAST CHANGE DATE  - YYYYDDD
+  MPLCTIME,*,4,PD            LAST CHANGE TIME -  HHMMSST
+  MPLCUID,*,8,CH             LAST CHANGE USER ID
+  MPLCSID,*,8,CH             LAST CHANGE SYSTEM ID
+  MPUCDATE,*,4,PD            LAST "USER" CHANGE DATE
+  MPUCTIME,*,4,PD            LAST "USER" CHANGE TIME
+  MPCFLG,*,1,BI              CONTROL FLAGS 1
+    MPDELFLG,X'80'             RECORD DELETED
+    MPSELFLG,X'10'             SELECT - PROC BY SATELLITE UPDT
+    MPDUMMY,X'08'              DUMMY RECORD - ALLOW TSO ADD
+  SKIP,7                     RESERVED
+**********************************************************************
+* PROGRAM PRODUCT DETAILS                                            *
+**********************************************************************
+  MPPPOWN,*,8,CH             PROGRAM PRODUCT OWNER ID
+  MPPPNAME,*,30,CH           PROGRAM PRODUCT NAME
+  MPPPDESC,*,30,CH           PROGRAM PRODUCT DESCRIPTION
+  SKIP,64                    RESERVED
+**********************************************************************
+* PROGRAM PRODUCT VOLUME DETAILS                                     *
+**********************************************************************
+  MPVOLDET,*,4               VOLUME DETAILS
+    MPVOLNO,=,2,FI           NO OF PP VOLS
+    SKIP,2                   RESERVED
+**********************************************************************
+* PROGRAM PRODUCT VOLUME ENTRY - 001-255                             *
+*   THE ACTUAL NUMBER OF ENTRIES IS INDICATED BY MPVOLNO.            *
+**********************************************************************
+  MPVOLENT_ARRAY,*,8160      ARRAY OF VOLUME ENTRIES
+    MPVOLENT_001,=,32        VOLUME ENTRY - 001
+      MPVOLSER_001,=,6,CH    VOLUME SERIAL - 001
+      MPRACK_001,*,6,CH      RACK NUMBER - 001
+      MPFEAT_001,*,4,CH      FEATURE CODE - 001
+      MPUNIT_001,*,8,CH      UNIT TYPE - 001
+      SKIP,8                 RESERVED
+    MPVOLENT_002,*,32        VOLUME ENTRY - 002
+      MPVOLSER_002,=,6,CH    VOLUME SERIAL - 002
+      MPRACK_002,*,6,CH      RACK NUMBER - 002
+      MPFEAT_002,*,4,CH      FEATURE CODE - 002
+      MPUNIT_002,*,8,CH      UNIT TYPE - 002
+      SKIP,8                 RESERVED
+    MPVOLENT_003,*,32        VOLUME ENTRY - 003
+      MPVOLSER_003,=,6,CH    VOLUME SERIAL - 003
+      MPRACK_003,*,6,CH      RACK NUMBER - 003
+      MPFEAT_003,*,4,CH      FEATURE CODE - 003
+      MPUNIT_003,*,8,CH      UNIT TYPE - 003
+      SKIP,8                 RESERVED
+    MPVOLENT_004,*,32        VOLUME ENTRY - 004
+      MPVOLSER_004,=,6,CH    VOLUME SERIAL - 004
+      MPRACK_004,*,6,CH      RACK NUMBER - 004
+      MPFEAT_004,*,4,CH      FEATURE CODE - 004
+      MPUNIT_004,*,8,CH      UNIT TYPE - 004
+      SKIP,8                 RESERVED
+    MPVOLENT_005,*,32        VOLUME ENTRY - 005
+      MPVOLSER_005,=,6,CH    VOLUME SERIAL - 005
+      MPRACK_005,*,6,CH      RACK NUMBER - 005
+      MPFEAT_005,*,4,CH      FEATURE CODE - 005
+      MPUNIT_005,*,8,CH      UNIT TYPE - 005
+      SKIP,8                 RESERVED
+    MPVOLENT_006,*,32        VOLUME ENTRY - 006
+      MPVOLSER_006,=,6,CH    VOLUME SERIAL - 006
+      MPRACK_006,*,6,CH      RACK NUMBER - 006
+      MPFEAT_006,*,4,CH      FEATURE CODE - 006
+      MPUNIT_006,*,8,CH      UNIT TYPE - 006
+      SKIP,8                 RESERVED
+    MPVOLENT_007,*,32        VOLUME ENTRY - 007
+      MPVOLSER_007,=,6,CH    VOLUME SERIAL - 007
+      MPRACK_007,*,6,CH      RACK NUMBER - 007
+      MPFEAT_007,*,4,CH      FEATURE CODE - 007
+      MPUNIT_007,*,8,CH      UNIT TYPE - 007
+      SKIP,8                 RESERVED
+    MPVOLENT_008,*,32        VOLUME ENTRY - 008
+      MPVOLSER_008,=,6,CH    VOLUME SERIAL - 008
+      MPRACK_008,*,6,CH      RACK NUMBER - 008
+      MPFEAT_008,*,4,CH      FEATURE CODE - 008
+      MPUNIT_008,*,8,CH      UNIT TYPE - 008
+      SKIP,8                 RESERVED
+    MPVOLENT_009,*,32        VOLUME ENTRY - 009
+      MPVOLSER_009,=,6,CH    VOLUME SERIAL - 009
+      MPRACK_009,*,6,CH      RACK NUMBER - 009
+      MPFEAT_009,*,4,CH      FEATURE CODE - 009
+      MPUNIT_009,*,8,CH      UNIT TYPE - 009
+      SKIP,8                 RESERVED
+    MPVOLENT_010,*,32        VOLUME ENTRY - 010
+      MPVOLSER_010,=,6,CH    VOLUME SERIAL - 010
+      MPRACK_010,*,6,CH      RACK NUMBER - 010
+      MPFEAT_010,*,4,CH      FEATURE CODE - 010
+      MPUNIT_010,*,8,CH      UNIT TYPE - 010
+      SKIP,8                 RESERVED
+    MPVOLENT_011,*,32        VOLUME ENTRY - 011
+      MPVOLSER_011,=,6,CH    VOLUME SERIAL - 011
+      MPRACK_011,*,6,CH      RACK NUMBER - 011
+      MPFEAT_011,*,4,CH      FEATURE CODE - 011
+      MPUNIT_011,*,8,CH      UNIT TYPE - 011
+      SKIP,8                 RESERVED
+    MPVOLENT_012,*,32        VOLUME ENTRY - 012
+      MPVOLSER_012,=,6,CH    VOLUME SERIAL - 012
+      MPRACK_012,*,6,CH      RACK NUMBER - 012
+      MPFEAT_012,*,4,CH      FEATURE CODE - 012
+      MPUNIT_012,*,8,CH      UNIT TYPE - 012
+      SKIP,8                 RESERVED
+    MPVOLENT_013,*,32        VOLUME ENTRY - 013
+      MPVOLSER_013,=,6,CH    VOLUME SERIAL - 013
+      MPRACK_013,*,6,CH      RACK NUMBER - 013
+      MPFEAT_013,*,4,CH      FEATURE CODE - 013
+      MPUNIT_013,*,8,CH      UNIT TYPE - 013
+      SKIP,8                 RESERVED
+    MPVOLENT_014,*,32        VOLUME ENTRY - 014
+      MPVOLSER_014,=,6,CH    VOLUME SERIAL - 014
+      MPRACK_014,*,6,CH      RACK NUMBER - 014
+      MPFEAT_014,*,4,CH      FEATURE CODE - 014
+      MPUNIT_014,*,8,CH      UNIT TYPE - 014
+      SKIP,8                 RESERVED
+    MPVOLENT_015,*,32        VOLUME ENTRY - 015
+      MPVOLSER_015,=,6,CH    VOLUME SERIAL - 015
+      MPRACK_015,*,6,CH      RACK NUMBER - 015
+      MPFEAT_015,*,4,CH      FEATURE CODE - 015
+      MPUNIT_015,*,8,CH      UNIT TYPE - 015
+      SKIP,8                 RESERVED
+    MPVOLENT_016,*,32        VOLUME ENTRY - 016
+      MPVOLSER_016,=,6,CH    VOLUME SERIAL - 016
+      MPRACK_016,*,6,CH      RACK NUMBER - 016
+      MPFEAT_016,*,4,CH      FEATURE CODE - 016
+      MPUNIT_016,*,8,CH      UNIT TYPE - 016
+      SKIP,8                 RESERVED
+    MPVOLENT_017,*,32        VOLUME ENTRY - 017
+      MPVOLSER_017,=,6,CH    VOLUME SERIAL - 017
+      MPRACK_017,*,6,CH      RACK NUMBER - 017
+      MPFEAT_017,*,4,CH      FEATURE CODE - 017
+      MPUNIT_017,*,8,CH      UNIT TYPE - 017
+      SKIP,8                 RESERVED
+    MPVOLENT_018,*,32        VOLUME ENTRY - 018
+      MPVOLSER_018,=,6,CH    VOLUME SERIAL - 018
+      MPRACK_018,*,6,CH      RACK NUMBER - 018
+      MPFEAT_018,*,4,CH      FEATURE CODE - 018
+      MPUNIT_018,*,8,CH      UNIT TYPE - 018
+      SKIP,8                 RESERVED
+    MPVOLENT_019,*,32        VOLUME ENTRY - 019
+      MPVOLSER_019,=,6,CH    VOLUME SERIAL - 019
+      MPRACK_019,*,6,CH      RACK NUMBER - 019
+      MPFEAT_019,*,4,CH      FEATURE CODE - 019
+      MPUNIT_019,*,8,CH      UNIT TYPE - 019
+      SKIP,8                 RESERVED
+    MPVOLENT_020,*,32        VOLUME ENTRY - 020
+      MPVOLSER_020,=,6,CH    VOLUME SERIAL - 020
+      MPRACK_020,*,6,CH      RACK NUMBER - 020
+      MPFEAT_020,*,4,CH      FEATURE CODE - 020
+      MPUNIT_020,*,8,CH      UNIT TYPE - 020
+      SKIP,8                 RESERVED
+    MPVOLENT_021,*,32        VOLUME ENTRY - 021
+      MPVOLSER_021,=,6,CH    VOLUME SERIAL - 021
+      MPRACK_021,*,6,CH      RACK NUMBER - 021
+      MPFEAT_021,*,4,CH      FEATURE CODE - 021
+      MPUNIT_021,*,8,CH      UNIT TYPE - 021
+      SKIP,8                 RESERVED
+    MPVOLENT_022,*,32        VOLUME ENTRY - 022
+      MPVOLSER_022,=,6,CH    VOLUME SERIAL - 022
+      MPRACK_022,*,6,CH      RACK NUMBER - 022
+      MPFEAT_022,*,4,CH      FEATURE CODE - 022
+      MPUNIT_022,*,8,CH      UNIT TYPE - 022
+      SKIP,8                 RESERVED
+    MPVOLENT_023,*,32        VOLUME ENTRY - 023
+      MPVOLSER_023,=,6,CH    VOLUME SERIAL - 023
+      MPRACK_023,*,6,CH      RACK NUMBER - 023
+      MPFEAT_023,*,4,CH      FEATURE CODE - 023
+      MPUNIT_023,*,8,CH      UNIT TYPE - 023
+      SKIP,8                 RESERVED
+    MPVOLENT_024,*,32        VOLUME ENTRY - 024
+      MPVOLSER_024,=,6,CH    VOLUME SERIAL - 024
+      MPRACK_024,*,6,CH      RACK NUMBER - 024
+      MPFEAT_024,*,4,CH      FEATURE CODE - 024
+      MPUNIT_024,*,8,CH      UNIT TYPE - 024
+      SKIP,8                 RESERVED
+    MPVOLENT_025,*,32        VOLUME ENTRY - 025
+      MPVOLSER_025,=,6,CH    VOLUME SERIAL - 025
+      MPRACK_025,*,6,CH      RACK NUMBER - 025
+      MPFEAT_025,*,4,CH      FEATURE CODE - 025
+      MPUNIT_025,*,8,CH      UNIT TYPE - 025
+      SKIP,8                 RESERVED
+    MPVOLENT_026,*,32        VOLUME ENTRY - 026
+      MPVOLSER_026,=,6,CH    VOLUME SERIAL - 026
+      MPRACK_026,*,6,CH      RACK NUMBER - 026
+      MPFEAT_026,*,4,CH      FEATURE CODE - 026
+      MPUNIT_026,*,8,CH      UNIT TYPE - 026
+      SKIP,8                 RESERVED
+    MPVOLENT_027,*,32        VOLUME ENTRY - 027
+      MPVOLSER_027,=,6,CH    VOLUME SERIAL - 027
+      MPRACK_027,*,6,CH      RACK NUMBER - 027
+      MPFEAT_027,*,4,CH      FEATURE CODE - 027
+      MPUNIT_027,*,8,CH      UNIT TYPE - 027
+      SKIP,8                 RESERVED
+    MPVOLENT_028,*,32        VOLUME ENTRY - 028
+      MPVOLSER_028,=,6,CH    VOLUME SERIAL - 028
+      MPRACK_028,*,6,CH      RACK NUMBER - 028
+      MPFEAT_028,*,4,CH      FEATURE CODE - 028
+      MPUNIT_028,*,8,CH      UNIT TYPE - 028
+      SKIP,8                 RESERVED
+    MPVOLENT_029,*,32        VOLUME ENTRY - 029
+      MPVOLSER_029,=,6,CH    VOLUME SERIAL - 029
+      MPRACK_029,*,6,CH      RACK NUMBER - 029
+      MPFEAT_029,*,4,CH      FEATURE CODE - 029
+      MPUNIT_029,*,8,CH      UNIT TYPE - 029
+      SKIP,8                 RESERVED
+    MPVOLENT_030,*,32        VOLUME ENTRY - 030
+      MPVOLSER_030,=,6,CH    VOLUME SERIAL - 030
+      MPRACK_030,*,6,CH      RACK NUMBER - 030
+      MPFEAT_030,*,4,CH      FEATURE CODE - 030
+      MPUNIT_030,*,8,CH      UNIT TYPE - 030
+      SKIP,8                 RESERVED
+    MPVOLENT_031,*,32        VOLUME ENTRY - 031
+      MPVOLSER_031,=,6,CH    VOLUME SERIAL - 031
+      MPRACK_031,*,6,CH      RACK NUMBER - 031
+      MPFEAT_031,*,4,CH      FEATURE CODE - 031
+      MPUNIT_031,*,8,CH      UNIT TYPE - 031
+      SKIP,8                 RESERVED
+    MPVOLENT_032,*,32        VOLUME ENTRY - 032
+      MPVOLSER_032,=,6,CH    VOLUME SERIAL - 032
+      MPRACK_032,*,6,CH      RACK NUMBER - 032
+      MPFEAT_032,*,4,CH      FEATURE CODE - 032
+      MPUNIT_032,*,8,CH      UNIT TYPE - 032
+      SKIP,8                 RESERVED
+    MPVOLENT_033,*,32        VOLUME ENTRY - 033
+      MPVOLSER_033,=,6,CH    VOLUME SERIAL - 033
+      MPRACK_033,*,6,CH      RACK NUMBER - 033
+      MPFEAT_033,*,4,CH      FEATURE CODE - 033
+      MPUNIT_033,*,8,CH      UNIT TYPE - 033
+      SKIP,8                 RESERVED
+    MPVOLENT_034,*,32        VOLUME ENTRY - 034
+      MPVOLSER_034,=,6,CH    VOLUME SERIAL - 034
+      MPRACK_034,*,6,CH      RACK NUMBER - 034
+      MPFEAT_034,*,4,CH      FEATURE CODE - 034
+      MPUNIT_034,*,8,CH      UNIT TYPE - 034
+      SKIP,8                 RESERVED
+    MPVOLENT_035,*,32        VOLUME ENTRY - 035
+      MPVOLSER_035,=,6,CH    VOLUME SERIAL - 035
+      MPRACK_035,*,6,CH      RACK NUMBER - 035
+      MPFEAT_035,*,4,CH      FEATURE CODE - 035
+      MPUNIT_035,*,8,CH      UNIT TYPE - 035
+      SKIP,8                 RESERVED
+    MPVOLENT_036,*,32        VOLUME ENTRY - 036
+      MPVOLSER_036,=,6,CH    VOLUME SERIAL - 036
+      MPRACK_036,*,6,CH      RACK NUMBER - 036
+      MPFEAT_036,*,4,CH      FEATURE CODE - 036
+      MPUNIT_036,*,8,CH      UNIT TYPE - 036
+      SKIP,8                 RESERVED
+    MPVOLENT_037,*,32        VOLUME ENTRY - 037
+      MPVOLSER_037,=,6,CH    VOLUME SERIAL - 037
+      MPRACK_037,*,6,CH      RACK NUMBER - 037
+      MPFEAT_037,*,4,CH      FEATURE CODE - 037
+      MPUNIT_037,*,8,CH      UNIT TYPE - 037
+      SKIP,8                 RESERVED
+    MPVOLENT_038,*,32        VOLUME ENTRY - 038
+      MPVOLSER_038,=,6,CH    VOLUME SERIAL - 038
+      MPRACK_038,*,6,CH      RACK NUMBER - 038
+      MPFEAT_038,*,4,CH      FEATURE CODE - 038
+      MPUNIT_038,*,8,CH      UNIT TYPE - 038
+      SKIP,8                 RESERVED
+    MPVOLENT_039,*,32        VOLUME ENTRY - 039
+      MPVOLSER_039,=,6,CH    VOLUME SERIAL - 039
+      MPRACK_039,*,6,CH      RACK NUMBER - 039
+      MPFEAT_039,*,4,CH      FEATURE CODE - 039
+      MPUNIT_039,*,8,CH      UNIT TYPE - 039
+      SKIP,8                 RESERVED
+    MPVOLENT_040,*,32        VOLUME ENTRY - 040
+      MPVOLSER_040,=,6,CH    VOLUME SERIAL - 040
+      MPRACK_040,*,6,CH      RACK NUMBER - 040
+      MPFEAT_040,*,4,CH      FEATURE CODE - 040
+      MPUNIT_040,*,8,CH      UNIT TYPE - 040
+      SKIP,8                 RESERVED
+    MPVOLENT_041,*,32        VOLUME ENTRY - 041
+      MPVOLSER_041,=,6,CH    VOLUME SERIAL - 041
+      MPRACK_041,*,6,CH      RACK NUMBER - 041
+      MPFEAT_041,*,4,CH      FEATURE CODE - 041
+      MPUNIT_041,*,8,CH      UNIT TYPE - 041
+      SKIP,8                 RESERVED
+    MPVOLENT_042,*,32        VOLUME ENTRY - 042
+      MPVOLSER_042,=,6,CH    VOLUME SERIAL - 042
+      MPRACK_042,*,6,CH      RACK NUMBER - 042
+      MPFEAT_042,*,4,CH      FEATURE CODE - 042
+      MPUNIT_042,*,8,CH      UNIT TYPE - 042
+      SKIP,8                 RESERVED
+    MPVOLENT_043,*,32        VOLUME ENTRY - 043
+      MPVOLSER_043,=,6,CH    VOLUME SERIAL - 043
+      MPRACK_043,*,6,CH      RACK NUMBER - 043
+      MPFEAT_043,*,4,CH      FEATURE CODE - 043
+      MPUNIT_043,*,8,CH      UNIT TYPE - 043
+      SKIP,8                 RESERVED
+    MPVOLENT_044,*,32        VOLUME ENTRY - 044
+      MPVOLSER_044,=,6,CH    VOLUME SERIAL - 044
+      MPRACK_044,*,6,CH      RACK NUMBER - 044
+      MPFEAT_044,*,4,CH      FEATURE CODE - 044
+      MPUNIT_044,*,8,CH      UNIT TYPE - 044
+      SKIP,8                 RESERVED
+    MPVOLENT_045,*,32        VOLUME ENTRY - 045
+      MPVOLSER_045,=,6,CH    VOLUME SERIAL - 045
+      MPRACK_045,*,6,CH      RACK NUMBER - 045
+      MPFEAT_045,*,4,CH      FEATURE CODE - 045
+      MPUNIT_045,*,8,CH      UNIT TYPE - 045
+      SKIP,8                 RESERVED
+    MPVOLENT_046,*,32        VOLUME ENTRY - 046
+      MPVOLSER_046,=,6,CH    VOLUME SERIAL - 046
+      MPRACK_046,*,6,CH      RACK NUMBER - 046
+      MPFEAT_046,*,4,CH      FEATURE CODE - 046
+      MPUNIT_046,*,8,CH      UNIT TYPE - 046
+      SKIP,8                 RESERVED
+    MPVOLENT_047,*,32        VOLUME ENTRY - 047
+      MPVOLSER_047,=,6,CH    VOLUME SERIAL - 047
+      MPRACK_047,*,6,CH      RACK NUMBER - 047
+      MPFEAT_047,*,4,CH      FEATURE CODE - 047
+      MPUNIT_047,*,8,CH      UNIT TYPE - 047
+      SKIP,8                 RESERVED
+    MPVOLENT_048,*,32        VOLUME ENTRY - 048
+      MPVOLSER_048,=,6,CH    VOLUME SERIAL - 048
+      MPRACK_048,*,6,CH      RACK NUMBER - 048
+      MPFEAT_048,*,4,CH      FEATURE CODE - 048
+      MPUNIT_048,*,8,CH      UNIT TYPE - 048
+      SKIP,8                 RESERVED
+    MPVOLENT_049,*,32        VOLUME ENTRY - 049
+      MPVOLSER_049,=,6,CH    VOLUME SERIAL - 049
+      MPRACK_049,*,6,CH      RACK NUMBER - 049
+      MPFEAT_049,*,4,CH      FEATURE CODE - 049
+      MPUNIT_049,*,8,CH      UNIT TYPE - 049
+      SKIP,8                 RESERVED
+    MPVOLENT_050,*,32        VOLUME ENTRY - 050
+      MPVOLSER_050,=,6,CH    VOLUME SERIAL - 050
+      MPRACK_050,*,6,CH      RACK NUMBER - 050
+      MPFEAT_050,*,4,CH      FEATURE CODE - 050
+      MPUNIT_050,*,8,CH      UNIT TYPE - 050
+      SKIP,8                 RESERVED
+    MPVOLENT_051,*,32        VOLUME ENTRY - 051
+      MPVOLSER_051,=,6,CH    VOLUME SERIAL - 051
+      MPRACK_051,*,6,CH      RACK NUMBER - 051
+      MPFEAT_051,*,4,CH      FEATURE CODE - 051
+      MPUNIT_051,*,8,CH      UNIT TYPE - 051
+      SKIP,8                 RESERVED
+    MPVOLENT_052,*,32        VOLUME ENTRY - 052
+      MPVOLSER_052,=,6,CH    VOLUME SERIAL - 052
+      MPRACK_052,*,6,CH      RACK NUMBER - 052
+      MPFEAT_052,*,4,CH      FEATURE CODE - 052
+      MPUNIT_052,*,8,CH      UNIT TYPE - 052
+      SKIP,8                 RESERVED
+    MPVOLENT_053,*,32        VOLUME ENTRY - 053
+      MPVOLSER_053,=,6,CH    VOLUME SERIAL - 053
+      MPRACK_053,*,6,CH      RACK NUMBER - 053
+      MPFEAT_053,*,4,CH      FEATURE CODE - 053
+      MPUNIT_053,*,8,CH      UNIT TYPE - 053
+      SKIP,8                 RESERVED
+    MPVOLENT_054,*,32        VOLUME ENTRY - 054
+      MPVOLSER_054,=,6,CH    VOLUME SERIAL - 054
+      MPRACK_054,*,6,CH      RACK NUMBER - 054
+      MPFEAT_054,*,4,CH      FEATURE CODE - 054
+      MPUNIT_054,*,8,CH      UNIT TYPE - 054
+      SKIP,8                 RESERVED
+    MPVOLENT_055,*,32        VOLUME ENTRY - 055
+      MPVOLSER_055,=,6,CH    VOLUME SERIAL - 055
+      MPRACK_055,*,6,CH      RACK NUMBER - 055
+      MPFEAT_055,*,4,CH      FEATURE CODE - 055
+      MPUNIT_055,*,8,CH      UNIT TYPE - 055
+      SKIP,8                 RESERVED
+    MPVOLENT_056,*,32        VOLUME ENTRY - 056
+      MPVOLSER_056,=,6,CH    VOLUME SERIAL - 056
+      MPRACK_056,*,6,CH      RACK NUMBER - 056
+      MPFEAT_056,*,4,CH      FEATURE CODE - 056
+      MPUNIT_056,*,8,CH      UNIT TYPE - 056
+      SKIP,8                 RESERVED
+    MPVOLENT_057,*,32        VOLUME ENTRY - 057
+      MPVOLSER_057,=,6,CH    VOLUME SERIAL - 057
+      MPRACK_057,*,6,CH      RACK NUMBER - 057
+      MPFEAT_057,*,4,CH      FEATURE CODE - 057
+      MPUNIT_057,*,8,CH      UNIT TYPE - 057
+      SKIP,8                 RESERVED
+    MPVOLENT_058,*,32        VOLUME ENTRY - 058
+      MPVOLSER_058,=,6,CH    VOLUME SERIAL - 058
+      MPRACK_058,*,6,CH      RACK NUMBER - 058
+      MPFEAT_058,*,4,CH      FEATURE CODE - 058
+      MPUNIT_058,*,8,CH      UNIT TYPE - 058
+      SKIP,8                 RESERVED
+    MPVOLENT_059,*,32        VOLUME ENTRY - 059
+      MPVOLSER_059,=,6,CH    VOLUME SERIAL - 059
+      MPRACK_059,*,6,CH      RACK NUMBER - 059
+      MPFEAT_059,*,4,CH      FEATURE CODE - 059
+      MPUNIT_059,*,8,CH      UNIT TYPE - 059
+      SKIP,8                 RESERVED
+    MPVOLENT_060,*,32        VOLUME ENTRY - 060
+      MPVOLSER_060,=,6,CH    VOLUME SERIAL - 060
+      MPRACK_060,*,6,CH      RACK NUMBER - 060
+      MPFEAT_060,*,4,CH      FEATURE CODE - 060
+      MPUNIT_060,*,8,CH      UNIT TYPE - 060
+      SKIP,8                 RESERVED
+    MPVOLENT_061,*,32        VOLUME ENTRY - 061
+      MPVOLSER_061,=,6,CH    VOLUME SERIAL - 061
+      MPRACK_061,*,6,CH      RACK NUMBER - 061
+      MPFEAT_061,*,4,CH      FEATURE CODE - 061
+      MPUNIT_061,*,8,CH      UNIT TYPE - 061
+      SKIP,8                 RESERVED
+    MPVOLENT_062,*,32        VOLUME ENTRY - 062
+      MPVOLSER_062,=,6,CH    VOLUME SERIAL - 062
+      MPRACK_062,*,6,CH      RACK NUMBER - 062
+      MPFEAT_062,*,4,CH      FEATURE CODE - 062
+      MPUNIT_062,*,8,CH      UNIT TYPE - 062
+      SKIP,8                 RESERVED
+    MPVOLENT_063,*,32        VOLUME ENTRY - 063
+      MPVOLSER_063,=,6,CH    VOLUME SERIAL - 063
+      MPRACK_063,*,6,CH      RACK NUMBER - 063
+      MPFEAT_063,*,4,CH      FEATURE CODE - 063
+      MPUNIT_063,*,8,CH      UNIT TYPE - 063
+      SKIP,8                 RESERVED
+    MPVOLENT_064,*,32        VOLUME ENTRY - 064
+      MPVOLSER_064,=,6,CH    VOLUME SERIAL - 064
+      MPRACK_064,*,6,CH      RACK NUMBER - 064
+      MPFEAT_064,*,4,CH      FEATURE CODE - 064
+      MPUNIT_064,*,8,CH      UNIT TYPE - 064
+      SKIP,8                 RESERVED
+    MPVOLENT_065,*,32        VOLUME ENTRY - 065
+      MPVOLSER_065,=,6,CH    VOLUME SERIAL - 065
+      MPRACK_065,*,6,CH      RACK NUMBER - 065
+      MPFEAT_065,*,4,CH      FEATURE CODE - 065
+      MPUNIT_065,*,8,CH      UNIT TYPE - 065
+      SKIP,8                 RESERVED
+    MPVOLENT_066,*,32        VOLUME ENTRY - 066
+      MPVOLSER_066,=,6,CH    VOLUME SERIAL - 066
+      MPRACK_066,*,6,CH      RACK NUMBER - 066
+      MPFEAT_066,*,4,CH      FEATURE CODE - 066
+      MPUNIT_066,*,8,CH      UNIT TYPE - 066
+      SKIP,8                 RESERVED
+    MPVOLENT_067,*,32        VOLUME ENTRY - 067
+      MPVOLSER_067,=,6,CH    VOLUME SERIAL - 067
+      MPRACK_067,*,6,CH      RACK NUMBER - 067
+      MPFEAT_067,*,4,CH      FEATURE CODE - 067
+      MPUNIT_067,*,8,CH      UNIT TYPE - 067
+      SKIP,8                 RESERVED
+    MPVOLENT_068,*,32        VOLUME ENTRY - 068
+      MPVOLSER_068,=,6,CH    VOLUME SERIAL - 068
+      MPRACK_068,*,6,CH      RACK NUMBER - 068
+      MPFEAT_068,*,4,CH      FEATURE CODE - 068
+      MPUNIT_068,*,8,CH      UNIT TYPE - 068
+      SKIP,8                 RESERVED
+    MPVOLENT_069,*,32        VOLUME ENTRY - 069
+      MPVOLSER_069,=,6,CH    VOLUME SERIAL - 069
+      MPRACK_069,*,6,CH      RACK NUMBER - 069
+      MPFEAT_069,*,4,CH      FEATURE CODE - 069
+      MPUNIT_069,*,8,CH      UNIT TYPE - 069
+      SKIP,8                 RESERVED
+    MPVOLENT_070,*,32        VOLUME ENTRY - 070
+      MPVOLSER_070,=,6,CH    VOLUME SERIAL - 070
+      MPRACK_070,*,6,CH      RACK NUMBER - 070
+      MPFEAT_070,*,4,CH      FEATURE CODE - 070
+      MPUNIT_070,*,8,CH      UNIT TYPE - 070
+      SKIP,8                 RESERVED
+    MPVOLENT_071,*,32        VOLUME ENTRY - 071
+      MPVOLSER_071,=,6,CH    VOLUME SERIAL - 071
+      MPRACK_071,*,6,CH      RACK NUMBER - 071
+      MPFEAT_071,*,4,CH      FEATURE CODE - 071
+      MPUNIT_071,*,8,CH      UNIT TYPE - 071
+      SKIP,8                 RESERVED
+    MPVOLENT_072,*,32        VOLUME ENTRY - 072
+      MPVOLSER_072,=,6,CH    VOLUME SERIAL - 072
+      MPRACK_072,*,6,CH      RACK NUMBER - 072
+      MPFEAT_072,*,4,CH      FEATURE CODE - 072
+      MPUNIT_072,*,8,CH      UNIT TYPE - 072
+      SKIP,8                 RESERVED
+    MPVOLENT_073,*,32        VOLUME ENTRY - 073
+      MPVOLSER_073,=,6,CH    VOLUME SERIAL - 073
+      MPRACK_073,*,6,CH      RACK NUMBER - 073
+      MPFEAT_073,*,4,CH      FEATURE CODE - 073
+      MPUNIT_073,*,8,CH      UNIT TYPE - 073
+      SKIP,8                 RESERVED
+    MPVOLENT_074,*,32        VOLUME ENTRY - 074
+      MPVOLSER_074,=,6,CH    VOLUME SERIAL - 074
+      MPRACK_074,*,6,CH      RACK NUMBER - 074
+      MPFEAT_074,*,4,CH      FEATURE CODE - 074
+      MPUNIT_074,*,8,CH      UNIT TYPE - 074
+      SKIP,8                 RESERVED
+    MPVOLENT_075,*,32        VOLUME ENTRY - 075
+      MPVOLSER_075,=,6,CH    VOLUME SERIAL - 075
+      MPRACK_075,*,6,CH      RACK NUMBER - 075
+      MPFEAT_075,*,4,CH      FEATURE CODE - 075
+      MPUNIT_075,*,8,CH      UNIT TYPE - 075
+      SKIP,8                 RESERVED
+    MPVOLENT_076,*,32        VOLUME ENTRY - 076
+      MPVOLSER_076,=,6,CH    VOLUME SERIAL - 076
+      MPRACK_076,*,6,CH      RACK NUMBER - 076
+      MPFEAT_076,*,4,CH      FEATURE CODE - 076
+      MPUNIT_076,*,8,CH      UNIT TYPE - 076
+      SKIP,8                 RESERVED
+    MPVOLENT_077,*,32        VOLUME ENTRY - 077
+      MPVOLSER_077,=,6,CH    VOLUME SERIAL - 077
+      MPRACK_077,*,6,CH      RACK NUMBER - 077
+      MPFEAT_077,*,4,CH      FEATURE CODE - 077
+      MPUNIT_077,*,8,CH      UNIT TYPE - 077
+      SKIP,8                 RESERVED
+    MPVOLENT_078,*,32        VOLUME ENTRY - 078
+      MPVOLSER_078,=,6,CH    VOLUME SERIAL - 078
+      MPRACK_078,*,6,CH      RACK NUMBER - 078
+      MPFEAT_078,*,4,CH      FEATURE CODE - 078
+      MPUNIT_078,*,8,CH      UNIT TYPE - 078
+      SKIP,8                 RESERVED
+    MPVOLENT_079,*,32        VOLUME ENTRY - 079
+      MPVOLSER_079,=,6,CH    VOLUME SERIAL - 079
+      MPRACK_079,*,6,CH      RACK NUMBER - 079
+      MPFEAT_079,*,4,CH      FEATURE CODE - 079
+      MPUNIT_079,*,8,CH      UNIT TYPE - 079
+      SKIP,8                 RESERVED
+    MPVOLENT_080,*,32        VOLUME ENTRY - 080
+      MPVOLSER_080,=,6,CH    VOLUME SERIAL - 080
+      MPRACK_080,*,6,CH      RACK NUMBER - 080
+      MPFEAT_080,*,4,CH      FEATURE CODE - 080
+      MPUNIT_080,*,8,CH      UNIT TYPE - 080
+      SKIP,8                 RESERVED
+    MPVOLENT_081,*,32        VOLUME ENTRY - 081
+      MPVOLSER_081,=,6,CH    VOLUME SERIAL - 081
+      MPRACK_081,*,6,CH      RACK NUMBER - 081
+      MPFEAT_081,*,4,CH      FEATURE CODE - 081
+      MPUNIT_081,*,8,CH      UNIT TYPE - 081
+      SKIP,8                 RESERVED
+    MPVOLENT_082,*,32        VOLUME ENTRY - 082
+      MPVOLSER_082,=,6,CH    VOLUME SERIAL - 082
+      MPRACK_082,*,6,CH      RACK NUMBER - 082
+      MPFEAT_082,*,4,CH      FEATURE CODE - 082
+      MPUNIT_082,*,8,CH      UNIT TYPE - 082
+      SKIP,8                 RESERVED
+    MPVOLENT_083,*,32        VOLUME ENTRY - 083
+      MPVOLSER_083,=,6,CH    VOLUME SERIAL - 083
+      MPRACK_083,*,6,CH      RACK NUMBER - 083
+      MPFEAT_083,*,4,CH      FEATURE CODE - 083
+      MPUNIT_083,*,8,CH      UNIT TYPE - 083
+      SKIP,8                 RESERVED
+    MPVOLENT_084,*,32        VOLUME ENTRY - 084
+      MPVOLSER_084,=,6,CH    VOLUME SERIAL - 084
+      MPRACK_084,*,6,CH      RACK NUMBER - 084
+      MPFEAT_084,*,4,CH      FEATURE CODE - 084
+      MPUNIT_084,*,8,CH      UNIT TYPE - 084
+      SKIP,8                 RESERVED
+    MPVOLENT_085,*,32        VOLUME ENTRY - 085
+      MPVOLSER_085,=,6,CH    VOLUME SERIAL - 085
+      MPRACK_085,*,6,CH      RACK NUMBER - 085
+      MPFEAT_085,*,4,CH      FEATURE CODE - 085
+      MPUNIT_085,*,8,CH      UNIT TYPE - 085
+      SKIP,8                 RESERVED
+    MPVOLENT_086,*,32        VOLUME ENTRY - 086
+      MPVOLSER_086,=,6,CH    VOLUME SERIAL - 086
+      MPRACK_086,*,6,CH      RACK NUMBER - 086
+      MPFEAT_086,*,4,CH      FEATURE CODE - 086
+      MPUNIT_086,*,8,CH      UNIT TYPE - 086
+      SKIP,8                 RESERVED
+    MPVOLENT_087,*,32        VOLUME ENTRY - 087
+      MPVOLSER_087,=,6,CH    VOLUME SERIAL - 087
+      MPRACK_087,*,6,CH      RACK NUMBER - 087
+      MPFEAT_087,*,4,CH      FEATURE CODE - 087
+      MPUNIT_087,*,8,CH      UNIT TYPE - 087
+      SKIP,8                 RESERVED
+    MPVOLENT_088,*,32        VOLUME ENTRY - 088
+      MPVOLSER_088,=,6,CH    VOLUME SERIAL - 088
+      MPRACK_088,*,6,CH      RACK NUMBER - 088
+      MPFEAT_088,*,4,CH      FEATURE CODE - 088
+      MPUNIT_088,*,8,CH      UNIT TYPE - 088
+      SKIP,8                 RESERVED
+    MPVOLENT_089,*,32        VOLUME ENTRY - 089
+      MPVOLSER_089,=,6,CH    VOLUME SERIAL - 089
+      MPRACK_089,*,6,CH      RACK NUMBER - 089
+      MPFEAT_089,*,4,CH      FEATURE CODE - 089
+      MPUNIT_089,*,8,CH      UNIT TYPE - 089
+      SKIP,8                 RESERVED
+    MPVOLENT_090,*,32        VOLUME ENTRY - 090
+      MPVOLSER_090,=,6,CH    VOLUME SERIAL - 090
+      MPRACK_090,*,6,CH      RACK NUMBER - 090
+      MPFEAT_090,*,4,CH      FEATURE CODE - 090
+      MPUNIT_090,*,8,CH      UNIT TYPE - 090
+      SKIP,8                 RESERVED
+    MPVOLENT_091,*,32        VOLUME ENTRY - 091
+      MPVOLSER_091,=,6,CH    VOLUME SERIAL - 091
+      MPRACK_091,*,6,CH      RACK NUMBER - 091
+      MPFEAT_091,*,4,CH      FEATURE CODE - 091
+      MPUNIT_091,*,8,CH      UNIT TYPE - 091
+      SKIP,8                 RESERVED
+    MPVOLENT_092,*,32        VOLUME ENTRY - 092
+      MPVOLSER_092,=,6,CH    VOLUME SERIAL - 092
+      MPRACK_092,*,6,CH      RACK NUMBER - 092
+      MPFEAT_092,*,4,CH      FEATURE CODE - 092
+      MPUNIT_092,*,8,CH      UNIT TYPE - 092
+      SKIP,8                 RESERVED
+    MPVOLENT_093,*,32        VOLUME ENTRY - 093
+      MPVOLSER_093,=,6,CH    VOLUME SERIAL - 093
+      MPRACK_093,*,6,CH      RACK NUMBER - 093
+      MPFEAT_093,*,4,CH      FEATURE CODE - 093
+      MPUNIT_093,*,8,CH      UNIT TYPE - 093
+      SKIP,8                 RESERVED
+    MPVOLENT_094,*,32        VOLUME ENTRY - 094
+      MPVOLSER_094,=,6,CH    VOLUME SERIAL - 094
+      MPRACK_094,*,6,CH      RACK NUMBER - 094
+      MPFEAT_094,*,4,CH      FEATURE CODE - 094
+      MPUNIT_094,*,8,CH      UNIT TYPE - 094
+      SKIP,8                 RESERVED
+    MPVOLENT_095,*,32        VOLUME ENTRY - 095
+      MPVOLSER_095,=,6,CH    VOLUME SERIAL - 095
+      MPRACK_095,*,6,CH      RACK NUMBER - 095
+      MPFEAT_095,*,4,CH      FEATURE CODE - 095
+      MPUNIT_095,*,8,CH      UNIT TYPE - 095
+      SKIP,8                 RESERVED
+    MPVOLENT_096,*,32        VOLUME ENTRY - 096
+      MPVOLSER_096,=,6,CH    VOLUME SERIAL - 096
+      MPRACK_096,*,6,CH      RACK NUMBER - 096
+      MPFEAT_096,*,4,CH      FEATURE CODE - 096
+      MPUNIT_096,*,8,CH      UNIT TYPE - 096
+      SKIP,8                 RESERVED
+    MPVOLENT_097,*,32        VOLUME ENTRY - 097
+      MPVOLSER_097,=,6,CH    VOLUME SERIAL - 097
+      MPRACK_097,*,6,CH      RACK NUMBER - 097
+      MPFEAT_097,*,4,CH      FEATURE CODE - 097
+      MPUNIT_097,*,8,CH      UNIT TYPE - 097
+      SKIP,8                 RESERVED
+    MPVOLENT_098,*,32        VOLUME ENTRY - 098
+      MPVOLSER_098,=,6,CH    VOLUME SERIAL - 098
+      MPRACK_098,*,6,CH      RACK NUMBER - 098
+      MPFEAT_098,*,4,CH      FEATURE CODE - 098
+      MPUNIT_098,*,8,CH      UNIT TYPE - 098
+      SKIP,8                 RESERVED
+    MPVOLENT_099,*,32        VOLUME ENTRY - 099
+      MPVOLSER_099,=,6,CH    VOLUME SERIAL - 099
+      MPRACK_099,*,6,CH      RACK NUMBER - 099
+      MPFEAT_099,*,4,CH      FEATURE CODE - 099
+      MPUNIT_099,*,8,CH      UNIT TYPE - 099
+      SKIP,8                 RESERVED
+    MPVOLENT_100,*,32        VOLUME ENTRY - 100
+      MPVOLSER_100,=,6,CH    VOLUME SERIAL - 100
+      MPRACK_100,*,6,CH      RACK NUMBER - 100
+      MPFEAT_100,*,4,CH      FEATURE CODE - 100
+      MPUNIT_100,*,8,CH      UNIT TYPE - 100
+      SKIP,8                 RESERVED
+    MPVOLENT_101,*,32        VOLUME ENTRY - 101
+      MPVOLSER_101,=,6,CH    VOLUME SERIAL - 101
+      MPRACK_101,*,6,CH      RACK NUMBER - 101
+      MPFEAT_101,*,4,CH      FEATURE CODE - 101
+      MPUNIT_101,*,8,CH      UNIT TYPE - 101
+      SKIP,8                 RESERVED
+    MPVOLENT_102,*,32        VOLUME ENTRY - 102
+      MPVOLSER_102,=,6,CH    VOLUME SERIAL - 102
+      MPRACK_102,*,6,CH      RACK NUMBER - 102
+      MPFEAT_102,*,4,CH      FEATURE CODE - 102
+      MPUNIT_102,*,8,CH      UNIT TYPE - 102
+      SKIP,8                 RESERVED
+    MPVOLENT_103,*,32        VOLUME ENTRY - 103
+      MPVOLSER_103,=,6,CH    VOLUME SERIAL - 103
+      MPRACK_103,*,6,CH      RACK NUMBER - 103
+      MPFEAT_103,*,4,CH      FEATURE CODE - 103
+      MPUNIT_103,*,8,CH      UNIT TYPE - 103
+      SKIP,8                 RESERVED
+    MPVOLENT_104,*,32        VOLUME ENTRY - 104
+      MPVOLSER_104,=,6,CH    VOLUME SERIAL - 104
+      MPRACK_104,*,6,CH      RACK NUMBER - 104
+      MPFEAT_104,*,4,CH      FEATURE CODE - 104
+      MPUNIT_104,*,8,CH      UNIT TYPE - 104
+      SKIP,8                 RESERVED
+    MPVOLENT_105,*,32        VOLUME ENTRY - 105
+      MPVOLSER_105,=,6,CH    VOLUME SERIAL - 105
+      MPRACK_105,*,6,CH      RACK NUMBER - 105
+      MPFEAT_105,*,4,CH      FEATURE CODE - 105
+      MPUNIT_105,*,8,CH      UNIT TYPE - 105
+      SKIP,8                 RESERVED
+    MPVOLENT_106,*,32        VOLUME ENTRY - 106
+      MPVOLSER_106,=,6,CH    VOLUME SERIAL - 106
+      MPRACK_106,*,6,CH      RACK NUMBER - 106
+      MPFEAT_106,*,4,CH      FEATURE CODE - 106
+      MPUNIT_106,*,8,CH      UNIT TYPE - 106
+      SKIP,8                 RESERVED
+    MPVOLENT_107,*,32        VOLUME ENTRY - 107
+      MPVOLSER_107,=,6,CH    VOLUME SERIAL - 107
+      MPRACK_107,*,6,CH      RACK NUMBER - 107
+      MPFEAT_107,*,4,CH      FEATURE CODE - 107
+      MPUNIT_107,*,8,CH      UNIT TYPE - 107
+      SKIP,8                 RESERVED
+    MPVOLENT_108,*,32        VOLUME ENTRY - 108
+      MPVOLSER_108,=,6,CH    VOLUME SERIAL - 108
+      MPRACK_108,*,6,CH      RACK NUMBER - 108
+      MPFEAT_108,*,4,CH      FEATURE CODE - 108
+      MPUNIT_108,*,8,CH      UNIT TYPE - 108
+      SKIP,8                 RESERVED
+    MPVOLENT_109,*,32        VOLUME ENTRY - 109
+      MPVOLSER_109,=,6,CH    VOLUME SERIAL - 109
+      MPRACK_109,*,6,CH      RACK NUMBER - 109
+      MPFEAT_109,*,4,CH      FEATURE CODE - 109
+      MPUNIT_109,*,8,CH      UNIT TYPE - 109
+      SKIP,8                 RESERVED
+    MPVOLENT_110,*,32        VOLUME ENTRY - 110
+      MPVOLSER_110,=,6,CH    VOLUME SERIAL - 110
+      MPRACK_110,*,6,CH      RACK NUMBER - 110
+      MPFEAT_110,*,4,CH      FEATURE CODE - 110
+      MPUNIT_110,*,8,CH      UNIT TYPE - 110
+      SKIP,8                 RESERVED
+    MPVOLENT_111,*,32        VOLUME ENTRY - 111
+      MPVOLSER_111,=,6,CH    VOLUME SERIAL - 111
+      MPRACK_111,*,6,CH      RACK NUMBER - 111
+      MPFEAT_111,*,4,CH      FEATURE CODE - 111
+      MPUNIT_111,*,8,CH      UNIT TYPE - 111
+      SKIP,8                 RESERVED
+    MPVOLENT_112,*,32        VOLUME ENTRY - 112
+      MPVOLSER_112,=,6,CH    VOLUME SERIAL - 112
+      MPRACK_112,*,6,CH      RACK NUMBER - 112
+      MPFEAT_112,*,4,CH      FEATURE CODE - 112
+      MPUNIT_112,*,8,CH      UNIT TYPE - 112
+      SKIP,8                 RESERVED
+    MPVOLENT_113,*,32        VOLUME ENTRY - 113
+      MPVOLSER_113,=,6,CH    VOLUME SERIAL - 113
+      MPRACK_113,*,6,CH      RACK NUMBER - 113
+      MPFEAT_113,*,4,CH      FEATURE CODE - 113
+      MPUNIT_113,*,8,CH      UNIT TYPE - 113
+      SKIP,8                 RESERVED
+    MPVOLENT_114,*,32        VOLUME ENTRY - 114
+      MPVOLSER_114,=,6,CH    VOLUME SERIAL - 114
+      MPRACK_114,*,6,CH      RACK NUMBER - 114
+      MPFEAT_114,*,4,CH      FEATURE CODE - 114
+      MPUNIT_114,*,8,CH      UNIT TYPE - 114
+      SKIP,8                 RESERVED
+    MPVOLENT_115,*,32        VOLUME ENTRY - 115
+      MPVOLSER_115,=,6,CH    VOLUME SERIAL - 115
+      MPRACK_115,*,6,CH      RACK NUMBER - 115
+      MPFEAT_115,*,4,CH      FEATURE CODE - 115
+      MPUNIT_115,*,8,CH      UNIT TYPE - 115
+      SKIP,8                 RESERVED
+    MPVOLENT_116,*,32        VOLUME ENTRY - 116
+      MPVOLSER_116,=,6,CH    VOLUME SERIAL - 116
+      MPRACK_116,*,6,CH      RACK NUMBER - 116
+      MPFEAT_116,*,4,CH      FEATURE CODE - 116
+      MPUNIT_116,*,8,CH      UNIT TYPE - 116
+      SKIP,8                 RESERVED
+    MPVOLENT_117,*,32        VOLUME ENTRY - 117
+      MPVOLSER_117,=,6,CH    VOLUME SERIAL - 117
+      MPRACK_117,*,6,CH      RACK NUMBER - 117
+      MPFEAT_117,*,4,CH      FEATURE CODE - 117
+      MPUNIT_117,*,8,CH      UNIT TYPE - 117
+      SKIP,8                 RESERVED
+    MPVOLENT_118,*,32        VOLUME ENTRY - 118
+      MPVOLSER_118,=,6,CH    VOLUME SERIAL - 118
+      MPRACK_118,*,6,CH      RACK NUMBER - 118
+      MPFEAT_118,*,4,CH      FEATURE CODE - 118
+      MPUNIT_118,*,8,CH      UNIT TYPE - 118
+      SKIP,8                 RESERVED
+    MPVOLENT_119,*,32        VOLUME ENTRY - 119
+      MPVOLSER_119,=,6,CH    VOLUME SERIAL - 119
+      MPRACK_119,*,6,CH      RACK NUMBER - 119
+      MPFEAT_119,*,4,CH      FEATURE CODE - 119
+      MPUNIT_119,*,8,CH      UNIT TYPE - 119
+      SKIP,8                 RESERVED
+    MPVOLENT_120,*,32        VOLUME ENTRY - 120
+      MPVOLSER_120,=,6,CH    VOLUME SERIAL - 120
+      MPRACK_120,*,6,CH      RACK NUMBER - 120
+      MPFEAT_120,*,4,CH      FEATURE CODE - 120
+      MPUNIT_120,*,8,CH      UNIT TYPE - 120
+      SKIP,8                 RESERVED
+    MPVOLENT_121,*,32        VOLUME ENTRY - 121
+      MPVOLSER_121,=,6,CH    VOLUME SERIAL - 121
+      MPRACK_121,*,6,CH      RACK NUMBER - 121
+      MPFEAT_121,*,4,CH      FEATURE CODE - 121
+      MPUNIT_121,*,8,CH      UNIT TYPE - 121
+      SKIP,8                 RESERVED
+    MPVOLENT_122,*,32        VOLUME ENTRY - 122
+      MPVOLSER_122,=,6,CH    VOLUME SERIAL - 122
+      MPRACK_122,*,6,CH      RACK NUMBER - 122
+      MPFEAT_122,*,4,CH      FEATURE CODE - 122
+      MPUNIT_122,*,8,CH      UNIT TYPE - 122
+      SKIP,8                 RESERVED
+    MPVOLENT_123,*,32        VOLUME ENTRY - 123
+      MPVOLSER_123,=,6,CH    VOLUME SERIAL - 123
+      MPRACK_123,*,6,CH      RACK NUMBER - 123
+      MPFEAT_123,*,4,CH      FEATURE CODE - 123
+      MPUNIT_123,*,8,CH      UNIT TYPE - 123
+      SKIP,8                 RESERVED
+    MPVOLENT_124,*,32        VOLUME ENTRY - 124
+      MPVOLSER_124,=,6,CH    VOLUME SERIAL - 124
+      MPRACK_124,*,6,CH      RACK NUMBER - 124
+      MPFEAT_124,*,4,CH      FEATURE CODE - 124
+      MPUNIT_124,*,8,CH      UNIT TYPE - 124
+      SKIP,8                 RESERVED
+    MPVOLENT_125,*,32        VOLUME ENTRY - 125
+      MPVOLSER_125,=,6,CH    VOLUME SERIAL - 125
+      MPRACK_125,*,6,CH      RACK NUMBER - 125
+      MPFEAT_125,*,4,CH      FEATURE CODE - 125
+      MPUNIT_125,*,8,CH      UNIT TYPE - 125
+      SKIP,8                 RESERVED
+    MPVOLENT_126,*,32        VOLUME ENTRY - 126
+      MPVOLSER_126,=,6,CH    VOLUME SERIAL - 126
+      MPRACK_126,*,6,CH      RACK NUMBER - 126
+      MPFEAT_126,*,4,CH      FEATURE CODE - 126
+      MPUNIT_126,*,8,CH      UNIT TYPE - 126
+      SKIP,8                 RESERVED
+    MPVOLENT_127,*,32        VOLUME ENTRY - 127
+      MPVOLSER_127,=,6,CH    VOLUME SERIAL - 127
+      MPRACK_127,*,6,CH      RACK NUMBER - 127
+      MPFEAT_127,*,4,CH      FEATURE CODE - 127
+      MPUNIT_127,*,8,CH      UNIT TYPE - 127
+      SKIP,8                 RESERVED
+    MPVOLENT_128,*,32        VOLUME ENTRY - 128
+      MPVOLSER_128,=,6,CH    VOLUME SERIAL - 128
+      MPRACK_128,*,6,CH      RACK NUMBER - 128
+      MPFEAT_128,*,4,CH      FEATURE CODE - 128
+      MPUNIT_128,*,8,CH      UNIT TYPE - 128
+      SKIP,8                 RESERVED
+    MPVOLENT_129,*,32        VOLUME ENTRY - 129
+      MPVOLSER_129,=,6,CH    VOLUME SERIAL - 129
+      MPRACK_129,*,6,CH      RACK NUMBER - 129
+      MPFEAT_129,*,4,CH      FEATURE CODE - 129
+      MPUNIT_129,*,8,CH      UNIT TYPE - 129
+      SKIP,8                 RESERVED
+    MPVOLENT_130,*,32        VOLUME ENTRY - 130
+      MPVOLSER_130,=,6,CH    VOLUME SERIAL - 130
+      MPRACK_130,*,6,CH      RACK NUMBER - 130
+      MPFEAT_130,*,4,CH      FEATURE CODE - 130
+      MPUNIT_130,*,8,CH      UNIT TYPE - 130
+      SKIP,8                 RESERVED
+    MPVOLENT_131,*,32        VOLUME ENTRY - 131
+      MPVOLSER_131,=,6,CH    VOLUME SERIAL - 131
+      MPRACK_131,*,6,CH      RACK NUMBER - 131
+      MPFEAT_131,*,4,CH      FEATURE CODE - 131
+      MPUNIT_131,*,8,CH      UNIT TYPE - 131
+      SKIP,8                 RESERVED
+    MPVOLENT_132,*,32        VOLUME ENTRY - 132
+      MPVOLSER_132,=,6,CH    VOLUME SERIAL - 132
+      MPRACK_132,*,6,CH      RACK NUMBER - 132
+      MPFEAT_132,*,4,CH      FEATURE CODE - 132
+      MPUNIT_132,*,8,CH      UNIT TYPE - 132
+      SKIP,8                 RESERVED
+    MPVOLENT_133,*,32        VOLUME ENTRY - 133
+      MPVOLSER_133,=,6,CH    VOLUME SERIAL - 133
+      MPRACK_133,*,6,CH      RACK NUMBER - 133
+      MPFEAT_133,*,4,CH      FEATURE CODE - 133
+      MPUNIT_133,*,8,CH      UNIT TYPE - 133
+      SKIP,8                 RESERVED
+    MPVOLENT_134,*,32        VOLUME ENTRY - 134
+      MPVOLSER_134,=,6,CH    VOLUME SERIAL - 134
+      MPRACK_134,*,6,CH      RACK NUMBER - 134
+      MPFEAT_134,*,4,CH      FEATURE CODE - 134
+      MPUNIT_134,*,8,CH      UNIT TYPE - 134
+      SKIP,8                 RESERVED
+    MPVOLENT_135,*,32        VOLUME ENTRY - 135
+      MPVOLSER_135,=,6,CH    VOLUME SERIAL - 135
+      MPRACK_135,*,6,CH      RACK NUMBER - 135
+      MPFEAT_135,*,4,CH      FEATURE CODE - 135
+      MPUNIT_135,*,8,CH      UNIT TYPE - 135
+      SKIP,8                 RESERVED
+    MPVOLENT_136,*,32        VOLUME ENTRY - 136
+      MPVOLSER_136,=,6,CH    VOLUME SERIAL - 136
+      MPRACK_136,*,6,CH      RACK NUMBER - 136
+      MPFEAT_136,*,4,CH      FEATURE CODE - 136
+      MPUNIT_136,*,8,CH      UNIT TYPE - 136
+      SKIP,8                 RESERVED
+    MPVOLENT_137,*,32        VOLUME ENTRY - 137
+      MPVOLSER_137,=,6,CH    VOLUME SERIAL - 137
+      MPRACK_137,*,6,CH      RACK NUMBER - 137
+      MPFEAT_137,*,4,CH      FEATURE CODE - 137
+      MPUNIT_137,*,8,CH      UNIT TYPE - 137
+      SKIP,8                 RESERVED
+    MPVOLENT_138,*,32        VOLUME ENTRY - 138
+      MPVOLSER_138,=,6,CH    VOLUME SERIAL - 138
+      MPRACK_138,*,6,CH      RACK NUMBER - 138
+      MPFEAT_138,*,4,CH      FEATURE CODE - 138
+      MPUNIT_138,*,8,CH      UNIT TYPE - 138
+      SKIP,8                 RESERVED
+    MPVOLENT_139,*,32        VOLUME ENTRY - 139
+      MPVOLSER_139,=,6,CH    VOLUME SERIAL - 139
+      MPRACK_139,*,6,CH      RACK NUMBER - 139
+      MPFEAT_139,*,4,CH      FEATURE CODE - 139
+      MPUNIT_139,*,8,CH      UNIT TYPE - 139
+      SKIP,8                 RESERVED
+    MPVOLENT_140,*,32        VOLUME ENTRY - 140
+      MPVOLSER_140,=,6,CH    VOLUME SERIAL - 140
+      MPRACK_140,*,6,CH      RACK NUMBER - 140
+      MPFEAT_140,*,4,CH      FEATURE CODE - 140
+      MPUNIT_140,*,8,CH      UNIT TYPE - 140
+      SKIP,8                 RESERVED
+    MPVOLENT_141,*,32        VOLUME ENTRY - 141
+      MPVOLSER_141,=,6,CH    VOLUME SERIAL - 141
+      MPRACK_141,*,6,CH      RACK NUMBER - 141
+      MPFEAT_141,*,4,CH      FEATURE CODE - 141
+      MPUNIT_141,*,8,CH      UNIT TYPE - 141
+      SKIP,8                 RESERVED
+    MPVOLENT_142,*,32        VOLUME ENTRY - 142
+      MPVOLSER_142,=,6,CH    VOLUME SERIAL - 142
+      MPRACK_142,*,6,CH      RACK NUMBER - 142
+      MPFEAT_142,*,4,CH      FEATURE CODE - 142
+      MPUNIT_142,*,8,CH      UNIT TYPE - 142
+      SKIP,8                 RESERVED
+    MPVOLENT_143,*,32        VOLUME ENTRY - 143
+      MPVOLSER_143,=,6,CH    VOLUME SERIAL - 143
+      MPRACK_143,*,6,CH      RACK NUMBER - 143
+      MPFEAT_143,*,4,CH      FEATURE CODE - 143
+      MPUNIT_143,*,8,CH      UNIT TYPE - 143
+      SKIP,8                 RESERVED
+    MPVOLENT_144,*,32        VOLUME ENTRY - 144
+      MPVOLSER_144,=,6,CH    VOLUME SERIAL - 144
+      MPRACK_144,*,6,CH      RACK NUMBER - 144
+      MPFEAT_144,*,4,CH      FEATURE CODE - 144
+      MPUNIT_144,*,8,CH      UNIT TYPE - 144
+      SKIP,8                 RESERVED
+    MPVOLENT_145,*,32        VOLUME ENTRY - 145
+      MPVOLSER_145,=,6,CH    VOLUME SERIAL - 145
+      MPRACK_145,*,6,CH      RACK NUMBER - 145
+      MPFEAT_145,*,4,CH      FEATURE CODE - 145
+      MPUNIT_145,*,8,CH      UNIT TYPE - 145
+      SKIP,8                 RESERVED
+    MPVOLENT_146,*,32        VOLUME ENTRY - 146
+      MPVOLSER_146,=,6,CH    VOLUME SERIAL - 146
+      MPRACK_146,*,6,CH      RACK NUMBER - 146
+      MPFEAT_146,*,4,CH      FEATURE CODE - 146
+      MPUNIT_146,*,8,CH      UNIT TYPE - 146
+      SKIP,8                 RESERVED
+    MPVOLENT_147,*,32        VOLUME ENTRY - 147
+      MPVOLSER_147,=,6,CH    VOLUME SERIAL - 147
+      MPRACK_147,*,6,CH      RACK NUMBER - 147
+      MPFEAT_147,*,4,CH      FEATURE CODE - 147
+      MPUNIT_147,*,8,CH      UNIT TYPE - 147
+      SKIP,8                 RESERVED
+    MPVOLENT_148,*,32        VOLUME ENTRY - 148
+      MPVOLSER_148,=,6,CH    VOLUME SERIAL - 148
+      MPRACK_148,*,6,CH      RACK NUMBER - 148
+      MPFEAT_148,*,4,CH      FEATURE CODE - 148
+      MPUNIT_148,*,8,CH      UNIT TYPE - 148
+      SKIP,8                 RESERVED
+    MPVOLENT_149,*,32        VOLUME ENTRY - 149
+      MPVOLSER_149,=,6,CH    VOLUME SERIAL - 149
+      MPRACK_149,*,6,CH      RACK NUMBER - 149
+      MPFEAT_149,*,4,CH      FEATURE CODE - 149
+      MPUNIT_149,*,8,CH      UNIT TYPE - 149
+      SKIP,8                 RESERVED
+    MPVOLENT_150,*,32        VOLUME ENTRY - 150
+      MPVOLSER_150,=,6,CH    VOLUME SERIAL - 150
+      MPRACK_150,*,6,CH      RACK NUMBER - 150
+      MPFEAT_150,*,4,CH      FEATURE CODE - 150
+      MPUNIT_150,*,8,CH      UNIT TYPE - 150
+      SKIP,8                 RESERVED
+    MPVOLENT_151,*,32        VOLUME ENTRY - 151
+      MPVOLSER_151,=,6,CH    VOLUME SERIAL - 151
+      MPRACK_151,*,6,CH      RACK NUMBER - 151
+      MPFEAT_151,*,4,CH      FEATURE CODE - 151
+      MPUNIT_151,*,8,CH      UNIT TYPE - 151
+      SKIP,8                 RESERVED
+    MPVOLENT_152,*,32        VOLUME ENTRY - 152
+      MPVOLSER_152,=,6,CH    VOLUME SERIAL - 152
+      MPRACK_152,*,6,CH      RACK NUMBER - 152
+      MPFEAT_152,*,4,CH      FEATURE CODE - 152
+      MPUNIT_152,*,8,CH      UNIT TYPE - 152
+      SKIP,8                 RESERVED
+    MPVOLENT_153,*,32        VOLUME ENTRY - 153
+      MPVOLSER_153,=,6,CH    VOLUME SERIAL - 153
+      MPRACK_153,*,6,CH      RACK NUMBER - 153
+      MPFEAT_153,*,4,CH      FEATURE CODE - 153
+      MPUNIT_153,*,8,CH      UNIT TYPE - 153
+      SKIP,8                 RESERVED
+    MPVOLENT_154,*,32        VOLUME ENTRY - 154
+      MPVOLSER_154,=,6,CH    VOLUME SERIAL - 154
+      MPRACK_154,*,6,CH      RACK NUMBER - 154
+      MPFEAT_154,*,4,CH      FEATURE CODE - 154
+      MPUNIT_154,*,8,CH      UNIT TYPE - 154
+      SKIP,8                 RESERVED
+    MPVOLENT_155,*,32        VOLUME ENTRY - 155
+      MPVOLSER_155,=,6,CH    VOLUME SERIAL - 155
+      MPRACK_155,*,6,CH      RACK NUMBER - 155
+      MPFEAT_155,*,4,CH      FEATURE CODE - 155
+      MPUNIT_155,*,8,CH      UNIT TYPE - 155
+      SKIP,8                 RESERVED
+    MPVOLENT_156,*,32        VOLUME ENTRY - 156
+      MPVOLSER_156,=,6,CH    VOLUME SERIAL - 156
+      MPRACK_156,*,6,CH      RACK NUMBER - 156
+      MPFEAT_156,*,4,CH      FEATURE CODE - 156
+      MPUNIT_156,*,8,CH      UNIT TYPE - 156
+      SKIP,8                 RESERVED
+    MPVOLENT_157,*,32        VOLUME ENTRY - 157
+      MPVOLSER_157,=,6,CH    VOLUME SERIAL - 157
+      MPRACK_157,*,6,CH      RACK NUMBER - 157
+      MPFEAT_157,*,4,CH      FEATURE CODE - 157
+      MPUNIT_157,*,8,CH      UNIT TYPE - 157
+      SKIP,8                 RESERVED
+    MPVOLENT_158,*,32        VOLUME ENTRY - 158
+      MPVOLSER_158,=,6,CH    VOLUME SERIAL - 158
+      MPRACK_158,*,6,CH      RACK NUMBER - 158
+      MPFEAT_158,*,4,CH      FEATURE CODE - 158
+      MPUNIT_158,*,8,CH      UNIT TYPE - 158
+      SKIP,8                 RESERVED
+    MPVOLENT_159,*,32        VOLUME ENTRY - 159
+      MPVOLSER_159,=,6,CH    VOLUME SERIAL - 159
+      MPRACK_159,*,6,CH      RACK NUMBER - 159
+      MPFEAT_159,*,4,CH      FEATURE CODE - 159
+      MPUNIT_159,*,8,CH      UNIT TYPE - 159
+      SKIP,8                 RESERVED
+    MPVOLENT_160,*,32        VOLUME ENTRY - 160
+      MPVOLSER_160,=,6,CH    VOLUME SERIAL - 160
+      MPRACK_160,*,6,CH      RACK NUMBER - 160
+      MPFEAT_160,*,4,CH      FEATURE CODE - 160
+      MPUNIT_160,*,8,CH      UNIT TYPE - 160
+      SKIP,8                 RESERVED
+    MPVOLENT_161,*,32        VOLUME ENTRY - 161
+      MPVOLSER_161,=,6,CH    VOLUME SERIAL - 161
+      MPRACK_161,*,6,CH      RACK NUMBER - 161
+      MPFEAT_161,*,4,CH      FEATURE CODE - 161
+      MPUNIT_161,*,8,CH      UNIT TYPE - 161
+      SKIP,8                 RESERVED
+    MPVOLENT_162,*,32        VOLUME ENTRY - 162
+      MPVOLSER_162,=,6,CH    VOLUME SERIAL - 162
+      MPRACK_162,*,6,CH      RACK NUMBER - 162
+      MPFEAT_162,*,4,CH      FEATURE CODE - 162
+      MPUNIT_162,*,8,CH      UNIT TYPE - 162
+      SKIP,8                 RESERVED
+    MPVOLENT_163,*,32        VOLUME ENTRY - 163
+      MPVOLSER_163,=,6,CH    VOLUME SERIAL - 163
+      MPRACK_163,*,6,CH      RACK NUMBER - 163
+      MPFEAT_163,*,4,CH      FEATURE CODE - 163
+      MPUNIT_163,*,8,CH      UNIT TYPE - 163
+      SKIP,8                 RESERVED
+    MPVOLENT_164,*,32        VOLUME ENTRY - 164
+      MPVOLSER_164,=,6,CH    VOLUME SERIAL - 164
+      MPRACK_164,*,6,CH      RACK NUMBER - 164
+      MPFEAT_164,*,4,CH      FEATURE CODE - 164
+      MPUNIT_164,*,8,CH      UNIT TYPE - 164
+      SKIP,8                 RESERVED
+    MPVOLENT_165,*,32        VOLUME ENTRY - 165
+      MPVOLSER_165,=,6,CH    VOLUME SERIAL - 165
+      MPRACK_165,*,6,CH      RACK NUMBER - 165
+      MPFEAT_165,*,4,CH      FEATURE CODE - 165
+      MPUNIT_165,*,8,CH      UNIT TYPE - 165
+      SKIP,8                 RESERVED
+    MPVOLENT_166,*,32        VOLUME ENTRY - 166
+      MPVOLSER_166,=,6,CH    VOLUME SERIAL - 166
+      MPRACK_166,*,6,CH      RACK NUMBER - 166
+      MPFEAT_166,*,4,CH      FEATURE CODE - 166
+      MPUNIT_166,*,8,CH      UNIT TYPE - 166
+      SKIP,8                 RESERVED
+    MPVOLENT_167,*,32        VOLUME ENTRY - 167
+      MPVOLSER_167,=,6,CH    VOLUME SERIAL - 167
+      MPRACK_167,*,6,CH      RACK NUMBER - 167
+      MPFEAT_167,*,4,CH      FEATURE CODE - 167
+      MPUNIT_167,*,8,CH      UNIT TYPE - 167
+      SKIP,8                 RESERVED
+    MPVOLENT_168,*,32        VOLUME ENTRY - 168
+      MPVOLSER_168,=,6,CH    VOLUME SERIAL - 168
+      MPRACK_168,*,6,CH      RACK NUMBER - 168
+      MPFEAT_168,*,4,CH      FEATURE CODE - 168
+      MPUNIT_168,*,8,CH      UNIT TYPE - 168
+      SKIP,8                 RESERVED
+    MPVOLENT_169,*,32        VOLUME ENTRY - 169
+      MPVOLSER_169,=,6,CH    VOLUME SERIAL - 169
+      MPRACK_169,*,6,CH      RACK NUMBER - 169
+      MPFEAT_169,*,4,CH      FEATURE CODE - 169
+      MPUNIT_169,*,8,CH      UNIT TYPE - 169
+      SKIP,8                 RESERVED
+    MPVOLENT_170,*,32        VOLUME ENTRY - 170
+      MPVOLSER_170,=,6,CH    VOLUME SERIAL - 170
+      MPRACK_170,*,6,CH      RACK NUMBER - 170
+      MPFEAT_170,*,4,CH      FEATURE CODE - 170
+      MPUNIT_170,*,8,CH      UNIT TYPE - 170
+      SKIP,8                 RESERVED
+    MPVOLENT_171,*,32        VOLUME ENTRY - 171
+      MPVOLSER_171,=,6,CH    VOLUME SERIAL - 171
+      MPRACK_171,*,6,CH      RACK NUMBER - 171
+      MPFEAT_171,*,4,CH      FEATURE CODE - 171
+      MPUNIT_171,*,8,CH      UNIT TYPE - 171
+      SKIP,8                 RESERVED
+    MPVOLENT_172,*,32        VOLUME ENTRY - 172
+      MPVOLSER_172,=,6,CH    VOLUME SERIAL - 172
+      MPRACK_172,*,6,CH      RACK NUMBER - 172
+      MPFEAT_172,*,4,CH      FEATURE CODE - 172
+      MPUNIT_172,*,8,CH      UNIT TYPE - 172
+      SKIP,8                 RESERVED
+    MPVOLENT_173,*,32        VOLUME ENTRY - 173
+      MPVOLSER_173,=,6,CH    VOLUME SERIAL - 173
+      MPRACK_173,*,6,CH      RACK NUMBER - 173
+      MPFEAT_173,*,4,CH      FEATURE CODE - 173
+      MPUNIT_173,*,8,CH      UNIT TYPE - 173
+      SKIP,8                 RESERVED
+    MPVOLENT_174,*,32        VOLUME ENTRY - 174
+      MPVOLSER_174,=,6,CH    VOLUME SERIAL - 174
+      MPRACK_174,*,6,CH      RACK NUMBER - 174
+      MPFEAT_174,*,4,CH      FEATURE CODE - 174
+      MPUNIT_174,*,8,CH      UNIT TYPE - 174
+      SKIP,8                 RESERVED
+    MPVOLENT_175,*,32        VOLUME ENTRY - 175
+      MPVOLSER_175,=,6,CH    VOLUME SERIAL - 175
+      MPRACK_175,*,6,CH      RACK NUMBER - 175
+      MPFEAT_175,*,4,CH      FEATURE CODE - 175
+      MPUNIT_175,*,8,CH      UNIT TYPE - 175
+      SKIP,8                 RESERVED
+    MPVOLENT_176,*,32        VOLUME ENTRY - 176
+      MPVOLSER_176,=,6,CH    VOLUME SERIAL - 176
+      MPRACK_176,*,6,CH      RACK NUMBER - 176
+      MPFEAT_176,*,4,CH      FEATURE CODE - 176
+      MPUNIT_176,*,8,CH      UNIT TYPE - 176
+      SKIP,8                 RESERVED
+    MPVOLENT_177,*,32        VOLUME ENTRY - 177
+      MPVOLSER_177,=,6,CH    VOLUME SERIAL - 177
+      MPRACK_177,*,6,CH      RACK NUMBER - 177
+      MPFEAT_177,*,4,CH      FEATURE CODE - 177
+      MPUNIT_177,*,8,CH      UNIT TYPE - 177
+      SKIP,8                 RESERVED
+    MPVOLENT_178,*,32        VOLUME ENTRY - 178
+      MPVOLSER_178,=,6,CH    VOLUME SERIAL - 178
+      MPRACK_178,*,6,CH      RACK NUMBER - 178
+      MPFEAT_178,*,4,CH      FEATURE CODE - 178
+      MPUNIT_178,*,8,CH      UNIT TYPE - 178
+      SKIP,8                 RESERVED
+    MPVOLENT_179,*,32        VOLUME ENTRY - 179
+      MPVOLSER_179,=,6,CH    VOLUME SERIAL - 179
+      MPRACK_179,*,6,CH      RACK NUMBER - 179
+      MPFEAT_179,*,4,CH      FEATURE CODE - 179
+      MPUNIT_179,*,8,CH      UNIT TYPE - 179
+      SKIP,8                 RESERVED
+    MPVOLENT_180,*,32        VOLUME ENTRY - 180
+      MPVOLSER_180,=,6,CH    VOLUME SERIAL - 180
+      MPRACK_180,*,6,CH      RACK NUMBER - 180
+      MPFEAT_180,*,4,CH      FEATURE CODE - 180
+      MPUNIT_180,*,8,CH      UNIT TYPE - 180
+      SKIP,8                 RESERVED
+    MPVOLENT_181,*,32        VOLUME ENTRY - 181
+      MPVOLSER_181,=,6,CH    VOLUME SERIAL - 181
+      MPRACK_181,*,6,CH      RACK NUMBER - 181
+      MPFEAT_181,*,4,CH      FEATURE CODE - 181
+      MPUNIT_181,*,8,CH      UNIT TYPE - 181
+      SKIP,8                 RESERVED
+    MPVOLENT_182,*,32        VOLUME ENTRY - 182
+      MPVOLSER_182,=,6,CH    VOLUME SERIAL - 182
+      MPRACK_182,*,6,CH      RACK NUMBER - 182
+      MPFEAT_182,*,4,CH      FEATURE CODE - 182
+      MPUNIT_182,*,8,CH      UNIT TYPE - 182
+      SKIP,8                 RESERVED
+    MPVOLENT_183,*,32        VOLUME ENTRY - 183
+      MPVOLSER_183,=,6,CH    VOLUME SERIAL - 183
+      MPRACK_183,*,6,CH      RACK NUMBER - 183
+      MPFEAT_183,*,4,CH      FEATURE CODE - 183
+      MPUNIT_183,*,8,CH      UNIT TYPE - 183
+      SKIP,8                 RESERVED
+    MPVOLENT_184,*,32        VOLUME ENTRY - 184
+      MPVOLSER_184,=,6,CH    VOLUME SERIAL - 184
+      MPRACK_184,*,6,CH      RACK NUMBER - 184
+      MPFEAT_184,*,4,CH      FEATURE CODE - 184
+      MPUNIT_184,*,8,CH      UNIT TYPE - 184
+      SKIP,8                 RESERVED
+    MPVOLENT_185,*,32        VOLUME ENTRY - 185
+      MPVOLSER_185,=,6,CH    VOLUME SERIAL - 185
+      MPRACK_185,*,6,CH      RACK NUMBER - 185
+      MPFEAT_185,*,4,CH      FEATURE CODE - 185
+      MPUNIT_185,*,8,CH      UNIT TYPE - 185
+      SKIP,8                 RESERVED
+    MPVOLENT_186,*,32        VOLUME ENTRY - 186
+      MPVOLSER_186,=,6,CH    VOLUME SERIAL - 186
+      MPRACK_186,*,6,CH      RACK NUMBER - 186
+      MPFEAT_186,*,4,CH      FEATURE CODE - 186
+      MPUNIT_186,*,8,CH      UNIT TYPE - 186
+      SKIP,8                 RESERVED
+    MPVOLENT_187,*,32        VOLUME ENTRY - 187
+      MPVOLSER_187,=,6,CH    VOLUME SERIAL - 187
+      MPRACK_187,*,6,CH      RACK NUMBER - 187
+      MPFEAT_187,*,4,CH      FEATURE CODE - 187
+      MPUNIT_187,*,8,CH      UNIT TYPE - 187
+      SKIP,8                 RESERVED
+    MPVOLENT_188,*,32        VOLUME ENTRY - 188
+      MPVOLSER_188,=,6,CH    VOLUME SERIAL - 188
+      MPRACK_188,*,6,CH      RACK NUMBER - 188
+      MPFEAT_188,*,4,CH      FEATURE CODE - 188
+      MPUNIT_188,*,8,CH      UNIT TYPE - 188
+      SKIP,8                 RESERVED
+    MPVOLENT_189,*,32        VOLUME ENTRY - 189
+      MPVOLSER_189,=,6,CH    VOLUME SERIAL - 189
+      MPRACK_189,*,6,CH      RACK NUMBER - 189
+      MPFEAT_189,*,4,CH      FEATURE CODE - 189
+      MPUNIT_189,*,8,CH      UNIT TYPE - 189
+      SKIP,8                 RESERVED
+    MPVOLENT_190,*,32        VOLUME ENTRY - 190
+      MPVOLSER_190,=,6,CH    VOLUME SERIAL - 190
+      MPRACK_190,*,6,CH      RACK NUMBER - 190
+      MPFEAT_190,*,4,CH      FEATURE CODE - 190
+      MPUNIT_190,*,8,CH      UNIT TYPE - 190
+      SKIP,8                 RESERVED
+    MPVOLENT_191,*,32        VOLUME ENTRY - 191
+      MPVOLSER_191,=,6,CH    VOLUME SERIAL - 191
+      MPRACK_191,*,6,CH      RACK NUMBER - 191
+      MPFEAT_191,*,4,CH      FEATURE CODE - 191
+      MPUNIT_191,*,8,CH      UNIT TYPE - 191
+      SKIP,8                 RESERVED
+    MPVOLENT_192,*,32        VOLUME ENTRY - 192
+      MPVOLSER_192,=,6,CH    VOLUME SERIAL - 192
+      MPRACK_192,*,6,CH      RACK NUMBER - 192
+      MPFEAT_192,*,4,CH      FEATURE CODE - 192
+      MPUNIT_192,*,8,CH      UNIT TYPE - 192
+      SKIP,8                 RESERVED
+    MPVOLENT_193,*,32        VOLUME ENTRY - 193
+      MPVOLSER_193,=,6,CH    VOLUME SERIAL - 193
+      MPRACK_193,*,6,CH      RACK NUMBER - 193
+      MPFEAT_193,*,4,CH      FEATURE CODE - 193
+      MPUNIT_193,*,8,CH      UNIT TYPE - 193
+      SKIP,8                 RESERVED
+    MPVOLENT_194,*,32        VOLUME ENTRY - 194
+      MPVOLSER_194,=,6,CH    VOLUME SERIAL - 194
+      MPRACK_194,*,6,CH      RACK NUMBER - 194
+      MPFEAT_194,*,4,CH      FEATURE CODE - 194
+      MPUNIT_194,*,8,CH      UNIT TYPE - 194
+      SKIP,8                 RESERVED
+    MPVOLENT_195,*,32        VOLUME ENTRY - 195
+      MPVOLSER_195,=,6,CH    VOLUME SERIAL - 195
+      MPRACK_195,*,6,CH      RACK NUMBER - 195
+      MPFEAT_195,*,4,CH      FEATURE CODE - 195
+      MPUNIT_195,*,8,CH      UNIT TYPE - 195
+      SKIP,8                 RESERVED
+    MPVOLENT_196,*,32        VOLUME ENTRY - 196
+      MPVOLSER_196,=,6,CH    VOLUME SERIAL - 196
+      MPRACK_196,*,6,CH      RACK NUMBER - 196
+      MPFEAT_196,*,4,CH      FEATURE CODE - 196
+      MPUNIT_196,*,8,CH      UNIT TYPE - 196
+      SKIP,8                 RESERVED
+    MPVOLENT_197,*,32        VOLUME ENTRY - 197
+      MPVOLSER_197,=,6,CH    VOLUME SERIAL - 197
+      MPRACK_197,*,6,CH      RACK NUMBER - 197
+      MPFEAT_197,*,4,CH      FEATURE CODE - 197
+      MPUNIT_197,*,8,CH      UNIT TYPE - 197
+      SKIP,8                 RESERVED
+    MPVOLENT_198,*,32        VOLUME ENTRY - 198
+      MPVOLSER_198,=,6,CH    VOLUME SERIAL - 198
+      MPRACK_198,*,6,CH      RACK NUMBER - 198
+      MPFEAT_198,*,4,CH      FEATURE CODE - 198
+      MPUNIT_198,*,8,CH      UNIT TYPE - 198
+      SKIP,8                 RESERVED
+    MPVOLENT_199,*,32        VOLUME ENTRY - 199
+      MPVOLSER_199,=,6,CH    VOLUME SERIAL - 199
+      MPRACK_199,*,6,CH      RACK NUMBER - 199
+      MPFEAT_199,*,4,CH      FEATURE CODE - 199
+      MPUNIT_199,*,8,CH      UNIT TYPE - 199
+      SKIP,8                 RESERVED
+    MPVOLENT_200,*,32        VOLUME ENTRY - 200
+      MPVOLSER_200,=,6,CH    VOLUME SERIAL - 200
+      MPRACK_200,*,6,CH      RACK NUMBER - 200
+      MPFEAT_200,*,4,CH      FEATURE CODE - 200
+      MPUNIT_200,*,8,CH      UNIT TYPE - 200
+      SKIP,8                 RESERVED
+    MPVOLENT_201,*,32        VOLUME ENTRY - 201
+      MPVOLSER_201,=,6,CH    VOLUME SERIAL - 201
+      MPRACK_201,*,6,CH      RACK NUMBER - 201
+      MPFEAT_201,*,4,CH      FEATURE CODE - 201
+      MPUNIT_201,*,8,CH      UNIT TYPE - 201
+      SKIP,8                 RESERVED
+    MPVOLENT_202,*,32        VOLUME ENTRY - 202
+      MPVOLSER_202,=,6,CH    VOLUME SERIAL - 202
+      MPRACK_202,*,6,CH      RACK NUMBER - 202
+      MPFEAT_202,*,4,CH      FEATURE CODE - 202
+      MPUNIT_202,*,8,CH      UNIT TYPE - 202
+      SKIP,8                 RESERVED
+    MPVOLENT_203,*,32        VOLUME ENTRY - 203
+      MPVOLSER_203,=,6,CH    VOLUME SERIAL - 203
+      MPRACK_203,*,6,CH      RACK NUMBER - 203
+      MPFEAT_203,*,4,CH      FEATURE CODE - 203
+      MPUNIT_203,*,8,CH      UNIT TYPE - 203
+      SKIP,8                 RESERVED
+    MPVOLENT_204,*,32        VOLUME ENTRY - 204
+      MPVOLSER_204,=,6,CH    VOLUME SERIAL - 204
+      MPRACK_204,*,6,CH      RACK NUMBER - 204
+      MPFEAT_204,*,4,CH      FEATURE CODE - 204
+      MPUNIT_204,*,8,CH      UNIT TYPE - 204
+      SKIP,8                 RESERVED
+    MPVOLENT_205,*,32        VOLUME ENTRY - 205
+      MPVOLSER_205,=,6,CH    VOLUME SERIAL - 205
+      MPRACK_205,*,6,CH      RACK NUMBER - 205
+      MPFEAT_205,*,4,CH      FEATURE CODE - 205
+      MPUNIT_205,*,8,CH      UNIT TYPE - 205
+      SKIP,8                 RESERVED
+    MPVOLENT_206,*,32        VOLUME ENTRY - 206
+      MPVOLSER_206,=,6,CH    VOLUME SERIAL - 206
+      MPRACK_206,*,6,CH      RACK NUMBER - 206
+      MPFEAT_206,*,4,CH      FEATURE CODE - 206
+      MPUNIT_206,*,8,CH      UNIT TYPE - 206
+      SKIP,8                 RESERVED
+    MPVOLENT_207,*,32        VOLUME ENTRY - 207
+      MPVOLSER_207,=,6,CH    VOLUME SERIAL - 207
+      MPRACK_207,*,6,CH      RACK NUMBER - 207
+      MPFEAT_207,*,4,CH      FEATURE CODE - 207
+      MPUNIT_207,*,8,CH      UNIT TYPE - 207
+      SKIP,8                 RESERVED
+    MPVOLENT_208,*,32        VOLUME ENTRY - 208
+      MPVOLSER_208,=,6,CH    VOLUME SERIAL - 208
+      MPRACK_208,*,6,CH      RACK NUMBER - 208
+      MPFEAT_208,*,4,CH      FEATURE CODE - 208
+      MPUNIT_208,*,8,CH      UNIT TYPE - 208
+      SKIP,8                 RESERVED
+    MPVOLENT_209,*,32        VOLUME ENTRY - 209
+      MPVOLSER_209,=,6,CH    VOLUME SERIAL - 209
+      MPRACK_209,*,6,CH      RACK NUMBER - 209
+      MPFEAT_209,*,4,CH      FEATURE CODE - 209
+      MPUNIT_209,*,8,CH      UNIT TYPE - 209
+      SKIP,8                 RESERVED
+    MPVOLENT_210,*,32        VOLUME ENTRY - 210
+      MPVOLSER_210,=,6,CH    VOLUME SERIAL - 210
+      MPRACK_210,*,6,CH      RACK NUMBER - 210
+      MPFEAT_210,*,4,CH      FEATURE CODE - 210
+      MPUNIT_210,*,8,CH      UNIT TYPE - 210
+      SKIP,8                 RESERVED
+    MPVOLENT_211,*,32        VOLUME ENTRY - 211
+      MPVOLSER_211,=,6,CH    VOLUME SERIAL - 211
+      MPRACK_211,*,6,CH      RACK NUMBER - 211
+      MPFEAT_211,*,4,CH      FEATURE CODE - 211
+      MPUNIT_211,*,8,CH      UNIT TYPE - 211
+      SKIP,8                 RESERVED
+    MPVOLENT_212,*,32        VOLUME ENTRY - 212
+      MPVOLSER_212,=,6,CH    VOLUME SERIAL - 212
+      MPRACK_212,*,6,CH      RACK NUMBER - 212
+      MPFEAT_212,*,4,CH      FEATURE CODE - 212
+      MPUNIT_212,*,8,CH      UNIT TYPE - 212
+      SKIP,8                 RESERVED
+    MPVOLENT_213,*,32        VOLUME ENTRY - 213
+      MPVOLSER_213,=,6,CH    VOLUME SERIAL - 213
+      MPRACK_213,*,6,CH      RACK NUMBER - 213
+      MPFEAT_213,*,4,CH      FEATURE CODE - 213
+      MPUNIT_213,*,8,CH      UNIT TYPE - 213
+      SKIP,8                 RESERVED
+    MPVOLENT_214,*,32        VOLUME ENTRY - 214
+      MPVOLSER_214,=,6,CH    VOLUME SERIAL - 214
+      MPRACK_214,*,6,CH      RACK NUMBER - 214
+      MPFEAT_214,*,4,CH      FEATURE CODE - 214
+      MPUNIT_214,*,8,CH      UNIT TYPE - 214
+      SKIP,8                 RESERVED
+    MPVOLENT_215,*,32        VOLUME ENTRY - 215
+      MPVOLSER_215,=,6,CH    VOLUME SERIAL - 215
+      MPRACK_215,*,6,CH      RACK NUMBER - 215
+      MPFEAT_215,*,4,CH      FEATURE CODE - 215
+      MPUNIT_215,*,8,CH      UNIT TYPE - 215
+      SKIP,8                 RESERVED
+    MPVOLENT_216,*,32        VOLUME ENTRY - 216
+      MPVOLSER_216,=,6,CH    VOLUME SERIAL - 216
+      MPRACK_216,*,6,CH      RACK NUMBER - 216
+      MPFEAT_216,*,4,CH      FEATURE CODE - 216
+      MPUNIT_216,*,8,CH      UNIT TYPE - 216
+      SKIP,8                 RESERVED
+    MPVOLENT_217,*,32        VOLUME ENTRY - 217
+      MPVOLSER_217,=,6,CH    VOLUME SERIAL - 217
+      MPRACK_217,*,6,CH      RACK NUMBER - 217
+      MPFEAT_217,*,4,CH      FEATURE CODE - 217
+      MPUNIT_217,*,8,CH      UNIT TYPE - 217
+      SKIP,8                 RESERVED
+    MPVOLENT_218,*,32        VOLUME ENTRY - 218
+      MPVOLSER_218,=,6,CH    VOLUME SERIAL - 218
+      MPRACK_218,*,6,CH      RACK NUMBER - 218
+      MPFEAT_218,*,4,CH      FEATURE CODE - 218
+      MPUNIT_218,*,8,CH      UNIT TYPE - 218
+      SKIP,8                 RESERVED
+    MPVOLENT_219,*,32        VOLUME ENTRY - 219
+      MPVOLSER_219,=,6,CH    VOLUME SERIAL - 219
+      MPRACK_219,*,6,CH      RACK NUMBER - 219
+      MPFEAT_219,*,4,CH      FEATURE CODE - 219
+      MPUNIT_219,*,8,CH      UNIT TYPE - 219
+      SKIP,8                 RESERVED
+    MPVOLENT_220,*,32        VOLUME ENTRY - 220
+      MPVOLSER_220,=,6,CH    VOLUME SERIAL - 220
+      MPRACK_220,*,6,CH      RACK NUMBER - 220
+      MPFEAT_220,*,4,CH      FEATURE CODE - 220
+      MPUNIT_220,*,8,CH      UNIT TYPE - 220
+      SKIP,8                 RESERVED
+    MPVOLENT_221,*,32        VOLUME ENTRY - 221
+      MPVOLSER_221,=,6,CH    VOLUME SERIAL - 221
+      MPRACK_221,*,6,CH      RACK NUMBER - 221
+      MPFEAT_221,*,4,CH      FEATURE CODE - 221
+      MPUNIT_221,*,8,CH      UNIT TYPE - 221
+      SKIP,8                 RESERVED
+    MPVOLENT_222,*,32        VOLUME ENTRY - 222
+      MPVOLSER_222,=,6,CH    VOLUME SERIAL - 222
+      MPRACK_222,*,6,CH      RACK NUMBER - 222
+      MPFEAT_222,*,4,CH      FEATURE CODE - 222
+      MPUNIT_222,*,8,CH      UNIT TYPE - 222
+      SKIP,8                 RESERVED
+    MPVOLENT_223,*,32        VOLUME ENTRY - 223
+      MPVOLSER_223,=,6,CH    VOLUME SERIAL - 223
+      MPRACK_223,*,6,CH      RACK NUMBER - 223
+      MPFEAT_223,*,4,CH      FEATURE CODE - 223
+      MPUNIT_223,*,8,CH      UNIT TYPE - 223
+      SKIP,8                 RESERVED
+    MPVOLENT_224,*,32        VOLUME ENTRY - 224
+      MPVOLSER_224,=,6,CH    VOLUME SERIAL - 224
+      MPRACK_224,*,6,CH      RACK NUMBER - 224
+      MPFEAT_224,*,4,CH      FEATURE CODE - 224
+      MPUNIT_224,*,8,CH      UNIT TYPE - 224
+      SKIP,8                 RESERVED
+    MPVOLENT_225,*,32        VOLUME ENTRY - 225
+      MPVOLSER_225,=,6,CH    VOLUME SERIAL - 225
+      MPRACK_225,*,6,CH      RACK NUMBER - 225
+      MPFEAT_225,*,4,CH      FEATURE CODE - 225
+      MPUNIT_225,*,8,CH      UNIT TYPE - 225
+      SKIP,8                 RESERVED
+    MPVOLENT_226,*,32        VOLUME ENTRY - 226
+      MPVOLSER_226,=,6,CH    VOLUME SERIAL - 226
+      MPRACK_226,*,6,CH      RACK NUMBER - 226
+      MPFEAT_226,*,4,CH      FEATURE CODE - 226
+      MPUNIT_226,*,8,CH      UNIT TYPE - 226
+      SKIP,8                 RESERVED
+    MPVOLENT_227,*,32        VOLUME ENTRY - 227
+      MPVOLSER_227,=,6,CH    VOLUME SERIAL - 227
+      MPRACK_227,*,6,CH      RACK NUMBER - 227
+      MPFEAT_227,*,4,CH      FEATURE CODE - 227
+      MPUNIT_227,*,8,CH      UNIT TYPE - 227
+      SKIP,8                 RESERVED
+    MPVOLENT_228,*,32        VOLUME ENTRY - 228
+      MPVOLSER_228,=,6,CH    VOLUME SERIAL - 228
+      MPRACK_228,*,6,CH      RACK NUMBER - 228
+      MPFEAT_228,*,4,CH      FEATURE CODE - 228
+      MPUNIT_228,*,8,CH      UNIT TYPE - 228
+      SKIP,8                 RESERVED
+    MPVOLENT_229,*,32        VOLUME ENTRY - 229
+      MPVOLSER_229,=,6,CH    VOLUME SERIAL - 229
+      MPRACK_229,*,6,CH      RACK NUMBER - 229
+      MPFEAT_229,*,4,CH      FEATURE CODE - 229
+      MPUNIT_229,*,8,CH      UNIT TYPE - 229
+      SKIP,8                 RESERVED
+    MPVOLENT_230,*,32        VOLUME ENTRY - 230
+      MPVOLSER_230,=,6,CH    VOLUME SERIAL - 230
+      MPRACK_230,*,6,CH      RACK NUMBER - 230
+      MPFEAT_230,*,4,CH      FEATURE CODE - 230
+      MPUNIT_230,*,8,CH      UNIT TYPE - 230
+      SKIP,8                 RESERVED
+    MPVOLENT_231,*,32        VOLUME ENTRY - 231
+      MPVOLSER_231,=,6,CH    VOLUME SERIAL - 231
+      MPRACK_231,*,6,CH      RACK NUMBER - 231
+      MPFEAT_231,*,4,CH      FEATURE CODE - 231
+      MPUNIT_231,*,8,CH      UNIT TYPE - 231
+      SKIP,8                 RESERVED
+    MPVOLENT_232,*,32        VOLUME ENTRY - 232
+      MPVOLSER_232,=,6,CH    VOLUME SERIAL - 232
+      MPRACK_232,*,6,CH      RACK NUMBER - 232
+      MPFEAT_232,*,4,CH      FEATURE CODE - 232
+      MPUNIT_232,*,8,CH      UNIT TYPE - 232
+      SKIP,8                 RESERVED
+    MPVOLENT_233,*,32        VOLUME ENTRY - 233
+      MPVOLSER_233,=,6,CH    VOLUME SERIAL - 233
+      MPRACK_233,*,6,CH      RACK NUMBER - 233
+      MPFEAT_233,*,4,CH      FEATURE CODE - 233
+      MPUNIT_233,*,8,CH      UNIT TYPE - 233
+      SKIP,8                 RESERVED
+    MPVOLENT_234,*,32        VOLUME ENTRY - 234
+      MPVOLSER_234,=,6,CH    VOLUME SERIAL - 234
+      MPRACK_234,*,6,CH      RACK NUMBER - 234
+      MPFEAT_234,*,4,CH      FEATURE CODE - 234
+      MPUNIT_234,*,8,CH      UNIT TYPE - 234
+      SKIP,8                 RESERVED
+    MPVOLENT_235,*,32        VOLUME ENTRY - 235
+      MPVOLSER_235,=,6,CH    VOLUME SERIAL - 235
+      MPRACK_235,*,6,CH      RACK NUMBER - 235
+      MPFEAT_235,*,4,CH      FEATURE CODE - 235
+      MPUNIT_235,*,8,CH      UNIT TYPE - 235
+      SKIP,8                 RESERVED
+    MPVOLENT_236,*,32        VOLUME ENTRY - 236
+      MPVOLSER_236,=,6,CH    VOLUME SERIAL - 236
+      MPRACK_236,*,6,CH      RACK NUMBER - 236
+      MPFEAT_236,*,4,CH      FEATURE CODE - 236
+      MPUNIT_236,*,8,CH      UNIT TYPE - 236
+      SKIP,8                 RESERVED
+    MPVOLENT_237,*,32        VOLUME ENTRY - 237
+      MPVOLSER_237,=,6,CH    VOLUME SERIAL - 237
+      MPRACK_237,*,6,CH      RACK NUMBER - 237
+      MPFEAT_237,*,4,CH      FEATURE CODE - 237
+      MPUNIT_237,*,8,CH      UNIT TYPE - 237
+      SKIP,8                 RESERVED
+    MPVOLENT_238,*,32        VOLUME ENTRY - 238
+      MPVOLSER_238,=,6,CH    VOLUME SERIAL - 238
+      MPRACK_238,*,6,CH      RACK NUMBER - 238
+      MPFEAT_238,*,4,CH      FEATURE CODE - 238
+      MPUNIT_238,*,8,CH      UNIT TYPE - 238
+      SKIP,8                 RESERVED
+    MPVOLENT_239,*,32        VOLUME ENTRY - 239
+      MPVOLSER_239,=,6,CH    VOLUME SERIAL - 239
+      MPRACK_239,*,6,CH      RACK NUMBER - 239
+      MPFEAT_239,*,4,CH      FEATURE CODE - 239
+      MPUNIT_239,*,8,CH      UNIT TYPE - 239
+      SKIP,8                 RESERVED
+    MPVOLENT_240,*,32        VOLUME ENTRY - 240
+      MPVOLSER_240,=,6,CH    VOLUME SERIAL - 240
+      MPRACK_240,*,6,CH      RACK NUMBER - 240
+      MPFEAT_240,*,4,CH      FEATURE CODE - 240
+      MPUNIT_240,*,8,CH      UNIT TYPE - 240
+      SKIP,8                 RESERVED
+    MPVOLENT_241,*,32        VOLUME ENTRY - 241
+      MPVOLSER_241,=,6,CH    VOLUME SERIAL - 241
+      MPRACK_241,*,6,CH      RACK NUMBER - 241
+      MPFEAT_241,*,4,CH      FEATURE CODE - 241
+      MPUNIT_241,*,8,CH      UNIT TYPE - 241
+      SKIP,8                 RESERVED
+    MPVOLENT_242,*,32        VOLUME ENTRY - 242
+      MPVOLSER_242,=,6,CH    VOLUME SERIAL - 242
+      MPRACK_242,*,6,CH      RACK NUMBER - 242
+      MPFEAT_242,*,4,CH      FEATURE CODE - 242
+      MPUNIT_242,*,8,CH      UNIT TYPE - 242
+      SKIP,8                 RESERVED
+    MPVOLENT_243,*,32        VOLUME ENTRY - 243
+      MPVOLSER_243,=,6,CH    VOLUME SERIAL - 243
+      MPRACK_243,*,6,CH      RACK NUMBER - 243
+      MPFEAT_243,*,4,CH      FEATURE CODE - 243
+      MPUNIT_243,*,8,CH      UNIT TYPE - 243
+      SKIP,8                 RESERVED
+    MPVOLENT_244,*,32        VOLUME ENTRY - 244
+      MPVOLSER_244,=,6,CH    VOLUME SERIAL - 244
+      MPRACK_244,*,6,CH      RACK NUMBER - 244
+      MPFEAT_244,*,4,CH      FEATURE CODE - 244
+      MPUNIT_244,*,8,CH      UNIT TYPE - 244
+      SKIP,8                 RESERVED
+    MPVOLENT_245,*,32        VOLUME ENTRY - 245
+      MPVOLSER_245,=,6,CH    VOLUME SERIAL - 245
+      MPRACK_245,*,6,CH      RACK NUMBER - 245
+      MPFEAT_245,*,4,CH      FEATURE CODE - 245
+      MPUNIT_245,*,8,CH      UNIT TYPE - 245
+      SKIP,8                 RESERVED
+    MPVOLENT_246,*,32        VOLUME ENTRY - 246
+      MPVOLSER_246,=,6,CH    VOLUME SERIAL - 246
+      MPRACK_246,*,6,CH      RACK NUMBER - 246
+      MPFEAT_246,*,4,CH      FEATURE CODE - 246
+      MPUNIT_246,*,8,CH      UNIT TYPE - 246
+      SKIP,8                 RESERVED
+    MPVOLENT_247,*,32        VOLUME ENTRY - 247
+      MPVOLSER_247,=,6,CH    VOLUME SERIAL - 247
+      MPRACK_247,*,6,CH      RACK NUMBER - 247
+      MPFEAT_247,*,4,CH      FEATURE CODE - 247
+      MPUNIT_247,*,8,CH      UNIT TYPE - 247
+      SKIP,8                 RESERVED
+    MPVOLENT_248,*,32        VOLUME ENTRY - 248
+      MPVOLSER_248,=,6,CH    VOLUME SERIAL - 248
+      MPRACK_248,*,6,CH      RACK NUMBER - 248
+      MPFEAT_248,*,4,CH      FEATURE CODE - 248
+      MPUNIT_248,*,8,CH      UNIT TYPE - 248
+      SKIP,8                 RESERVED
+    MPVOLENT_249,*,32        VOLUME ENTRY - 249
+      MPVOLSER_249,=,6,CH    VOLUME SERIAL - 249
+      MPRACK_249,*,6,CH      RACK NUMBER - 249
+      MPFEAT_249,*,4,CH      FEATURE CODE - 249
+      MPUNIT_249,*,8,CH      UNIT TYPE - 249
+      SKIP,8                 RESERVED
+    MPVOLENT_250,*,32        VOLUME ENTRY - 250
+      MPVOLSER_250,=,6,CH    VOLUME SERIAL - 250
+      MPRACK_250,*,6,CH      RACK NUMBER - 250
+      MPFEAT_250,*,4,CH      FEATURE CODE - 250
+      MPUNIT_250,*,8,CH      UNIT TYPE - 250
+      SKIP,8                 RESERVED
+    MPVOLENT_251,*,32        VOLUME ENTRY - 251
+      MPVOLSER_251,=,6,CH    VOLUME SERIAL - 251
+      MPRACK_251,*,6,CH      RACK NUMBER - 251
+      MPFEAT_251,*,4,CH      FEATURE CODE - 251
+      MPUNIT_251,*,8,CH      UNIT TYPE - 251
+      SKIP,8                 RESERVED
+    MPVOLENT_252,*,32        VOLUME ENTRY - 252
+      MPVOLSER_252,=,6,CH    VOLUME SERIAL - 252
+      MPRACK_252,*,6,CH      RACK NUMBER - 252
+      MPFEAT_252,*,4,CH      FEATURE CODE - 252
+      MPUNIT_252,*,8,CH      UNIT TYPE - 252
+      SKIP,8                 RESERVED
+    MPVOLENT_253,*,32        VOLUME ENTRY - 253
+      MPVOLSER_253,=,6,CH    VOLUME SERIAL - 253
+      MPRACK_253,*,6,CH      RACK NUMBER - 253
+      MPFEAT_253,*,4,CH      FEATURE CODE - 253
+      MPUNIT_253,*,8,CH      UNIT TYPE - 253
+      SKIP,8                 RESERVED
+    MPVOLENT_254,*,32        VOLUME ENTRY - 254
+      MPVOLSER_254,=,6,CH    VOLUME SERIAL - 254
+      MPRACK_254,*,6,CH      RACK NUMBER - 254
+      MPFEAT_254,*,4,CH      FEATURE CODE - 254
+      MPUNIT_254,*,8,CH      UNIT TYPE - 254
+      SKIP,8                 RESERVED
+    MPVOLENT_255,*,32        VOLUME ENTRY - 255
+      MPVOLSER_255,=,6,CH    VOLUME SERIAL - 255
+      MPRACK_255,*,6,CH      RACK NUMBER - 255
+      MPFEAT_255,*,4,CH      FEATURE CODE - 255
+      MPUNIT_255,*,8,CH      UNIT TYPE - 255
+      SKIP,8                 RESERVED
+**********************************************************************
+* END OF PROGRAM PRODUCT INFORMATION                                 *
+**********************************************************************
+MPRCEND,*                    END OF MPREC
+

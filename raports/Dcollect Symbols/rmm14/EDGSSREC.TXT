@@ -1,0 +1,62 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM SMF STORAGE LOCATION SHELF LOCATION INFORMATION -              *
+*    TYPE 'R' AND TYPE 'S'.                                          *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,SMFADREC            START AFTER EDGSMFAR
+MSREC,*,164
+**********************************************************************
+* KEY FIELD                                                          *
+**********************************************************************
+  MSKEY,=,56                 KEY FIELD
+    MSTYPE,=,1,CH            RECORD TYPE
+      MSTYPER,'R'              EMPTY BIN
+      MSTYPES,'S'              ASSIGNED BIN
+  MSRMSTID,*,1,CH            REMOTE STORE ID
+    MSSTIDD,'D'                DISTANT STORE
+    MSSTIDL,'L'                LOCAL STORE
+    MSSTIDR,'R'                REMOTE STORE
+    MSSTIDU,'U'                USER DEFINED STORE
+  SKIP,8                     RESERVED
+  MSBINNO,*,6,CH             BIN NUMBER
+  SKIP,40                    RESERVED
+  MSUSTNAM,*,8,CH            INSTALLATION DEFINED STORE NAME
+  MSUMEDNM,*,8,CH            INSTALLATION DEFINED STORE BIN MEDIA NAME
+  MSUBINNO,*,6,CH            INSTALLATION DEFINED STORE BIN NUMBER
+**********************************************************************
+* CONTROL INFORMATION                                                *
+**********************************************************************
+  MSRECLN,*,2,FI             RECORD LENGTH
+  SKIP,2                     RESERVED
+  MSCRDATE,*,4,PD            CREATE DATE - YYYYDDD
+  MSCRTIME,*,4,PD            CREATE TIME - HHMMSST
+  MSCRSID,*,8,CH             CREATE SYSTEM ID
+  MSRCCDS,*,8,CH             RECORD CREATE CDS ID
+  MSLCDATE,*,4,PD            LAST CHANGE DATE  - YYYYDDD
+  MSLCTIME,*,4,PD            LAST CHANGE TIME -  HHMMSST
+  MSLCUID,*,8,CH             LAST CHANGE USER ID
+  MSLCSID,*,8,CH             LAST CHANGE SYSTEM ID
+  MSUCDATE,*,4,PD            LAST "USER" CHANGE DATE
+  MSUCTIME,*,4,PD            LAST "USER" CHANGE TIME
+  MSCFLG,*,1,BI              CONTROL FLAGS 1
+    MSDELFLG,X'80'             RECORD DELETED
+    MSSELFLG,X'10'             SELECT - PROC BY SATELLITE UPDT
+    MSDUMMY,X'08'              DUMMY RECORD - ALLOW TSO ADD
+  SKIP,7                     RESERVED
+**********************************************************************
+* STORE INFORMATION                                                  *
+**********************************************************************
+  MSVOLSER,*,6,CH            ASSIGNED VOLSER OR ZEROS
+  SKIP,10                    RESERVED
+**********************************************************************
+* END OF DISASTER STORE BIN INFORMATION                              *
+**********************************************************************
+MSRCEND,*                    END OF MSRC
+**********************************************************************
+* END OF RMM MSREC                                                   *
+**********************************************************************
+

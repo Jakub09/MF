@@ -1,0 +1,28 @@
+
+DFSORT Release 14 gives your site a powerful, simple and flexible way to use
+symbols in DFSORT and ICETOOL statements.  For details on DFSORT symbol 
+processing, visit the DFSORT home page at URL:
+
+http://www.ibm.com/storage/dfsort/
+
+To increase your productivity, IBM's DFSORT and DFSMS teams have already 
+created DFSORT R14 symbol mappings and sample jobs for data associated with 
+DFSMSrmm.
+
+RMM14.ZIP contains the symbol mappings and jobs for DFSMSrmm Version 1 
+Release 4 as follows:                                      
+
+  - The EDG* files are the DFSORT R14 symbol mappings for the various
+    DFSMSrmm records.
+  - The JOB* files are sample jobs that illustrate how the DFSMSrmm symbol 
+    mappings can be used in DFSORT and ICETOOL statements.
+
+Follow these steps to make the symbol mappings and sample jobs available on
+your target system:
+
+  - Download the RMM14.ZIP file and unzip it.
+  - Create a partitioned data set (for example, userid.RMM14.SYM) with
+    RECFM=FB and LRECL=80.
+  - Upload the EDG* and JOB* files as members of your partitioned data set.
+
+

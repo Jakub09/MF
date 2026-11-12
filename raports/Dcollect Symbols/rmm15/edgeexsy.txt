@@ -1,0 +1,467 @@
+*********************************************************************** 00010000
+*                                                                     * 00020000
+*  RMM Inventory Management Extended Extract File Record              * 00030000
+*      DFSORT Symbol mapping                                          * 00040000
+*                                                                     * 00050000
+*********************************************************************** 00060000
+* DFSMS/MVS 1.5.0 DFSMSrmm                                            * 00070000
+*                                                                     * 00080000
+*PROPRIETARY V3 STATEMENT                                             * 00090000
+*LICENSED MATERIALS - PROPERTY OF IBM                                 * 00100000
+*"RESTRICTED MATERIALS OF IBM"                                        * 00110000
+*5695-DF1                                                             * 00120000
+*(C) COPYRIGHT 1993,2000  IBM CORP.                                   * 00130000
+*STATUS = HDZ11E0                                                     * 00140000
+*END PROPRIETARY V3 STATEMENT                                         * 00150000
+*                                                                     * 00160000
+*********************************************************************** 00170000
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION          * 00180000
+*     GUIDE (SC26-4932)" FOR FIELD DETAILS ON RMM RECORDS.            * 00190000
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.        * 00200000
+*                                                                     * 00201001
+*NOTE:                                                                * 00202001
+*  The Extended Extract File is built by REXX EDGRRPTM; which         * 00203001
+*  concatenates the data set record to the volume record starting     * 00204001
+*  at position 800.                                                   * 00205001
+*  For details of the fields in the record refer to the EDGRVEXT      * 00205101
+*  and EDGRDEXT record layouts.                                       * 00205201
+*                                                                     * 00206001
+*********************************************************************** 00210000
+* CHANGE ACTIVITY:                                                    * 00220000
+* $00=       ,150,000313,MWW: Created                                 * 00230000
+*********************************************************************** 00240000
+  EXTRACT_RDW,1,4,BI                        record descriptor word      00250000
+    RVRDW,=,4,BI                                                        00320000
+    EXTRACT_RDW_LEN,=,2,BI                  record descriptor - length  00330000
+      RVRDW_LEN,=,2,BI                                                  00400000
+    EXTRACT_RDW_SEG,*,2,BI                  record descriptor - segment 00410000
+      RVRDW_SEG,=,2,BI                                                  00480000
+**********************************************************************  00490000
+* RMM Extract File records                                           *  00500000
+**********************************************************************  00510000
+EXTRACT,*,1220                                                          00520000
+**********************************************************************  00530000
+* Common record prefix                                               *  00540000
+**********************************************************************  00550000
+EXTRACT_PREFIX,=,4                                                      00560000
+  EXTRACT_TYPID,=,1,CH                                                  00570000
+  RVTYPE,=,1,CH                                                         00640000
+    RVTYPEID,'V'          TYPE 'V' - VOLUME RECORD                      00710000
+**********************************************************************  00720000
+* Start overlay area                                                 *  00730000
+**********************************************************************  00740000
+EXTRACT_DATA,*                                                          00750000
+**********************************************************************  04500000
+* RVEXT:    This file maps the information produced for volume       *  04510000
+*           records in the RMM report extract file.                  *  04520000
+*           In this record the date format depends on the DATEFORM   *  04530000
+*           selected by EDGHSKP execution parameter or the parmlib   *  04540000
+*           specified value.                                         *  04550000
+**********************************************************************  04560000
+POSITION,EXTRACT_DATA                         start at EXTRACT_DATA     04570000
+  SKIP,3                RESERVED                                        04580000
+  RVVOLSER,*,6,CH       VOLUME SERIAL NUMBER                            04590000
+  RVPVOL,*,6,CH         PREVIOUS VOLUME IN SEQUENCE                     04600000
+  RVNVOL,*,6,CH         NEXT VOLUME IN SEQUENCE                         04610000
+  SKIP,6                RESERVED                                        04620000
+**********************************************************************  04630000
+* RVMDMVID: Is a unique token assigned to every volume and every     *  04640000
+*           data set in a multi-volume set.                          *  04650000
+**********************************************************************  04660000
+  RVMDMVID,*,8,CH       MULTI-DSET MULT-VOL ID                          04670000
+  SKIP,12               RESERVED                                        04680000
+**********************************************************************  04690000
+*  Start of common fields:                                           *  04700000
+*  The common fields are in the same place in each record type       *  04710000
+*  in the report extract file.  This allows common processing of     *  04720000
+*  these field across multiple record types.                         *  04730000
+**********************************************************************  04740000
+  RVCRDATE,*,10,CH      CREATE DATE of volume record                    04750000
+  RVCRTIME,*,6,CH       CREATE TIME HHMMSS of volume record             04760000
+  RVCRSID,*,8,CH        CREATE SYSTEM ID of volume record               04770000
+  RVLCDATE,*,10,CH      LAST CHANGE DATE of volume record               04780000
+  RVLCTIME,*,6,CH       LAST CHANGE TIME HHMMSS of volume record        04790000
+  RVLCUID,*,8,CH        LAST CHANGE USER ID of volume record            04800000
+  RVLCSID,*,8,CH        LAST CHANGE SYSTEM ID of volume record          04810000
+**********************************************************************  04820000
+*  End of common fields                                              *  04830000
+**********************************************************************  04840000
+  RVEXPDTO,*,10,CH      EXPIRATION DATE  - original                     04850000
+  RVEXPDT,*,10,CH       EXPIRATION DATE  - current                      04860000
+  RVDEN,*,4,CH          RECORDING DENSITY                               04870000
+  RVCOMP,*,1,CH         COMPACTION USED                                 04880000
+    RVYES,'Y'             YES                                           04890000
+    RVNO,'N'              NO                                            04900000
+  RVDSNNO,*,4,CH        NUMBER OF DATASETS ON VOLUME                    04910000
+  RVTUSE,*,10,CH        TAPE USAGE IN KBYTES                            04920000
+  RVUSE,*,4,CH          VOLUME USE COUNT                                04930000
+  RVLABNO1,*,4,CH       LABEL NO OF FIRST FILE                          04940000
+  RVSTORID,*,8,CH       CURRENT LOCATION NAME                           04950000
+    RVSHL,'SHELF'         SHELF                                         04960000
+    RVLOC,'LOCAL'         LOCAL                                         04970000
+    RVREM,'REMOTE'        REMOTE                                        04980000
+**  CAN ALSO BE:                                                        04990000
+**    DISTANT INSTALLATION DEFINED STORE                                05000000
+**    SMS-DEFINED LIBRARY NAME                                          05010000
+  RVDEST,*,8,CH         DESTINATION NAME                                05020000
+*   RVLOC,'LOCAL'         LOCAL                                         05030000
+*   RVREM,'REMOTE'        REMOTE                                        05040000
+**  CAN ALSO BE:                                                        05050000
+**    DISTANT INSTALLATION DEFINED STORE                                05060000
+**    SMS-DEFINED LIBRARY NAME                                          05070000
+**********************************************************************  05080000
+* Bin Numbers: If a volume is not moving (RVTRANS=N), and is in a    *  05090000
+*              storage location, RVSTBIN contains the current bin    *  05100000
+*              number and RVOBIN the bin number in the previous      *  05110000
+*              location.                                             *  05120000
+*              If a volume is moving (RVTRANS=Y), and moving to a    *  05130000
+*              storage location, RVSTBIN contains the target bin     *  05140000
+*              number and RVOBIN the bin number in the source        *  05150000
+*              location.                                             *  05160000
+**********************************************************************  05170000
+  RVSTBIN,*,6,CH        BIN NUMBER                                      05180000
+  RVOBIN,*,6,CH         PREVIOUS BIN NUMBER                             05190000
+  RVSTDATE,*,10,CH      MOVEMENT TRACKING DATE                          05200000
+  RVRETDAT,*,10,CH      RETENTION DATE CALCULATED BY VRS PROCESSING     05210000
+  RVLONLOC,*,8,CH       LOAN LOCATION                                   05220000
+  RVOLNLOC,*,8,CH       PREVIOUS LOAN LOCATION                          05230000
+  RVLRDDAT,*,10,CH      DATE VOLUME LAST READ                           05240000
+  RVLWTDAT,*,10,CH      DATE VOLUME LAST WRITTEN                        05250000
+**********************************************************************  05260000
+* Assigned date and time:                                            *  05270000
+*    These fields are set each time a volume changes either from     *  05280000
+*    or to scratch status.                                           *  05290000
+**********************************************************************  05300000
+  RVASDATE,*,10,CH      ASSIGNED DATE                                   05310000
+  RVASTIME,*,6,CH       ASSIGNED TIME HHMMSS                            05320000
+  RVOWNID,*,8,CH        VOLUME OWNER USERID                             05330000
+  RVCRUID,*,8,CH        CREATING USERID                                 05340000
+  RVCRJOB,*,8,CH        CREATING JOBNAME                                05350000
+  RVSECLEV,*,8,CH       SECURITY LEVEL - SHORT                          05360000
+  RVSECLNG,*,30,CH      SECURITY LEVEL - LONG                           05370000
+  RVVOLSEQ,*,4,CH       VOLUME SEQUENCE NUMBER                          05380000
+  RVSTATUS,*,8,CH       VOLUME STATUS                                   05390000
+    RVMST,'MASTER'        MASTER                                        05400000
+    RVUSR,'USER'          USER                                          05410000
+    RVSCR,'SCRATCH'       SCRATCH                                       05420000
+    RVINI,'INIT'          INIT                                          05430000
+    RVENT,'ENTRY'         ENTRY                                         05440000
+  RVPENDRS,*,1,CH       VOLUME PENDING RELEASE                          05450000
+*   RVYES,'Y'             YES                                           05460000
+*   RVNO,'N'              NO                                            05470000
+  RVVRS,*,1,CH          VOLUME RETAINED BY VRS                          05480000
+*   RVYES,'Y'             YES                                           05490000
+*   RVNO,'N'              NO                                            05500000
+  RVLOAN,*,1,CH         VOLUME ON LOAN                                  05510000
+*   RVYES,'Y'             YES                                           05520000
+*   RVNO,'N'              NO                                            05530000
+  RVOPEN,*,1,CH         VOLUME IS OPENED                                05540000
+*   RVYES,'Y'             YES                                           05550000
+*   RVNO,'N'              NO                                            05560000
+  RVOCER,*,1,CH         VOLUME RECORDED BY O/C/EOV                      05570000
+*   RVYES,'Y'             YES                                           05580000
+*   RVNO,'N'              NO                                            05590000
+  RVDEFRET,*,1,CH       PARMLIB DEFAULT RETENTION USED TO GENERATE      05600000
+*                          THE VOLUME EXPDT                             05610000
+*   RVYES,'Y'             YES                                           05620000
+*   RVNO,'N'              NO                                            05630000
+  RVPPTAPE,*,1,CH       PROGRAM PRODUCT TAPE                            05640000
+*   RVYES,'Y'             YES                                           05650000
+*   RVNO,'N'              NO                                            05660000
+**********************************************************************  05670000
+* Labels: The RVLABEL field provides information about what label    *  05680000
+*         types may be written on the volume.  If BLP output has     *  05690000
+*         been used, the volume may no longer match this             *  05700000
+*         information.  Any BLP output beyond file 1 on a volume     *  05710000
+*         is not recorded by RMM.                                    *  05720000
+**********************************************************************  05730000
+  RVLABEL,*,3,CH        LABEL TYPE                                      05740000
+    RVSL,'SL'             SL                                            05750000
+    RVAL,'AL'             AL                                            05760000
+    RVNL,'NL'             NL                                            05770000
+    RVSUL,'SUL'           SUL                                           05780000
+    RVAUL,'AUL'           AUL                                           05790000
+  RVBLP,*,1,CH          VOLUME LAST WRITTEN BLP                         05800000
+*   RVYES,'Y'             YES                                           05810000
+*   RVNO,'N'              NO                                            05820000
+**********************************************************************  05830000
+* Release Actions:  The following 5 fields list the actions to be    *  05840000
+*              set for the volume when it is released.  These are    *  05850000
+*              not the current actions.  See RVACTION for the        *  05860000
+*              pending actions.                                      *  05870000
+**********************************************************************  05880000
+  RVRETS,*,8,CH         RETURN ACTION                                   05890000
+    RVOWN,'OWNER'         OWNER                                         05900000
+*   RVSCR,'SCRATCH'       SCRATCH                                       05910000
+  RVREPL,*,1,CH         REPLACE ON RELEASE                              05920000
+*   RVYES,'Y'             YES                                           05930000
+*   RVNO,'N'              NO                                            05940000
+  RVINIT,*,1,CH         REINITIALISE                                    05950000
+*   RVYES,'Y'             YES                                           05960000
+*   RVNO,'N'              NO                                            05970000
+  RVERASE,*,1,CH        SECURITY ERASE                                  05980000
+*   RVYES,'Y'             YES                                           05990000
+*   RVNO,'N'              NO                                            06000000
+  RVNTFY,*,1,CH         NOTIFY OWNER                                    06010000
+*   RVYES,'Y'             YES                                           06020000
+*   RVNO,'N'              NO                                            06030000
+  RVOWNAC,*,1,CH        OWNER ACCESS                                    06040000
+    RVRD,'R'              READ                                          06050000
+    RVUPD,'U'             UPDATE                                        06060000
+    RVADD,'A'             ADD                                           06070000
+  RVUSERAC,*,1,CH       USER ACCESS                                     06080000
+*   RVRD,'R'              READ                                          06090000
+*   RVUPD,'U'             UPDATE                                        06100000
+  RVVMUSE,*,1,CH        VM USE                                          06110000
+*   RVYES,'Y'             YES                                           06120000
+*   RVNO,'N'              NO                                            06130000
+  RVMVSUSE,*,1,CH       MVS USE                                         06140000
+*   RVYES,'Y'             YES                                           06150000
+*   RVNO,'N'              NO                                            06160000
+  RVNAME,*,8,CH         MEDIA NAME                                      06170000
+    RVUNIT,=,8,CH       Old name for RVNAME field                       06180000
+  RVRACK,*,6,CH         RACK NUMBER                                     06190000
+  RVTRERR,*,4,CH        TEMPORARY READ ERRORS                           06200000
+  RVTWERR,*,4,CH        TEMPORARY WRITE ERRORS                          06210000
+  RVPRERR,*,4,CH        PERMANENT READ ERRORS                           06220000
+  RVPWERR,*,4,CH        PERMANENT WRITE ERRORS                          06230000
+**********************************************************************  06240000
+* Product Information: Includes number, release and feature code     *  06250000
+**********************************************************************  06260000
+  RVPPNUM,*,8,CH        PROGRAM PRODUCT NUMBER                          06270000
+  RVVER,*,6,CH          VERSION/RELEASE/MOD NUMBER                      06280000
+  RVFEAT,*,4,CH         FEATURE CODE                                    06290000
+  RVACCINF,*,40,CH      ACCOUNTING INFORMATION                          06300000
+  RVUSEFLD,*,30,CH      USER DESCRIPTION                                06310000
+  RVACCLST,*,3,CH       NUMBER OF ACCESS LIST ENTRIES                   06320000
+  RVAUTIDS,*,96,CH      AUTHORISED USER IDS AREA                        06330000
+  RVHLOC,*,8,CH         HOME LOCATION NAME                              06340000
+  RVTRANS,*,1,CH        VOLUME IN TRANSIT                               06350000
+*   RVYES,'Y'             YES                                           06360000
+*   RVNO,'N'              NO                                            06370000
+  RVLOCTYP,*,1,CH       LOCATION TYPE                                   06380000
+    RVAUT,'A'             AUTO                                          06390000
+    RVMAN,'M'             MANUAL                                        06400000
+    RVSTR,'S'             STORE                                         06410000
+    RVBLK,' '             BLANK                                         06420000
+  RVDESTYP,*,1,CH       DESTINATION TYPE                                06430000
+*   RVAUT,'A'             AUTO                                          06440000
+*   RVMAN,'M'             MANUAL                                        06450000
+*   RVSTR,'S'             STORE                                         06460000
+*   RVBLK,' '             BLANK                                         06470000
+  RVOLOC,*,8,CH         THE PREVIOUS LOCATION NAME                      06480000
+  RVSGNAME,*,8,CH       STORAGE GROUP NAME                              06490000
+  RVMEDREC,*,8,CH       VOLUME RECORDING FORMAT                         06500000
+    RV18,'18TRACK'        18 TRACK                                      06510000
+    RV36,'36TRACK'        36 TRACK                                      06520000
+    RV128,'128TRACK'      128 TRACK                                     06530000
+    RV256,'256TRACK'      256 TRACK                                     06540000
+  RVMEDTY,*,8,CH        VOLUME MEDIA TYPE                               06550000
+    RVAST,'*'              *                                            06560000
+    RVCST,'CST'            CST                                          06570000
+    RVEC,'ECCST'           ECCST                                        06580000
+    RVHP,'HPCT'            HPCT                                         06590000
+    RVEH,'EHPCT'           EHPCT                                        06600000
+**********************************************************************  06610000
+* EHPCT IS RESERVED FOR EXTENDED HIGH PERFORMANCE                    *  06620000
+* CARTRIDGE TAPE.                                                    *  06630000
+**********************************************************************  06640000
+  RVMEDCMP,*,8,CH       COMPACTION TECHNIQUE                            06650000
+*   RVAST,'*'              *                                            06660000
+    RVNON,'NONE'           NONE                                         06670000
+*   RVYES,'Y'              YES                                          06680000
+  RVMEDATR,*,8,CH       SPECIAL ATTRIBUTES                              06690000
+*   RVNON,'NONE'           NONE                                         06700000
+    RVRDC,'RDCOMPAT'       RDCOMPAT                                     06710000
+  RVDSNAM1,*,44,CH      FIRST FILE DATA SET NAME                        06720000
+  RVMVMODE,*,1,CH       MOVE MODE                                       06730000
+*   RVAUT,'A'             AUTO                                          06740000
+*   RVMAN,'M'             MANUAL                                        06750000
+  RVDSNREC,*,1,CH       DS RECORDING                                    06760000
+*   RVYES,'Y'             YES                                           06770000
+*   RVNO,'N'              NO                                            06780000
+  RVALVERS,*,2,CH       ANSI LABLE VERSION                              06790000
+    RVALCUR,=,1,CH        CURRENT LABEL VERSION                         06800000
+    RVALREQ,*,1,CH        REQUIRED LABEL VERSION                        06810000
+  RVBMEDN,*,8,CH        BIN MEDIA NAME                                  06820000
+  RVOBMEDN,*,8,CH       PREVIOUS BIN MEDIA NAME                         06830000
+  RVNLOC,*,8,CH         REQUIRED LOCATION NAME - AS DETERMINED BY       06840000
+*                          VRS OR COMMAND                               06850000
+  RVLUDEV,*,4,CH        LAST USED DRIVE                                 06860000
+**********************************************************************  06870000
+* Pending Actions:  The following fields list the actions required   *  06880000
+*              for the volume.  See RVRETS for the actions set       *  06890000
+*              when the volume is released.                          *  06900000
+**********************************************************************  06910000
+  RVACTION,*,8,CH       PENDING ACTIONS                                 06920000
+    RVACTSCR,=,1,CH     RETURN TO SCRATCH                               06930000
+*     RVYES,'Y'           YES                                           06940000
+*     RVNO,'N'            NO                                            06950000
+    RVACTREP,*,1,CH     REPLACE VOLUME                                  06960000
+*     RVYES,'Y'           YES                                           06970000
+*     RVNO,'N'            NO                                            06980000
+    RVACTRET,*,1,CH     RETURN TO OWNER                                 06990000
+*     RVYES,'Y'           YES                                           07000000
+*     RVNO,'N'            NO                                            07010000
+    RVACTINI,*,1,CH     INITIALIZE                                      07020000
+*     RVYES,'Y'           YES                                           07030000
+*     RVNO,'N'            NO                                            07040000
+    RVACTERA,*,1,CH     ERASE                                           07050000
+*     RVYES,'Y'           YES                                           07060000
+*     RVNO,'N'            NO                                            07070000
+    RVACTNOT,*,1,CH     NOTIFY                                          07080000
+*     RVYES,'Y'           YES                                           07090000
+*     RVNO,'N'            NO                                            07100000
+    SKIP,2              RESERVED                                        07110000
+  RVABEND,*,1,CH        DATA SET CLOSED BY ABEND                        07120000
+*   RVYES,'Y'             YES                                           07130000
+*   RVNO,'N'              NO                                            07140000
+  RVHOMTYP,*,1,Ch       HOME LOCATION TYPE                              07150000
+*   RVAUT,'A'             AUTO                                          07160000
+*   RVMAN,'M'             MANUAL                                        07170000
+*   RVBLK,' '             BLANK                                         07180000
+  RVNEXTYP,*,1,CH       NEXT LOCATION TYPE                              07190000
+*   RVAUT,'A'             AUTO                                          07200000
+*   RVMAN,'M'             MANUAL                                        07210000
+*   RVSTR,'S'             STORE                                         07220000
+*   RVBLK,' '             BLANK                                         07230000
+  RVVOLTYPE,*,1,CH      VOLUME TYPE                                     07240000
+    MVVOLTYPE_PHYSICAL,'0' VOLUME TYPE PHYSICAL                         07250000
+    MVVOLTYPE_LOGICAL,'1'  VOLUME TYPE LOGICAL                          07260000
+    MVVOLTYPE_STACKED,'2'  VOLUME TYPE STACKED                          07270000
+  RVVRSREL,*,8,CH       VRS RELEASE OPTIONS                             07280000
+    RVRELIXD,=,1,CH     IGNORE EXPDT                                    07290000
+*     RVYES,'Y'           YES                                           07300000
+*     RVNO,'N'            NO                                            07310000
+    RVRELSI,*,1,CH      SCRATCH IMMEDIATE                               07320000
+*     RVYES,'Y'           YES                                           07330000
+*     RVNO,'N'            NO                                            07340000
+    SKIP,6              RESERVED                                        07350000
+  RVCONTNR,*,16,CH      IN CONTAINER NAME                               07360000
+  RVRQPRTY,*,4,CH       MOVEMENT PRIORITY                               07370000
+**********************************************************************  07380000
+* END OF REPORT EXTRACT VOLUME RECORD                                *  07390000
+**********************************************************************  07400000
+RVRCEND,*               END OF RVEXT                                    07410000
+**********************************************************************  07411000
+* RDEXT:    This file maps the information produced for data set     *  07412000
+*           records in the RMM report extract file.                  *  07413000
+*           In this record the date format depends on the DATEFORM   *  07414000
+*           selected by EDGHSKP execution parameter or the parmlib   *  07415000
+*           specified value.                                         *  07416000
+**********************************************************************  07417000
+POSITION,800                                  start after VOLUME        07418000
+  SKIP,3                RESERVED                                        07419000
+  RDDSNAME,*,44,CH      DATA SET NAME                                   07419100
+**********************************************************************  07419200
+*  Start of common fields:                                           *  07419300
+*  The common fields are in the same place in each record type       *  07419400
+*  in the report extract file.  This allows common processing of     *  07419500
+*  these field across multiple record types.                         *  07419600
+**********************************************************************  07419700
+  RDCRDATE,*,10,CH      CREATE DATE of data set record                  07419800
+  RDCRTIME,*,6,CH       CREATE TIME (HHMMSS) of data set                07419900
+  RDCRSID,*,8,CH        CREATE SYSTEM ID of data set record             07420000
+  RDLCDATE,*,10,CH      LAST CHANGE DATE of data set record             07420100
+  RDLCTIME,*,6,CH       LAST CHANGE TIME (HHMMSS) of data set record    07420200
+  RDLCUID,*,8,CH        LAST CHANGE USER ID of data set record          07420300
+  RDLCSID,*,8,CH        LAST CHANGE SYSTEM ID of data set record        07420400
+**********************************************************************  07420500
+*  End of common fields                                              *  07420600
+**********************************************************************  07420700
+  RDVOLSER,*,6,CH       VOLUME SERIAL NUMBER                            07420800
+  RDDSNSEQ,*,4,CH       DATA SET SEQUENCE NUMBER                        07420900
+  RDUNITAD,*,4,CH       CREATING DRIVE ADDRESS                          07421000
+  RDRECFM,*,4,CH        RECORD FORMAT                                   07421100
+  RDVOLSEQ,*,4,CH       VOLUME SEQUENCE NUMBER                          07421200
+  RDLRECL,*,6,CH        LOGICAL RECORD LENGTH                           07421300
+  RDBLKSZ,*,6,CH        PHYSICAL BLOCK SIZE                             07421400
+  RDBLKCNT,*,8,CH       BLOCK COUNT                                     07421500
+  RDOWNDSN,*,8,CH       DATA SET OWNER                                  07421600
+  RDSECLEV,*,8,CH       SECURITY LEVEL - SHORT                          07421700
+  RDSECLNG,*,30,CH      SECURITY LEVEL - LONG                           07421800
+  RDCOMP,*,1,CH         COMPACTION USED                                 07421900
+    RDYES,'Y'             YES                                           07422000
+    RDNO,'N'              NO                                            07422100
+  RDLRDDAT,*,10,CH      DATE DATA SET LAST READ                         07422200
+  RDLWTDAT,*,10,CH      DATE DATA SET LAST WRITTEN                      07422300
+  RDMCNAME,*,8,CH       SMS MANAGEMENT CLASS                            07422400
+  RDVRSVAL,*,8,CH       VRS MANAGEMENT VALUE                            07422500
+  RDSGNAME,*,8,CH       SMS STORAGE GROUP NAME                          07422600
+  RDSCNAME,*,8,CH       SMS STORAGE CLASS NAME                          07422700
+  RDDCNAME,*,8,CH       SMS DATA CLASS NAME                             07422800
+  RDCRTJBN,*,8,CH       CREATING JOB NAME                               07422900
+  RDVRSTYP,*,1,CH       MATCHING VRS TYPE FLAG                          07423000
+    RDVD,'D'              DATASET                                       07423100
+    RDVS,'S'              SMSMC                                         07423200
+    RDVV,'V'              VRSMV                                         07423300
+    RDVM,'M'              DATASET AND VRSMV                             07423400
+    RDVC,'C'              DATASET AND SMSMC                             07423500
+  RDVRSNAM,*,44,CH      MATCHING VRS NAME                               07423600
+  RDVRSJBN,*,8,CH       MATCHING VRS JOB NAME MASK                      07423700
+  RDRETDAT,*,10,CH      RETENTION DATE                                  07423800
+  RDSTEPNM,*,8,CH       CREATING STEP NAME                              07423900
+  RDDDNAME,*,8,CH       CREATING DD NAME                                07424000
+**********************************************************************  07424100
+* RDMDMVID: Is a unique token assigned to every volume and every     *  07424200
+*           data set in a multi-volume set.                          *  07424300
+**********************************************************************  07424400
+  RDMDMVID,*,8,CH       MULTI-DSET MULTI-VOL ID                         07424500
+**********************************************************************  07424600
+* Data set size:  This is calculated by multiplying the blocksize    *  07424700
+*                 by the number of blocks.                           *  07424800
+**********************************************************************  07424900
+  RDDSSIZE,*,10,CH      APPROX. SIZE OF FILE KBYTES                     07425000
+  RDABEND,*,1,CH        DSET CLOSED BY ABEND                            07425100
+*   RDYES,'Y'             YES                                           07425200
+*   RDNO,'N'              NO                                            07425300
+**********************************************************************  07425400
+* RDCAT: Set to 'Y' when opened after allocation determines VOLSER   *  07425500
+*        by reference to the catalog. Once set to 'Y' it is never    *  07425600
+*        changed.                                                    *  07425700
+**********************************************************************  07425800
+  RDCAT,*,1,CH          DSET USED VIA CATALOG  Y/N                      07425900
+*   RDYES,'Y'             YES                                           07426000
+*   RDNO,'N'              NO                                            07426100
+  RDVRSR,*,1,CH         RETAINED BY VRS                                 07426200
+*   RDYES,'Y'             YES                                           07426300
+*   RDNO,'N'              NO                                            07426400
+  SKIP,3                RESERVED                                        07426500
+  RDLABNO,*,4,CH        LABEL NUMBER LABEL=(xx,ll)                      07426600
+**********************************************************************  07426700
+* Primary VRS subchain name:                                         *  07426800
+*                     This is the retaining VRS in the matching      *  07426900
+*                     primary VRS chain.  It is set only if retained *  07427000
+*                     by a NAME VRS subchain in the primary VRS.     *  07427100
+**********************************************************************  07427200
+  RDVRSSCH,*,8,CH       Primary VRS subchain NAME                       07427300
+  RDVRSXDS,*,10,CH      Primary VRS subchain start date                 07427400
+**********************************************************************  07427500
+* Retaining Secondary VRS name:                                      *  07427600
+*                     Matching vrs name and job name are included    *  07427700
+*                     where a secondary VRS also matches.            *  07427800
+*                     The retaining VRS subchain NAME in this        *  07427900
+*                     matching VRS is set if it is used to retain    *  07428000
+*                     the data set.                                  *  07428100
+**********************************************************************  07428200
+  RD2VNME,*,8,CH        Secondary VRS name mask                         07428300
+  RD2VJBN,*,8,CH        Secondary VRS jobname mask                      07428400
+  RD2VSCH,*,8,CH        Secondary VRS subchain NAME                     07428500
+  RD2VXDS,*,10,CH       Secondary VRS subchain startdate                07428600
+  RDTOTAL_BLKCNT,*,10,CH  Total block count across all ds volumes @01A  07428700
+  SKIP,3                Reserved                                  @01A  07428800
+  RDCPGM,*,8,CH         Creating program name                     @01A  07428900
+  RDLPGM,*,8,CH         Last used program name                    @01A  07429000
+  RDLJOB,*,8,CH         Last used job name                        @01A  07429100
+  RDLSTEP,*,8,CH        Last used step name                       @01A  07429200
+  RDLDDNM,*,8,CH        Last used DD name                         @01A  07429300
+  RDLDEVN,*,4,CH        Last used device name                     @01A  07429400
+**********************************************************************  07429500
+* END OF REPORT EXTRACT DATA SET NAME RECORD                         *  07429600
+**********************************************************************  07429700
+RDRCEND,*               END OF RDEXT                                    07429800
+*                                                                       07429900
+**********************************************************************  07430000
+* END OF EXTENDED EXTRACT RECORD                                     *  07431001
+**********************************************************************  07440000
+

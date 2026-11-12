@@ -1,0 +1,142 @@
+{
+  "overwrite": true,
+  "dashboard": {
+    "uid": "mainframe-dasd-map",
+    "title": "Mainframe - mapa dysków",
+    "tags": [
+      "mainframe",
+      "dcollect"
+    ],
+    "time": {
+      "from": "now-7d",
+      "to": "now"
+    },
+    "refresh": "",
+    "schemaVersion": 41,
+    "templating": {
+      "list": [
+        {
+          "name": "sysid",
+          "label": "System",
+          "type": "query",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-dev"
+          },
+          "query": "SHOW TAG VALUES FROM \"dasd_volume\" WITH KEY = \"sysid\"",
+          "refresh": 1,
+          "multi": true,
+          "includeAll": true,
+          "current": {
+            "text": "All",
+            "value": "$__all"
+          }
+        },
+        {
+          "name": "storgrp",
+          "label": "Storage group",
+          "type": "query",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-dev"
+          },
+          "query": "SHOW TAG VALUES FROM \"dasd_volume\" WITH KEY = \"storgrp\" WHERE \"sysid\" =~ /^$sysid$/",
+          "refresh": 1,
+          "multi": true,
+          "includeAll": true,
+          "current": {
+            "text": "All",
+            "value": "$__all"
+          }
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "mainframe-dasdmap-panel",
+        "title": "Mapa dysków (DCOLLECT)",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-dev"
+        },
+        "gridPos": {
+          "x": 0,
+          "y": 0,
+          "w": 24,
+          "h": 24
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "influxdb",
+              "uid": "influxdb-dev"
+            },
+            "rawQuery": true,
+            "resultFormat": "table",
+            "query": "SELECT last(\"volser\") AS \"volser\", last(\"model\") AS \"model\", last(\"pct_used\") AS \"pct_used\", last(\"pct_free\") AS \"pct_free\", last(\"capacity_kb\") AS \"capacity_kb\", last(\"alloc_kb\") AS \"alloc_kb\", last(\"free_kb\") AS \"free_kb\", last(\"largest_free_ext_kb\") AS \"largest_free_ext_kb\", last(\"frag_index\") AS \"frag_index\", last(\"free_extents\") AS \"free_extents\", last(\"free_dscbs\") AS \"free_dscbs\", last(\"storage_group\") AS \"storage_group\", last(\"devtype\") AS \"devtype\", last(\"ixvtoc_enabled\") AS \"ixvtoc_enabled\", last(\"collected_at\") AS \"collected_at\", last(\"sys1_sms\") AS \"sys1_sms\", last(\"sys1_mvs\") AS \"sys1_mvs\", last(\"sys2_sms\") AS \"sys2_sms\", last(\"sys2_mvs\") AS \"sys2_mvs\", last(\"sys3_sms\") AS \"sys3_sms\", last(\"sys3_mvs\") AS \"sys3_mvs\", last(\"sys4_sms\") AS \"sys4_sms\", last(\"sys4_mvs\") AS \"sys4_mvs\", last(\"sys5_sms\") AS \"sys5_sms\", last(\"sys5_mvs\") AS \"sys5_mvs\", last(\"sys6_sms\") AS \"sys6_sms\", last(\"sys6_mvs\") AS \"sys6_mvs\", last(\"sys7_sms\") AS \"sys7_sms\", last(\"sys7_mvs\") AS \"sys7_mvs\", last(\"sys8_sms\") AS \"sys8_sms\", last(\"sys8_mvs\") AS \"sys8_mvs\", last(\"cylmg_capacity_kb\") AS \"cylmg_capacity_kb\", last(\"cp_target_occ_pct\") AS \"cp_target_occ_pct\", last(\"cp_trigger_occ_pct\") AS \"cp_trigger_occ_pct\", last(\"cp_occ_after_pct\") AS \"cp_occ_after_pct\", last(\"pct_used_trk\") AS \"pct_used_trk\", last(\"pct_used_cyl\") AS \"pct_used_cyl\", last(\"trk_capacity_kb\") AS \"trk_capacity_kb\", last(\"trk_alloc_kb\") AS \"trk_alloc_kb\", last(\"cylmg_alloc_kb\") AS \"cylmg_alloc_kb\", last(\"conflict_error\") AS \"conflict_error\", last(\"conflict_warning\") AS \"conflict_warning\", last(\"mvs_offline\") AS \"mvs_offline\", last(\"sms_disabled\") AS \"sms_disabled\", last(\"sms_quiesced\") AS \"sms_quiesced\", last(\"conflict_level\") AS \"conflict_level\" FROM \"dasd_volume\" WHERE $timeFilter AND \"sysid\" =~ /^$sysid$/ AND \"storgrp\" =~ /^$storgrp$/ GROUP BY \"devnum\", \"sysid\""
+          },
+          {
+            "refId": "B",
+            "datasource": {
+              "type": "influxdb",
+              "uid": "influxdb-dev"
+            },
+            "rawQuery": true,
+            "resultFormat": "table",
+            "query": "SELECT last(\"type\") AS \"change_type\", last(\"volser\") AS \"change_volser\", last(\"storgrp\") AS \"change_storgrp\", last(\"model\") AS \"change_model\", last(\"systems\") AS \"change_systems\", last(\"comment\") AS \"change_comment\", last(\"user\") AS \"change_user\", last(\"status\") AS \"change_status\", last(\"created_at\") AS \"change_created\", last(\"updated_at\") AS \"change_updated\" FROM \"dasd_change\" GROUP BY \"devnum\""
+          }
+        ],
+        "options": {
+          "alertReceiver": "grafana-default-email"
+        },
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        }
+      },
+      {
+        "id": 2,
+        "type": "timeseries",
+        "title": "Średnia zajętość wg storage group",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-dev"
+        },
+        "gridPos": {
+          "x": 0,
+          "y": 24,
+          "w": 24,
+          "h": 9
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "influxdb",
+              "uid": "influxdb-dev"
+            },
+            "rawQuery": true,
+            "resultFormat": "time_series",
+            "alias": "$tag_storgrp",
+            "query": "SELECT mean(\"pct_used_exact\") FROM \"dasd_volume\" WHERE $timeFilter AND \"sysid\" =~ /^$sysid$/ AND \"storgrp\" =~ /^$storgrp$/ GROUP BY time(1d), \"storgrp\" fill(none)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "custom": {
+              "drawStyle": "line",
+              "pointSize": 6,
+              "showPoints": "always"
+            }
+          },
+          "overrides": []
+        }
+      }
+    ]
+  }
+}

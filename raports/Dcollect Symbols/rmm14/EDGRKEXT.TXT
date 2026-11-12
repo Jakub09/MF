@@ -1,0 +1,109 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM REPORT EXTRACT FILE VITAL RECORD SPECIFICATION (VRS) RECORD -  *
+*    TYPE 'K'                                                        *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+RDRDW,1,4               RDW
+RKEXT,*,214
+**********************************************************************
+* RKEXT:    This file maps the information produced for VRS          *
+*           records in the RMM report extract file.                  *
+*           In this record the date format depends on the DATEFORM   *
+*           selected by EDGHSKP execution parameter or the parmlib   *
+*           specified value.                                         *
+**********************************************************************
+  RKTYPE,=,1,CH         RECORD TYPE
+    RKTYPEID,'K'          TYPE 'K'
+  RKTYPE2,*,1,CH        VRS TYPE
+    RKTYPVOL,'V'          VOLUME VRS
+    RKTYPDSN,'D'          DATA SET VRS
+    RKTYPNAM,'N'          NAME VRS
+  SKIP,1                RESERVED
+  RKDSNAME,*,44,CH      DATA SET NAME MASK
+  RKNAME,=,8,CH         VRS NAME
+  RKVOLSER,=,6,CH       VOLUME SERIAL MASK
+  SKIP,38               RESERVED
+  RKGENKEY,*,1,CH       DATA SET/VOLUME MASK
+    RKYES,'Y'             YES
+    RKNO,'N'              NO
+**********************************************************************
+*  Start of common fields:                                           *
+*  The common fields are in the same place in each record type       *
+*  in the report extract file.  This allows common processing of     *
+*  these field across multiple record types.                         *
+**********************************************************************
+  RKCRDATE,*,10,CH      CREATE DATE of VRS record
+  RKCRTIME,*,6,CH       CREATE TIME (HHMMSS) of VRS record
+  RKCRSID,*,8,CH        CREATE SYSTEM ID of VRS record
+  RKLCDATE,*,10,CH      LAST CHANGE DATE of VRS record
+  RKLCTIME,*,6,CH       LAST CHANGE TIME (HHMMSS) of VRS record
+  RKLCUID,*,8,CH        LAST CHANGE USER ID of VRS record
+  RKLCSID,*,8,CH        LAST CHANGE SYSTEM ID of VRS record
+**********************************************************************
+*  End of common fields                                              *
+**********************************************************************
+  RKCRTJBN,*,8,CH       JOBNAME MASK
+  RKRETNC,*,1,CH        RETAIN BASED ON NUMBER OF CYCLES
+*   RKYES,'Y'             YES
+*   RKNO,'N'              NO
+  RKRETND,*,1,CH        RETAIN BASED ON NUMBER OF ELAPSED DAYS
+*   RKYES,'Y'             YES
+*   RKNO,'N'              NO
+  RKRETNR,*,1,CH        RETAIN BASED ON NUMBER OF DAYS UNREFERENCED
+*   RKYES,'Y'             YES
+*   RKNO,'N'              NO
+  RKRETNW,*,1,CH        RETAIN ONLY WHILE DATA SET IS CATALOGED
+*   RKYES,'Y'             YES
+*   RKNO,'N'              NO
+  RKRETNX,*,1,CH        RETAIN UNTIL EXPIRED
+*   RKYES,'Y'             YES
+*   RKNO,'N'              NO
+  RKRETNXD,*,1,CH       RETAIN BASED ON EXTRA DAYS SINCE VRS MATCHED
+*   RKYES,'Y'             YES
+*   RKNO,'N'              NO
+  RKRETNCD,*,1,CH       RETAIN BASED ON BYDAYSCYCLE (ALL COPIES ON 1 DAY
+*                          ARE TREATED AS A CYCLE)
+*   RKYES,'Y'             YES
+*   RKNO,'N'              NO
+  RKRETAND,*,1,CH       RETENTION MUST BE ANDED WITH THE NEXT VRS IN
+*                          THE CHAIN
+*   RKYES,'Y'             YES
+*   RKNO,'N'              NO
+  SKIP,5                RESERVED
+  RKDSNG,*,1,CH         DATA SET NAME MASK IS FOR A GDG
+    RKG,'Y'               GDG
+    RKPG,'P'              PSEUDO-GDG
+    RKNG,'N'              NOGDG
+  RKLOCTYP,*,1,CH       LOCATION TYPE
+    RKAUT,'A'             AUTO
+    RKMAN,'M'             MANUAL
+    RKSTR,'S'             STORE
+    RKBLK,' '             BLANK
+  RKLOC,*,8,CH          NAME OF LOCATION TO BE STORED
+  RKNEXT,*,8,CH         NAME OF NEXT VRS IN THE CHAIN
+  RKCOUNT,*,5,CH        VITAL RECORD COUNT (NUMBER OF CYCLES OR
+*                          ELAPSED DAYS OR VOLUMES TO BE KEPT IN TOTAL)
+  RKSTNUM,*,5,CH        STORE KEEP NUMBER (NUMBER OF CYCLES OR DAYS OR
+*                          VOLUMES TO BE KEPT IN STORE)
+  RKDELAY,*,5,CH        NUMBER OF ELAPSED DAYS DELAY BEFORE BEING
+*                          SELECTED FOR THE FIRST LOCATION
+  RKOWNER,*,8,CH        VITAL RECORD OWNER
+  RKDELDAT,*,10,CH      DATE THE VRS IS TO BE DELETED BY RMM
+  RKDESC,*,30,CH        DESCRIPTION
+  RKRELOPT,*,8,CH       VRS RELEASE OPTIONS
+  RKRELIXD,=,1,CH       IGNORE EXPDT
+*   RKYES,'Y'             YES
+*   RKNO,'N'              NO
+  RKRELSI,*,1,CH        SCRATCH IMMEDIATE
+*   RKYES,'Y'             YES
+*   RKNO,'N'              NO
+  SKIP,6                RESERVED
+**********************************************************************
+* END Of REPORT EXTRACT VRS RECORD                                   *
+**********************************************************************
+  RKRCEND,*             END OF RKEXT
+

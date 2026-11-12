@@ -1,0 +1,205 @@
+
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mainframe - mapa dysków</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 20px;
+    font-family: Arial, sans-serif;
+    color: #173654;
+    background: #f1f6fb;
+}
+
+h2 {
+    margin: 0 0 8px;
+}
+
+.info {
+    margin-bottom: 16px;
+    color: #60758b;
+}
+
+/* Obszar przewijania mapy */
+.map-container {
+    height: 75vh;
+    overflow: auto;
+    border: 1px solid #cbd8e5;
+    background: white;
+    border-radius: 8px;
+}
+
+/* 2 kolumny opisowe + 16 kolumn adresowych */
+.map {
+    display: grid;
+    grid-template-columns:
+        75px 75px repeat(16, minmax(68px, 1fr));
+    gap: 3px;
+    min-width: 1450px;
+    padding: 5px;
+}
+
+/* Wszystkie nagłówki pozostają u góry */
+.header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #173f66;
+    color: white;
+    font-weight: bold;
+    text-align: center;
+    padding: 12px 4px;
+}
+
+/* Dwie pierwsze kolumny pozostają po lewej */
+.header:nth-child(1),
+.header:nth-child(2) {
+    position: sticky;
+    z-index: 12;
+}
+
+.header:nth-child(1) {
+    left: 0;
+}
+
+.header:nth-child(2) {
+    left: 78px;
+}
+
+.address {
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    background: #e5edf5;
+    font-weight: bold;
+    text-align: center;
+    padding: 12px 3px;
+}
+
+.model {
+    position: sticky;
+    left: 78px;
+    z-index: 5;
+    background: #dceaff;
+    font-weight: bold;
+    text-align: center;
+    padding: 12px 3px;
+}
+
+.disk {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    padding: 5px 2px;
+    border-radius: 5px;
+    background: #c8f5dd;
+    color: #155b3b;
+    font-size: 12px;
+    cursor: default;
+}
+
+.disk:hover {
+    background: #a5e6ff;
+    outline: 2px solid #1683d5;
+    z-index: 8;
+}
+
+/* Adres widoczny po najechaniu myszką */
+.disk::after {
+    content: attr(data-address);
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 5px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 10px;
+    border-radius: 5px;
+    background: #173654;
+    color: white;
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.disk:hover::after {
+    display: block;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Mainframe — mapa dysków</h2>
+<div class="info">
+    Model M54 | 128 dysków | Zakres 8080–80FF
+</div>
+
+<div class="map-container">
+    <div class="map" id="diskMap"></div>
+</div>
+
+<script>
+const map = document.getElementById("diskMap");
+const columns = [
+    "Adres", "Model",
+    ..."0123456789ABCDEF"
+];
+
+/* Nagłówki */
+columns.forEach((name, index) => {
+    const el = document.createElement("div");
+    el.className = "header";
+    el.textContent = name;
+
+    if (index === 0) el.style.left = "0";
+    if (index === 1) el.style.left = "78px";
+
+    map.appendChild(el);
+});
+
+/* Przykładowe modele przypisane do wierszy */
+const models = [
+    "M54", "M27", "M1", "M9",
+    "EAV", "M54", "M27", "EAV"
+];
+
+for (let row = 0; row < 8; row++) {
+    const base = 0x8080 + row * 16;
+
+    const address = document.createElement("div");
+    address.className = "address";
+    address.textContent = base.toString(16).toUpperCase();
+    map.appendChild(address);
+
+    const model = document.createElement("div");
+    model.className = "model";
+    model.textContent = models[row];
+    map.appendChild(model);
+
+    for (let col = 0; col < 16; col++) {
+        const diskAddress = base + col;
+        const hex = diskAddress.toString(16).toUpperCase();
+
+        const disk = document.createElement("div");
+        disk.className = "disk";
+        disk.textContent =
+            "VOL" + (row * 16 + col).toString(16).toUpperCase();
+
+        disk.dataset.address = hex;
+        map.appendChild(disk);
+    }
+}
+</script>
+
+</body>
+</html>

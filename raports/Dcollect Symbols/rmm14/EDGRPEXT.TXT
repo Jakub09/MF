@@ -1,0 +1,50 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM REPORT EXTRACT FILE PRODUCT RECORD (RPEXT) - TYPE 'P'.         *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+RPRDW,1,4               RDW
+RPEXT,176
+**********************************************************************
+* RPEXT:    This file maps the information produced for product      *
+*           records in the RMM report extract file.                  *
+*           In this record the date format depends on the DATEFORM   *
+*           selected by EDGHSKP execution parameter or the parmlib   *
+*           specified value.                                         *
+**********************************************************************
+  RPTYPE,*,1,CH         RECORD TYPE
+    RPTYPEID,'P'          TYPE 'P'
+  SKIP,3                RESERVED
+  RPPPNUM,*,8,CH        PRODUCT NUMBER (NNNN-CCC)
+  RPVER,*,6,CH          VERSION/RELEASE/MOD NUMBER
+*                       (vvrrmm) where vv - version, rr - release,
+*                       mm - modification level
+  SKIP,30               RESERVED
+**********************************************************************
+*  Start of common fields:                                           *
+*  The common fields are in the same place in each record type       *
+*  in the report extract file.  This allows common processing of     *
+*  these field across multiple record types.                         *
+**********************************************************************
+  RPCRDATE,*,10,CH      CREATE DATE of product record
+  RPCRTIME,*,6,CH       CREATE TIME (HHMMSS) of product record
+  RPCRSID,*,8,CH        CREATE SYSTEM ID of product record
+  RPLCDATE,*,10,CH      LAST CHANGE DATE of product record
+  RPLCTIME,*,6,CH       LAST CHANGE TIME (HHMMSS) of product record
+  RPLCUID,*,8,CH        LAST CHANGE USER ID of product record
+  RPLCSID,*,8,CH        LAST CHANGE SYSTEM ID of product record
+**********************************************************************
+*  End of common fields                                              *
+**********************************************************************
+  RPPPOWN,*,8,CH        PRODUCT OWNER ID
+  RPPPNAME,*,30,CH      PRODUCT NAME
+  RPPPDESC,*,30,CH      PRODUCT DESCRIPTION
+  RPVOLNO,*,4,CH        NUMBER OF PRODUCT VOLUMES
+**********************************************************************
+* END OF REPORT EXTRACT PRODUCT RECORD                               *
+**********************************************************************
+RPRCEND,*             END OF RPEXT
+

@@ -1,0 +1,44 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMS 1.4 AMS DCOLLECT RECORDS.           *
+**********************************************************************
+* VOLUME INFORMATION - RECORD TYPE 'V'.                              *
+*   SEE "AMS FOR THE ICF (SC26-4906)" FOR FIELD DESCRIPTIONS.        *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,29                  START AFTER HEADER
+DCVVOLI,*,112                VOLUME INFORMATION
+  DCVVOLSR,=,6,CH            VOLUME SERIAL NUMBER
+  DCVFLAG1,*,1,BI            INFORMATION FLAG #1
+    DCVINXEX,B'1.......'       INDEXED VTOC EXISTS
+    DCVINXEN,B'.1......'       INDEXED VTOC IS ENABLED
+    DCVUSPVT,B'..1.....'       PRIVATE
+    DCVUSPUB,B'...1....'       PUBLIC
+    DCVUSSTO,B'....1...'       STORAGE
+    DCVSHRDS,B'.....1..'       DEVICE IS SHAREABLE
+    DCVMANGD,B'......11'       VOLUME IS SMS MANAGED
+    DCVINITL,B'......01'       IN CONVERSION TO SMS
+    DCVNMNGD,B'......00'       NON-SMS MANAGED VOLUME
+  DCVERROR,*,1,BI            ERROR INFORMATION FLAG
+    DCVEVLCP,B'1.......'       ERROR CALCULATING VOLUME CAPACITY
+    DCVEBYTK,B'.1......'       ERROR CALCULATING BYTES/TRACK
+    DCVELSPC,B'..1.....'       ERROR DURING LSPACE PROCESSING
+  SKIP,3                     RESERVED
+  DCVPERCT,*,1,BI            PERCENT FREESPACE ON VOLUME
+  DCVFRESP,*,4,BI            FREESPACE ON VOLUME (IN KB)
+  DCVALLOC,*,4,BI            ALLOCATED SPACE ON VOL (IN KB)
+  DCVVLCAP,*,4,BI            TOTAL CAPACITY OF VOL (IN KB)
+  DCVFRAGI,*,4,FI            FRAGMENTATION INDEX
+  DCVLGEXT,*,4,BI            LARGEST FREE EXTENT ON VOLUME
+  DCVFREXT,*,4,FI            NUMBER OF FREE EXTENTS
+  DCVFDSCB,*,4,FI            FREE DSCBS IN VTOC
+  DCVFVIRS,*,4,FI            FREE VIRS
+  DCVDVTYP,*,8,CH            DEVICE TYPE
+  DCVDVNUM,*,2,BI            DEVICE NUMBER
+  SKIP,2                     RESERVED
+  DCVSTGGP,*,32
+    DCVSGLNG,=,2,FI          STORAGE GROUP NAME LENGTH
+    DCVSGTCL,*,30,CH         STORAGE GROUP NAME
+  DCVDPTYP,*,8,CH            PHYSICAL DEVICE TYPE
+  SKIP,16                    RESERVED
+DCVVOLIE,*                   END OF DCVVOLI
+

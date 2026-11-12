@@ -1,0 +1,50 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM REPORT EXTRACT FILE RACK NUMBER RECORD (RREXT) - TYPE 'R'.     *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+RRRDW,1,4               RDW
+RREXT,*,110
+**********************************************************************
+* RREXT:    This file maps the information produced for rack number  *
+*           records in the RMM report extract file.                  *
+*           In this record the date format depends on the DATEFORM   *
+*           selected by EDGHSKP execution parameter or the parmlib   *
+*           specified value.                                         *
+**********************************************************************
+  RRTYPE,=,1,CH         RECORD TYPE
+    RRTYPEID,'R'          TYPE 'R'
+  RRTYPE2,*,1,CH        RACK RECORD ID
+    RRTYPEE,'E'           EMPTY RACK
+    RRTYPEF,'F'           FREE/SCRATCH RACK
+    RRTYPEU,C'U'          IN USE RACK
+  SKIP,2                RESERVED
+  RRRACK,*,6,CH         RACK NUMBER
+  RRNAME,*,8,CH         MEDIA NAME
+    RRUNIT,=,8,CH       Old name for RRNAME field
+  SKIP,30               RESERVED
+**********************************************************************
+*  Start of common fields:                                           *
+*  The common fields are in the same place in each record type       *
+*  in the report extract file.  This allows common processing of     *
+*  these field across multiple record types.                         *
+**********************************************************************
+  RRCRDATE,*,10,CH      CREATE DATE of rack record
+  RRCRTIME,*,6,CH       CREATE TIME (HHMMSS) of rack record
+  RRCRSID,*,8,CH        CREATE SYSTEM ID of rack record
+  RRLCDATE,*,10,CH      LAST CHANGE DATE of rack record
+  RRLCTIME,*,6,CH       LAST CHANGE TIME (HHMMSS) of rack record
+  RRLCUID,*,8,CH        LAST CHANGE USER ID of rack record
+  RRLCSID,*,8,CH        LAST CHANGE SYSTEM ID of rack record
+**********************************************************************
+*  End of common fields                                              *
+**********************************************************************
+  RRVOLSER,*,6,CH       ASSIGNED VOLUME SERIAL NUMBER
+**********************************************************************
+* END OF REPORT EXTRACT RACK NUMBER RECORD                           *
+**********************************************************************
+RRRCEND,*               END OF RREXT
+

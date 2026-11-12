@@ -1,0 +1,23 @@
+**********************************************************************
+* SYMBOLE ROBOCZE WSPOLNE DLA JOBOW RAPORTOW DCOLLECT                *
+* (DCRPTMC, DCRPTMSK, DCRPTSML, DCRPTQLF)                            *
+**********************************************************************
+* REKORD ROBOCZY VB PO INREC W EXT1 (RDW 1-4)
+W_ALLKB,5,15,ZD               ALOKACJA KB
+W_USEKB,20,15,ZD              UZYCIE KB
+W_MGTCL,35,30,CH              MANAGEMENT CLASS
+W_DSNAM,65,44,CH              NAZWA ZBIORU
+W_FLAG2,109,1,BI              KOPIA DCDFLAG2
+W_FLAG5,110,1,BI              KOPIA DCDFLAG5
+W_ALLSP,111,4,FI              KOPIA DCDALLSP (31-BIT)
+W_USESP,115,4,FI              KOPIA DCDUSESP (31-BIT)
+W_ALLSX,119,8,FI              KOPIA DCDALLSX (63-BIT)
+W_USESX,127,8,FI              KOPIA DCDUSESX (63-BIT)
+* EXTR (FB 104) - JEDEN REKORD NA ZBIOR, NAZWA NA KONCU (DLA PARSE)
+X_ALLKB,1,15,ZD
+X_USEKB,16,15,ZD
+X_MGTCL,31,30,CH
+X_DSNAM,61,44,CH
+* STALE
+ZD15_0,C'000000000000000'
+ZD15_1,C'000000000000001'

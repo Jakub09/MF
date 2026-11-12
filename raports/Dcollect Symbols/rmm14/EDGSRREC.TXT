@@ -1,0 +1,57 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM SMF LIBRARY SHELF LOCATION INFORMATION -                       *
+*    TYPE 'E', TYPE 'F' AND TYPE 'U'.                                *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,SMFADREC            START AFTER EDGSMFAR
+MRREC,*,140
+**********************************************************************
+* KEY FIELD                                                          *
+**********************************************************************
+  MRKEY,=,56                 KEY FIELD
+    MRTYPE,=,1,CH            RECORD TYPE
+      MRTYPEE,'E'              EMPTY RACK
+      MRTYPEF,'F'              FREE/SCRATCH RACK
+      MRTYPEU,'U'              IN USE RACK
+    SKIP,1                   RESERVED
+  MRMEDIA,*,8,CH             MEDIA NAME
+    MRUNIT,=,8,CH            UNIT TYPE
+  MRRACK,*,6,CH              RACK NUMBER
+  SKIP,40                    RESERVED
+**********************************************************************
+* CONTROL INFORMATION                                                *
+**********************************************************************
+  MRRECLN,*,2,FI             RECORD LENGTH
+  SKIP,2                     RESERVED
+  MRCRDATE,*,4,PD            RACK CREATE DATE - YYYYDDD
+  MRCRTIME,*,4,PD            RACK CREATE TIME - HHMMSST
+  MRCRSID,*,8,CH             CREATE SYSTEM ID
+  MRRCCDS,*,8,CH             RECORD CREATE CDS ID
+  MRLCDATE,*,4,PD            LAST CHANGE DATE  - YYYYDDD
+  MRLCTIME,*,4,PD            LAST CHANGE TIME -  HHMMSST
+  MRLCUID,*,8,CH             LAST CHANGE USER ID
+  MRLCSID,*,8,CH             LAST CHANGE SYSTEM ID
+  MRUCDATE,*,4,PD            LAST "USER" CHANGE DATE
+  MRUCTIME,*,4,PD            LAST "USER" CHANGE TIME
+  MRCFLG,*,1,BI              CONTROL FLAGS 1
+    MRDELFLG,X'80'             RECORD DELETED
+    MRSELFLG,X'10'             SELECT - PROC BY SATELLITE UPDT
+    MRDUMMY,X'08'              DUMMY RECORD - ALLOW TSO ADD
+  SKIP,7                     RESERVED
+**********************************************************************
+* RACK INFORMATION                                                   *
+**********************************************************************
+  MRVOLSER,*,6,CH            ASSIGNED VOLSER OR ZEROS
+  SKIP,10                    RESERVED
+**********************************************************************
+* END OF RACK INFORMATION                                            *
+**********************************************************************
+MRRCEND,*                    END OF MRRC
+**********************************************************************
+* END OF RMM MRREC                                                   *
+**********************************************************************
+

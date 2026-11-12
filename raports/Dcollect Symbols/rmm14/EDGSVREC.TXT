@@ -1,0 +1,273 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM SMF VOLUME INFORMATION - TYPE 'V'.                             *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,SMFADREC            START AFTER EDGSMFAR
+MVREC,*,752
+**********************************************************************
+* KEY FIELD                                                          *
+**********************************************************************
+  MVKEY,=,56                 KEY FIELD
+    MVTYPE,=,1,CH            RECORD TYPE
+      MVTYPEID,'V'             VOLUME INFO ID SYMBOL
+    SKIP,1                   RESERVED
+  MVVOLSER,*,6,CH            VOLUME SERIAL NUMBER
+  SKIP,48                    RESERVED
+**********************************************************************
+* CONTROL INFORMATION                                                *
+**********************************************************************
+  MVRECLN,*,2,FI             RECORD LENGTH
+  SKIP,2                     RESERVED
+  MVCRDATE,*,4,PD            VOL CREATE DATE - YYYYDDD
+  MVCRTIME,*,4,PD            VOL CREATE TIME - HHMMSST
+  MVCRSID,*,8,CH             CREATE SYSTEM ID
+  MVRCCDS,*,8,CH             RECORD CREATE CDS ID
+  MVLCDATE,*,4,PD            LAST CHANGE DATE  - YYYYDDD
+  MVLCTIME,*,4,PD            LAST CHANGE TIME -  HHMMSST
+  MVLCUID,*,8,CH             LAST CHANGE USER ID
+  MVLCSID,*,8,CH             LAST CHANGE SYSTEM ID
+  MVUCDATE,*,4,PD            LAST "USER" CHANGE DATE
+  MVUCTIME,*,4,PD            LAST "USER" CHANGE TIME
+  MVCFLG,*,1,BI              CONTROL FLAGS 1
+  MVDELFLG,X'80'               RECORD DELETED
+  MVSELFLG,X'10'               SELECT - PROC BY SATELLITE UPDT
+  MVDUMMY,X'08'                DUMMY RECORD - ALLOW TSO ADD
+  MVRECLEV,*,1,BI              RECORD LEVEL NUMBER
+  SKIP,6                     RESERVED
+**********************************************************************
+* VOLUME INFORMATION                                                 *
+**********************************************************************
+  MVEXPDTO,*,4,PD            EXPIRATION  DATE  - ORIGINAL
+  MVEXPDT,*,4,PD             EXPIRATION  DATE  - YYYYDDD
+  MVRDEN,*,1,BI              COPY OF JFCBDEN
+  MVDEN,*,1,CH               RECORDING DENSITY
+    MVDEN3,'3'                 1600BPI
+    MVDEN4,'4'                 6250BPI
+    MVDEN9,'9'                 3480
+    MVDENC,'C'                 3480 COMPACTED (IDRC)
+    MVDENU,'*'                 UNDEFINED
+  MVDSNNO,*,2,FI             NUMBER OF DATASETS ON VOLUME
+  MVTUSE,*,4,FI              TAPE USAGE IN KBYTES
+  MVUSE,*,2,FI               VOLUME USE COUNT
+  MVSTSTAT,*,1,BI            STORE STATUS
+    MVSTS001,X'01'             TAPE LIB TO REMOTE STORE
+    MVSTS002,X'02'             REMOTE STORE TO TAPE LIB
+    MVSTS003,X'03'             TAPE LIB TO LOCAL STORE
+    MVSTS004,X'04'             LOCAL STORE TO TAPE LIB
+    MVSTS005,X'05'             LOCAL STORE TO DISTANT
+    MVSTS006,X'06'             TAPE LIB TO DISTANT STORE
+    MVSTS007,X'07'             DISTANT STORE TO TAPE LIB
+    MVSTS009,X'09'             STORE LOCATION VALID
+  MVVRSREL,*,1,BI            VRS RELEASE OPTIONS
+    MVVRFXDI,B'1.......'       EXPIRY DATE IGNORE
+    MVVRFSCI,B'.1......'       SCRATCH IMMEDIATE
+* FLAG BITS IN MVVRSREL SHOULD MATCH MKRLSOPT BIT SETTINGS.
+  MVLABNO1,*,2,FI            LABEL NUMBER OF 1ST FILE
+  MVTDSI,*,4                 TAPE MEDIA TYPE INFORMATION
+    MVMEDREC,=,1,BI          VOL RECORDING FORMAT
+      MVMRCU,X'00'             UNKNOWN
+      MVMRC18,X'01'            18TRACK
+      MVMRC36,X'02'            36TRACK
+      MVMRC128,X'03'           128TRACK
+    MVMEDTY,*,1,BI           TAPE MEDIA TYPE
+      MVMTYU,X'00'             UNKNOWN
+      MVMTYCS,X'01'            CST
+      MVMTYEC,X'02'            ECCST
+      MVMTYHP,X'03'            HPCT
+      MVMTYEH,X'04'            EHPCT
+    MVMEDCMP,*,1,BI          TAPE COMPACTION
+      MVMCMU,X'00'             UNKNOWN
+      MVMCMNC,X'01'            NOT COMPACTED
+      MVMCMC,X'02'             COMPACTED
+    MVMEDATR,*,1,BI          TAPE SPECIAL ATTRIBUTES
+      MVMATN,X'00'             NONE
+      MVMAT18,X'01'            18 TRACK READ ONLY
+  MVSTORID,*,1,CH            STORE LOCATION ID
+    MVSTIDD,'D'                DISTANT STORE
+    MVSTIDL,'L'                LOCAL STORE
+    MVSTIDR,'R'                REMOTE STORE
+    MVSTIDT,'T'                TAPE LIBRARY
+  MVNSTRID,*,1,CH            NEW STORE LOCATION
+  MVNLOC,*,8,CH              DESIRED LOCATION NAME
+  MVSTBIN,*,4,FI             STORE BIN NUMBER
+  MVOBIN,*,4,FI              OLD BIN NUMBER
+  MVSTDATE,*,4,PD            DATE STORED (YYYYDDD)
+  MVLUDEV,*,4,CH             LAST USED DEVICE
+  MVLONLOC,*,8,CH            LOAN LOCATION
+  MVOLNLOC,*,8,CH            OLD LOAN LOCATION
+  MVLRDDAT,*,4,PD            DATE VOLUME LAST READ (YYYYDDD)
+  MVLWTDAT,*,4,PD            DATE VOLUME LAST WRITTEN
+  MVASDATM,*,8               ASSIGNED DATE AND TIME
+    MVASDATE,=,4,PD          ASSIGNED DATE (YYYYDDD)
+    MVASTIME,*,4,PD          ASSIGNED TIME (HHMMSST)
+  MVOWNID,*,8,CH             VOLUME OWNER USERID
+  MVCRUID,*,8,CH             CREATING USERID
+  MVCRJOB,*,8,CH             CREATING JOBNAME
+  MVSECLEV,*,1,BI            SECURITY CLASSIFICATION LEVEL
+  MVFLGAX,*,1,BI             FLAGS 'A' - STATUS EXTENSION
+    MVGVCFLG,B'1.......'       SCRATCH VOL CLAIMED VIA GETVOL
+    MVXINFLG,B'.1......'       SCRATCH VOLUME HAS NEVER BEEN INITIALISED
+    MVINIFLG,B'..1.....'       SCRATCH VOLUME WITH INIT ACTION PENDING
+    MVENTFLG,B'...1....'       SCRATCH VOLUME WAITING TO ENTER ATL
+    MVFABEND,B'....1...'       ABEND IN PROCESS WHEN A DATA SET CLOSED
+    MVFOCEAB,B'.....1..'       ABEND PROBABLY IN O/C/EOV
+    MVATIFLG,B'......1.'       INIT REQUESTED FOR ATL VOL
+    MVFORCE,B'.......1'        FORCE SUPPLIED
+  MVVOLSEQ,*,2,FI              VOLUME SEQUENCE NUMBER
+**********************************************************************
+* VOLUME FLAGS                                                       *
+**********************************************************************
+  MVFLGA,*,1,BI              FLAGS 'A' - STATUS
+    MVMSTFLG,B'1.......'       VOLUME IS MASTER
+    MVRLSFLG,B'.1......'       VOLUME PENDING RELEASE
+    MVVRFLG,B'..1.....'        VITAL RECORD - DO NOT RELEASE
+    MVASSFLG,B'...1....'       USER TAPE (ASSIGNED BY LIB)
+    MVLONFLG,B'....1...'       TAPE IS ON LOAN
+    MVOPNFLG,B'.....1..'       TAPE OPENED AND NOT YET CLOSED
+    MVSCRFLG,B'......1.'       VOLUME IS SCRATCH
+    MVOCEFLG,B'.......1'       VOLUME RECORDED BY O/C/EOV
+  MVFLGB,*,1,BI              FLAGS 'B'
+    MVDEFRET,B'1.......'       DEFAULT RETENTION PERIOD USED
+    MVPPTAPE,B'.1......'       PROGRAM PRODUCT TAPE
+    MVNLTAPE,B'..1.....'       LABEL TYPE IS NL
+    MVALTAPE,B'...1....'       LABEL TYPE IS AL
+    MVSLTAPE,B'....1...'       LABEL TYPE IS SL
+    MVBLTAPE,B'......1.'       TAPE LAST WRITTEN USING BLP
+    MVULTAPE,B'.......1'       SL OR AL TAPE HAS USER LABELS
+  MVFLGC,*,1,BI              FLAGS 'C' - RELEASE ACTIONS
+    MVRETSCR,B'1.......'       RETURN TO SCRATCH POOL - DEFAULT
+    MVRELACT,B'.1111111'       RELEASE ACTIONS
+    MVREPREL,B'.1......'       REPLACE TAPE ON RELEASE
+    MVREINIT,B'..1.....'       REINITIALISE
+    MVDEGAUS,B'...1....'       DEGAUS/SECURITY ERASE
+    MVROWNER,B'....1...'       RETURN TO OWNER
+    MVNOWNER,B'.....1..'       NOTIFY OWNER
+  MVFLGD,*,1,BI              FLAGS 'D' - ACCESS
+    MVOREAD,B'1.......'        OWNER MAY READ VOLUME
+    MVOUPD,B'.1......'         OWNER MAY UPDATE VOLUME
+    MVOALT,B'..1.....'         OWNER MAY ALTER VOLUME
+    MVPROTR,B'...1....'        READ-ONLY PROTECTION
+    MVPROTU,B'....1...'        UPDATE PROTECTION
+    MVMVSUSE,B'.....1..'       MAY BE USED ON MVS SYSTEMS
+    MVVMUSE,B'......1.'        MAY BE USED ON VM SYSTEMS
+    MVNODSNR,B'.......1'       ONLY 1ST TAPE DS RECORDED
+  MVFLGE,*,1,BI              FLAGS 'E' - ACTIONS PENDING
+*   MVRETSCR,B'1.......'       RETURN TO SCRATCH POOL - DEFAULT
+*   MVRELACT,B'.1111111'       RELEASE ACTIONS
+*   MVREPREL,B'.1......'       REPLACE TAPE ON RELEASE
+*   MVREINIT,B'..1.....'       REINITIALISE
+*   MVDEGAUS,B'...1....'       DEGAUS/SECURITY ERASE
+*   MVROWNER,B'....1...'       RETURN TO OWNER
+*   MVNOWNER,B'.....1..'       NOTIFY OWNER
+  MVLTYP,*,1,BI              COPY OF JFCBLTYP
+  SKIP,2                     RESERVED
+  MVMEDIA,*,8,CH             INSTALLATIONS MEDIA NAME
+    MVUNIT,=,8,CH            UNIT TYPE
+  MVRACK,*,6,CH              RACK NUMBER
+  MVPVOL,*,6,CH              PREVIOUS VOLSER IF MULTI-VOL
+  MVNVOL,*,6,CH              NEXT VOLSER IF MULTI-VOL
+  MVUCBTYP,*,4,BI            COPY OF UCBTYP FIELD FROM UCB
+  MVERRCNT,*,8               ERROR COUNTS
+    MVTRERR,=,2,FI           TEMPORARY READ ERRORS
+    MVTWERR,*,2,FI           TEMPORARY WRITE ERRORS
+    MVPRERR,*,2,FI           PERMANENT READ ERRORS
+    MVPWERR,*,2,FI           PERMANENT WRITE ERRORS
+  SKIP,4                     RESERVED
+  MVPPDATA,*,18              PROGRAM PRODUCT DATA
+    MVPPNUM,=,8,CH           PROGRAM PRODUCT NUMBER
+    MVVER,*,6,CH             VERSION/RELEASE/MOD NUMBER
+    MVFEAT,*,4,CH            FEATURE CODE
+  MVTRTCH,*,1,BI             FROM JFCTRTCH - IDRC SUPPORT
+    MVTCOMP,X'08'              DSN USED 3480 IDRC
+    MVTNCOMP,X'04'             NO COMPACTION
+  MVOPVOL,*,6,CH             OLD PREVIOUS VOLUME
+  MVTOKEN,*,8,CH             RESERVED FOR O/C/EOV
+  MVLOCFLG,*,1,BI            FLAG BYTE FOR LIBRARY SUPPORT
+    MVTRNFLG,B'1.......'       INDICATES VOLUME IN TRANSIT
+*                                 WHEN NOT SET, VOLUME IS IN LOCATION
+    MVMVMODE,B'.1......'       INDICATES MANUALMOVE
+*                                 WHEN NOT SET, INDICATES AUTOMOVE
+    MVLTSHL,B'....0000'        SHELF LOCATION
+    MVLTSTG,B'....0001'        STORAGE LOCATION
+    MVLTMAN,B'....0010'        MANUAL LIBRARY
+    MVLTAUT,B'....0011'        AUTOMATIC LIBRARY
+    MVLTSTB,B'....0100'        STORE WITH BINS
+    MVLTSNB,B'....0101'        STORE WITHOUT BINS
+  MVTYPFLG,*,1,BI            FLAGS FOR LOCATION TYPE INFORMATION
+    MVNTSHL,B'0000....'        SHELF LOCATION
+    MVNTSTG,B'0001....'        STORAGE LOCATION
+    MVNTMAN,B'0010....'        MANUAL LIBRARY
+    MVNTAUT,B'0011....'        AUTOMATIC LIBRARY
+    MVNTSTB,B'0100....'        STORE WITH BINS
+    MVNTSNB,B'0101....'        STORE WITHOUT BINS
+    MVDTSHL,B'....0000'        SHELF LOCATION
+    MVDTSTG,B'....0001'        STORAGE LOCATION
+    MVDTMAN,B'....0010'        MANUAL LIBRARY
+    MVDTAUT,B'....0011'        AUTOMATIC LIBRARY
+    MVDTSTB,B'....0100'        STORE WITH BINS
+    MVDTSNB,B'....0101'        STORE WITHOUT BINS
+  MVTYP2FLG,*,1,BI           MORE FLAGS FOR TYPES
+    MVHTSHL,B'0000....'        SHELF LOCATION
+    MVHTSTG,B'0001....'        STORAGE LOCATION
+    MVHTMAN,B'0010....'        MANUAL LIBRARY
+    MVHTAUT,B'0011....'        AUTOMATIC LIBRARY
+    MVHTSTB,B'0100....'        STORE WITH BINS
+    MVHTSNB,B'0101....'        STORE WITHOUT BINS
+  SKIP,6                     RESERVED
+  MVHLOC,*,8,CH              HOME LOCATION NAME
+  MVSGNAME,*,8,CH            STORAGE GROUP NAME
+  MVLOC,*,8,CH               LOCATION NAME
+  MVDEST,*,8,CH              DESTINATION NAME
+  MVOLOC,*,8,CH              PREVIOUS LOCATION NAME
+  MVUSBIN,*,6,CH             SHELF MANAGED STORE BIN NO.
+  MVUBMDN,*,8,CH             BIN MEDIA NAME
+  MVUSOBIN,*,6,CH            SHELF MANAGED STORE OLD BIN
+  MVUOBMDN,*,8,CH            OLD BIN MEDIA NAME
+  MVRETDAT,*,4,PD            RETENTION DATE
+  SKIP,6                     RESERVED
+  SKIP,6                     RESERVED
+  MVLCTOKN,*,8,CH            VOLUME LAST CHANGE TOKEN
+  SKIP,2                     RESERVED
+  MVLEV1SC,*,62              LEVEL 1 SECTION
+**********************************************************************
+* VARIABLE LENGTH SECTION                                            *
+**********************************************************************
+  MVVARSEC,*,268             VARIABLE LENGTH SECTION
+    MVDSN1L,=,1,BI           LENGTH OF FIRST DSNAME ON TAPE
+    MVDSNLL,*,1,BI           LENGTH OF LAST DSNAME ON TAPE
+    MVACCLEN,*,1,BI          LENGTH OF A/C FIELD (OR ZERO)
+    MVUSELEN,*,1,BI          LENGTH OF USER DATA (OR ZERO)
+    MVACCLST,*,1,BI          NUMBER OF ACCESS LIST ENTRIES
+    SKIP,7                   RESERVED
+    MVDSN1,*,44,CH           DSNAME OF FIRST FILE ON TAPE
+    MVDSNL,*,44,CH           DSNAME OF LAST FILE ON TAPE
+    MVACCINF,*,40,CH         ACCOUNTING INFORMATION
+    MVDESC,*,30,CH           USER DESCRIPTION
+      MVUSEFLD,=,30,CH       USER DESCRIPTION
+    SKIP,2                   RESERVED
+    MVAUTIDS,*,96,CH         AUTHORISED USER IDS AREA
+* MVAUTIDS IS 12 8-BYTE SLOTS, CONTAINING UP TO 12 USER IDS
+      MVAUTIDS_01,=,8,CH     USER ID - 01
+      MVAUTIDS_02,*,8,CH     USER ID - 02
+      MVAUTIDS_03,*,8,CH     USER ID - 03
+      MVAUTIDS_04,*,8,CH     USER ID - 04
+      MVAUTIDS_05,*,8,CH     USER ID - 05
+      MVAUTIDS_06,*,8,CH     USER ID - 06
+      MVAUTIDS_07,*,8,CH     USER ID - 07
+      MVAUTIDS_08,*,8,CH     USER ID - 08
+      MVAUTIDS_09,*,8,CH     USER ID - 09
+      MVAUTIDS_10,*,8,CH     USER ID - 10
+      MVAUTIDS_11,*,8,CH     USER ID - 11
+      MVAUTIDS_12,*,8,CH     USER ID - 12
+**********************************************************************
+* END OF VOLUME INFORMATION                                          *
+**********************************************************************
+MVRCEND,*                    END OF MVRC
+**********************************************************************
+* END OF RMM MVREC                                                   *
+**********************************************************************
+

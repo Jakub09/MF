@@ -1,0 +1,480 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM SMF OWNER INFORMATION - TYPE 'O'.                              *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,SMFADREC            START AFTER EDGSMFAR
+MOREC,*,1728
+**********************************************************************
+* KEY FIELD                                                          *
+**********************************************************************
+  MOKEY,=,56                 KEY FIELD
+    MOTYPE,=,1,CH            RECORD TYPE
+      MOTYPEID,'O'             OWNER RECORD ID SYMBOL
+  MOOWNER,*,8,CH             OWNER ID
+  MORTYPE,*,6,CH             OWNER INFO
+***????  ARE THESE CONSTANTS RIGHT?
+    MORDET,'000000'            OWNER DETAILS
+    MORVLO,'VOLSER'            VOLUME/OWNER INFORMTN
+    MOREND,'111111'            END OF VOLUME/OWNER
+  SKIP,41                    RESERVED - BINARY ZEROS
+**********************************************************************
+* CONTROL INFORMATION                                                *
+**********************************************************************
+  MORECLN,*,2,FI             RECORD LENGTH
+  SKIP,2                     RESERVED
+  MOCRDATE,*,4,PD            OWNR CREATE DATE - YYYYDDD
+  MOCRTIME,*,4,PD            OWNR CREATE TIME - HHMMSST
+  MOCRSID,*,8,CH             CREATE SYSTEM ID
+  MORCCDS,*,8,CH             RECORD CREATE CDS ID
+  MOLCDATE,*,4,PD            LAST CHANGE DATE  - YYYYDDD
+  MOLCTIME,*,4,PD            LAST CHANGE TIME -  HHMMSST
+  MOLCUID,*,8,CH             LAST CHANGE USER ID
+  MOLCSID,*,8,CH             LAST CHANGE SYSTEM ID
+  MOUCDATE,*,4,PD            LAST "USER" CHANGE DATE
+  MOUCTIME,*,4,PD            LAST "USER" CHANGE TIME
+  MOCFLG,*,1,BI              CONTROL FLAGS 1
+    MODELFLG,X'80'             RECORD DELETED
+    MOSELFLG,X'10'             SELECT - PROC BY SATELLITE UPDT
+    MODUMMY,X'08'              DUMMY RECORD - ALLOW TSO ADD
+  SKIP,7                     RESERVED
+**********************************************************************
+* OWNER DETAILS                                                      *
+**********************************************************************
+  ALIGN,F                    ENSURE AREA F-WORD ALIGNED
+  MOOWNDET,*,248             OWNER DETAILS
+    MOOWNSUR,=,20,CH         OWNER SURNAME
+    MOOWNFST,*,20,CH         OWNER FIRST NAME
+    MOOWNDEP,*,40,CH         OWNER DEPARTMENT
+    MOOWNAD1,*,40,CH         OWNER ADDRESS LINE 1
+    MOOWNAD2,*,40,CH         OWNER ADDRESS LINE 2
+    MOOWNAD3,*,40,CH         OWNER ADDRESS LINE 3
+    MOOWNTIN,*,8,CH          OWNER INTERNAL TELEPHONE NO
+    MOOWNTEX,*,20,CH         OWNER EXTERNAL TELEPHONE NO
+    MOOWNUID,*,8,CH          OWNER USERID
+    MOOWNNOD,*,8,CH          OWNER NODENAME
+    MOOWNVOL,*,4,CH          TOTAL NUMBER OF OWNED VOLUMES
+  MOODETND,*                 END OF OWNER DETAILS
+**********************************************************************
+* OWNED VOLUME DETAILS                                               *
+**********************************************************************
+  POSITION,MOOWNDET          OVERLAY OWNER DETAILS
+  MOVOLDET,*,4               VOLUME DETAILS
+    MOVOLNO,=,2,FI           OWNED VOLS THIS INFORMATION
+    SKIP,2                   RESERVED
+**********************************************************************
+* OWNED VOLUME ENTRIES - 001-100                                     *
+*   THE ACTUAL NUMBER OF ENTRIES IS INDICATED BY MOVOLNO.            *
+**********************************************************************
+  MOVOLENT_ARRAY,*,1600      ARRAY OF VOLUME ENTRIES
+    MOVOLENT_001,=,16        VOLUME ENTRY - 001
+      MOVOLSER_001,=,6,CH    VOLUME SERIAL - 001
+      SKIP,2                 RESERVED
+      MOUNIT_001,*,8,CH      UNIT TYPE - 001
+    MOVOLENT_002,*,16        VOLUME ENTRY - 002
+      MOVOLSER_002,=,6,CH    VOLUME SERIAL - 002
+      SKIP,2                 RESERVED
+      MOUNIT_002,*,8,CH      UNIT TYPE - 002
+    MOVOLENT_003,*,16        VOLUME ENTRY - 003
+      MOVOLSER_003,=,6,CH    VOLUME SERIAL - 003
+      SKIP,2                 RESERVED
+      MOUNIT_003,*,8,CH      UNIT TYPE - 003
+    MOVOLENT_004,*,16        VOLUME ENTRY - 004
+      MOVOLSER_004,=,6,CH    VOLUME SERIAL - 004
+      SKIP,2                 RESERVED
+      MOUNIT_004,*,8,CH      UNIT TYPE - 004
+    MOVOLENT_005,*,16        VOLUME ENTRY - 005
+      MOVOLSER_005,=,6,CH    VOLUME SERIAL - 005
+      SKIP,2                 RESERVED
+      MOUNIT_005,*,8,CH      UNIT TYPE - 005
+    MOVOLENT_006,*,16        VOLUME ENTRY - 006
+      MOVOLSER_006,=,6,CH    VOLUME SERIAL - 006
+      SKIP,2                 RESERVED
+      MOUNIT_006,*,8,CH      UNIT TYPE - 006
+    MOVOLENT_007,*,16        VOLUME ENTRY - 007
+      MOVOLSER_007,=,6,CH    VOLUME SERIAL - 007
+      SKIP,2                 RESERVED
+      MOUNIT_007,*,8,CH      UNIT TYPE - 007
+    MOVOLENT_008,*,16        VOLUME ENTRY - 008
+      MOVOLSER_008,=,6,CH    VOLUME SERIAL - 008
+      SKIP,2                 RESERVED
+      MOUNIT_008,*,8,CH      UNIT TYPE - 008
+    MOVOLENT_009,*,16        VOLUME ENTRY - 009
+      MOVOLSER_009,=,6,CH    VOLUME SERIAL - 009
+      SKIP,2                 RESERVED
+      MOUNIT_009,*,8,CH      UNIT TYPE - 009
+    MOVOLENT_010,*,16        VOLUME ENTRY - 010
+      MOVOLSER_010,=,6,CH    VOLUME SERIAL - 010
+      SKIP,2                 RESERVED
+      MOUNIT_010,*,8,CH      UNIT TYPE - 010
+    MOVOLENT_011,*,16        VOLUME ENTRY - 011
+      MOVOLSER_011,=,6,CH    VOLUME SERIAL - 011
+      SKIP,2                 RESERVED
+      MOUNIT_011,*,8,CH      UNIT TYPE - 011
+    MOVOLENT_012,*,16        VOLUME ENTRY - 012
+      MOVOLSER_012,=,6,CH    VOLUME SERIAL - 012
+      SKIP,2                 RESERVED
+      MOUNIT_012,*,8,CH      UNIT TYPE - 012
+    MOVOLENT_013,*,16        VOLUME ENTRY - 013
+      MOVOLSER_013,=,6,CH    VOLUME SERIAL - 013
+      SKIP,2                 RESERVED
+      MOUNIT_013,*,8,CH      UNIT TYPE - 013
+    MOVOLENT_014,*,16        VOLUME ENTRY - 014
+      MOVOLSER_014,=,6,CH    VOLUME SERIAL - 014
+      SKIP,2                 RESERVED
+      MOUNIT_014,*,8,CH      UNIT TYPE - 014
+    MOVOLENT_015,*,16        VOLUME ENTRY - 015
+      MOVOLSER_015,=,6,CH    VOLUME SERIAL - 015
+      SKIP,2                 RESERVED
+      MOUNIT_015,*,8,CH      UNIT TYPE - 015
+    MOVOLENT_016,*,16        VOLUME ENTRY - 016
+      MOVOLSER_016,=,6,CH    VOLUME SERIAL - 016
+      SKIP,2                 RESERVED
+      MOUNIT_016,*,8,CH      UNIT TYPE - 016
+    MOVOLENT_017,*,16        VOLUME ENTRY - 017
+      MOVOLSER_017,=,6,CH    VOLUME SERIAL - 017
+      SKIP,2                 RESERVED
+      MOUNIT_017,*,8,CH      UNIT TYPE - 017
+    MOVOLENT_018,*,16        VOLUME ENTRY - 018
+      MOVOLSER_018,=,6,CH    VOLUME SERIAL - 018
+      SKIP,2                 RESERVED
+      MOUNIT_018,*,8,CH      UNIT TYPE - 018
+    MOVOLENT_019,*,16        VOLUME ENTRY - 019
+      MOVOLSER_019,=,6,CH    VOLUME SERIAL - 019
+      SKIP,2                 RESERVED
+      MOUNIT_019,*,8,CH      UNIT TYPE - 019
+    MOVOLENT_020,*,16        VOLUME ENTRY - 020
+      MOVOLSER_020,=,6,CH    VOLUME SERIAL - 020
+      SKIP,2                 RESERVED
+      MOUNIT_020,*,8,CH      UNIT TYPE - 020
+    MOVOLENT_021,*,16        VOLUME ENTRY - 021
+      MOVOLSER_021,=,6,CH    VOLUME SERIAL - 021
+      SKIP,2                 RESERVED
+      MOUNIT_021,*,8,CH      UNIT TYPE - 021
+    MOVOLENT_022,*,16        VOLUME ENTRY - 022
+      MOVOLSER_022,=,6,CH    VOLUME SERIAL - 022
+      SKIP,2                 RESERVED
+      MOUNIT_022,*,8,CH      UNIT TYPE - 022
+    MOVOLENT_023,*,16        VOLUME ENTRY - 023
+      MOVOLSER_023,=,6,CH    VOLUME SERIAL - 023
+      SKIP,2                 RESERVED
+      MOUNIT_023,*,8,CH      UNIT TYPE - 023
+    MOVOLENT_024,*,16        VOLUME ENTRY - 024
+      MOVOLSER_024,=,6,CH    VOLUME SERIAL - 024
+      SKIP,2                 RESERVED
+      MOUNIT_024,*,8,CH      UNIT TYPE - 024
+    MOVOLENT_025,*,16        VOLUME ENTRY - 025
+      MOVOLSER_025,=,6,CH    VOLUME SERIAL - 025
+      SKIP,2                 RESERVED
+      MOUNIT_025,*,8,CH      UNIT TYPE - 025
+    MOVOLENT_026,*,16        VOLUME ENTRY - 026
+      MOVOLSER_026,=,6,CH    VOLUME SERIAL - 026
+      SKIP,2                 RESERVED
+      MOUNIT_026,*,8,CH      UNIT TYPE - 026
+    MOVOLENT_027,*,16        VOLUME ENTRY - 027
+      MOVOLSER_027,=,6,CH    VOLUME SERIAL - 027
+      SKIP,2                 RESERVED
+      MOUNIT_027,*,8,CH      UNIT TYPE - 027
+    MOVOLENT_028,*,16        VOLUME ENTRY - 028
+      MOVOLSER_028,=,6,CH    VOLUME SERIAL - 028
+      SKIP,2                 RESERVED
+      MOUNIT_028,*,8,CH      UNIT TYPE - 028
+    MOVOLENT_029,*,16        VOLUME ENTRY - 029
+      MOVOLSER_029,=,6,CH    VOLUME SERIAL - 029
+      SKIP,2                 RESERVED
+      MOUNIT_029,*,8,CH      UNIT TYPE - 029
+    MOVOLENT_030,*,16        VOLUME ENTRY - 030
+      MOVOLSER_030,=,6,CH    VOLUME SERIAL - 030
+      SKIP,2                 RESERVED
+      MOUNIT_030,*,8,CH      UNIT TYPE - 030
+    MOVOLENT_031,*,16        VOLUME ENTRY - 031
+      MOVOLSER_031,=,6,CH    VOLUME SERIAL - 031
+      SKIP,2                 RESERVED
+      MOUNIT_031,*,8,CH      UNIT TYPE - 031
+    MOVOLENT_032,*,16        VOLUME ENTRY - 032
+      MOVOLSER_032,=,6,CH    VOLUME SERIAL - 032
+      SKIP,2                 RESERVED
+      MOUNIT_032,*,8,CH      UNIT TYPE - 032
+    MOVOLENT_033,*,16        VOLUME ENTRY - 033
+      MOVOLSER_033,=,6,CH    VOLUME SERIAL - 033
+      SKIP,2                 RESERVED
+      MOUNIT_033,*,8,CH      UNIT TYPE - 033
+    MOVOLENT_034,*,16        VOLUME ENTRY - 034
+      MOVOLSER_034,=,6,CH    VOLUME SERIAL - 034
+      SKIP,2                 RESERVED
+      MOUNIT_034,*,8,CH      UNIT TYPE - 034
+    MOVOLENT_035,*,16        VOLUME ENTRY - 035
+      MOVOLSER_035,=,6,CH    VOLUME SERIAL - 035
+      SKIP,2                 RESERVED
+      MOUNIT_035,*,8,CH      UNIT TYPE - 035
+    MOVOLENT_036,*,16        VOLUME ENTRY - 036
+      MOVOLSER_036,=,6,CH    VOLUME SERIAL - 036
+      SKIP,2                 RESERVED
+      MOUNIT_036,*,8,CH      UNIT TYPE - 036
+    MOVOLENT_037,*,16        VOLUME ENTRY - 037
+      MOVOLSER_037,=,6,CH    VOLUME SERIAL - 037
+      SKIP,2                 RESERVED
+      MOUNIT_037,*,8,CH      UNIT TYPE - 037
+    MOVOLENT_038,*,16        VOLUME ENTRY - 038
+      MOVOLSER_038,=,6,CH    VOLUME SERIAL - 038
+      SKIP,2                 RESERVED
+      MOUNIT_038,*,8,CH      UNIT TYPE - 038
+    MOVOLENT_039,*,16        VOLUME ENTRY - 039
+      MOVOLSER_039,=,6,CH    VOLUME SERIAL - 039
+      SKIP,2                 RESERVED
+      MOUNIT_039,*,8,CH      UNIT TYPE - 039
+    MOVOLENT_040,*,16        VOLUME ENTRY - 040
+      MOVOLSER_040,=,6,CH    VOLUME SERIAL - 040
+      SKIP,2                 RESERVED
+      MOUNIT_040,*,8,CH      UNIT TYPE - 040
+    MOVOLENT_041,*,16        VOLUME ENTRY - 041
+      MOVOLSER_041,=,6,CH    VOLUME SERIAL - 041
+      SKIP,2                 RESERVED
+      MOUNIT_041,*,8,CH      UNIT TYPE - 041
+    MOVOLENT_042,*,16        VOLUME ENTRY - 042
+      MOVOLSER_042,=,6,CH    VOLUME SERIAL - 042
+      SKIP,2                 RESERVED
+      MOUNIT_042,*,8,CH      UNIT TYPE - 042
+    MOVOLENT_043,*,16        VOLUME ENTRY - 043
+      MOVOLSER_043,=,6,CH    VOLUME SERIAL - 043
+      SKIP,2                 RESERVED
+      MOUNIT_043,*,8,CH      UNIT TYPE - 043
+    MOVOLENT_044,*,16        VOLUME ENTRY - 044
+      MOVOLSER_044,=,6,CH    VOLUME SERIAL - 044
+      SKIP,2                 RESERVED
+      MOUNIT_044,*,8,CH      UNIT TYPE - 044
+    MOVOLENT_045,*,16        VOLUME ENTRY - 045
+      MOVOLSER_045,=,6,CH    VOLUME SERIAL - 045
+      SKIP,2                 RESERVED
+      MOUNIT_045,*,8,CH      UNIT TYPE - 045
+    MOVOLENT_046,*,16        VOLUME ENTRY - 046
+      MOVOLSER_046,=,6,CH    VOLUME SERIAL - 046
+      SKIP,2                 RESERVED
+      MOUNIT_046,*,8,CH      UNIT TYPE - 046
+    MOVOLENT_047,*,16        VOLUME ENTRY - 047
+      MOVOLSER_047,=,6,CH    VOLUME SERIAL - 047
+      SKIP,2                 RESERVED
+      MOUNIT_047,*,8,CH      UNIT TYPE - 047
+    MOVOLENT_048,*,16        VOLUME ENTRY - 048
+      MOVOLSER_048,=,6,CH    VOLUME SERIAL - 048
+      SKIP,2                 RESERVED
+      MOUNIT_048,*,8,CH      UNIT TYPE - 048
+    MOVOLENT_049,*,16        VOLUME ENTRY - 049
+      MOVOLSER_049,=,6,CH    VOLUME SERIAL - 049
+      SKIP,2                 RESERVED
+      MOUNIT_049,*,8,CH      UNIT TYPE - 049
+    MOVOLENT_050,*,16        VOLUME ENTRY - 050
+      MOVOLSER_050,=,6,CH    VOLUME SERIAL - 050
+      SKIP,2                 RESERVED
+      MOUNIT_050,*,8,CH      UNIT TYPE - 050
+    MOVOLENT_051,*,16        VOLUME ENTRY - 051
+      MOVOLSER_051,=,6,CH    VOLUME SERIAL - 051
+      SKIP,2                 RESERVED
+      MOUNIT_051,*,8,CH      UNIT TYPE - 051
+    MOVOLENT_052,*,16        VOLUME ENTRY - 052
+      MOVOLSER_052,=,6,CH    VOLUME SERIAL - 052
+      SKIP,2                 RESERVED
+      MOUNIT_052,*,8,CH      UNIT TYPE - 052
+    MOVOLENT_053,*,16        VOLUME ENTRY - 053
+      MOVOLSER_053,=,6,CH    VOLUME SERIAL - 053
+      SKIP,2                 RESERVED
+      MOUNIT_053,*,8,CH      UNIT TYPE - 053
+    MOVOLENT_054,*,16        VOLUME ENTRY - 054
+      MOVOLSER_054,=,6,CH    VOLUME SERIAL - 054
+      SKIP,2                 RESERVED
+      MOUNIT_054,*,8,CH      UNIT TYPE - 054
+    MOVOLENT_055,*,16        VOLUME ENTRY - 055
+      MOVOLSER_055,=,6,CH    VOLUME SERIAL - 055
+      SKIP,2                 RESERVED
+      MOUNIT_055,*,8,CH      UNIT TYPE - 055
+    MOVOLENT_056,*,16        VOLUME ENTRY - 056
+      MOVOLSER_056,=,6,CH    VOLUME SERIAL - 056
+      SKIP,2                 RESERVED
+      MOUNIT_056,*,8,CH      UNIT TYPE - 056
+    MOVOLENT_057,*,16        VOLUME ENTRY - 057
+      MOVOLSER_057,=,6,CH    VOLUME SERIAL - 057
+      SKIP,2                 RESERVED
+      MOUNIT_057,*,8,CH      UNIT TYPE - 057
+    MOVOLENT_058,*,16        VOLUME ENTRY - 058
+      MOVOLSER_058,=,6,CH    VOLUME SERIAL - 058
+      SKIP,2                 RESERVED
+      MOUNIT_058,*,8,CH      UNIT TYPE - 058
+    MOVOLENT_059,*,16        VOLUME ENTRY - 059
+      MOVOLSER_059,=,6,CH    VOLUME SERIAL - 059
+      SKIP,2                 RESERVED
+      MOUNIT_059,*,8,CH      UNIT TYPE - 059
+    MOVOLENT_060,*,16        VOLUME ENTRY - 060
+      MOVOLSER_060,=,6,CH    VOLUME SERIAL - 060
+      SKIP,2                 RESERVED
+      MOUNIT_060,*,8,CH      UNIT TYPE - 060
+    MOVOLENT_061,*,16        VOLUME ENTRY - 061
+      MOVOLSER_061,=,6,CH    VOLUME SERIAL - 061
+      SKIP,2                 RESERVED
+      MOUNIT_061,*,8,CH      UNIT TYPE - 061
+    MOVOLENT_062,*,16        VOLUME ENTRY - 062
+      MOVOLSER_062,=,6,CH    VOLUME SERIAL - 062
+      SKIP,2                 RESERVED
+      MOUNIT_062,*,8,CH      UNIT TYPE - 062
+    MOVOLENT_063,*,16        VOLUME ENTRY - 063
+      MOVOLSER_063,=,6,CH    VOLUME SERIAL - 063
+      SKIP,2                 RESERVED
+      MOUNIT_063,*,8,CH      UNIT TYPE - 063
+    MOVOLENT_064,*,16        VOLUME ENTRY - 064
+      MOVOLSER_064,=,6,CH    VOLUME SERIAL - 064
+      SKIP,2                 RESERVED
+      MOUNIT_064,*,8,CH      UNIT TYPE - 064
+    MOVOLENT_065,*,16        VOLUME ENTRY - 065
+      MOVOLSER_065,=,6,CH    VOLUME SERIAL - 065
+      SKIP,2                 RESERVED
+      MOUNIT_065,*,8,CH      UNIT TYPE - 065
+    MOVOLENT_066,*,16        VOLUME ENTRY - 066
+      MOVOLSER_066,=,6,CH    VOLUME SERIAL - 066
+      SKIP,2                 RESERVED
+      MOUNIT_066,*,8,CH      UNIT TYPE - 066
+    MOVOLENT_067,*,16        VOLUME ENTRY - 067
+      MOVOLSER_067,=,6,CH    VOLUME SERIAL - 067
+      SKIP,2                 RESERVED
+      MOUNIT_067,*,8,CH      UNIT TYPE - 067
+    MOVOLENT_068,*,16        VOLUME ENTRY - 068
+      MOVOLSER_068,=,6,CH    VOLUME SERIAL - 068
+      SKIP,2                 RESERVED
+      MOUNIT_068,*,8,CH      UNIT TYPE - 068
+    MOVOLENT_069,*,16        VOLUME ENTRY - 069
+      MOVOLSER_069,=,6,CH    VOLUME SERIAL - 069
+      SKIP,2                 RESERVED
+      MOUNIT_069,*,8,CH      UNIT TYPE - 069
+    MOVOLENT_070,*,16        VOLUME ENTRY - 070
+      MOVOLSER_070,=,6,CH    VOLUME SERIAL - 070
+      SKIP,2                 RESERVED
+      MOUNIT_070,*,8,CH      UNIT TYPE - 070
+    MOVOLENT_071,*,16        VOLUME ENTRY - 071
+      MOVOLSER_071,=,6,CH    VOLUME SERIAL - 071
+      SKIP,2                 RESERVED
+      MOUNIT_071,*,8,CH      UNIT TYPE - 071
+    MOVOLENT_072,*,16        VOLUME ENTRY - 072
+      MOVOLSER_072,=,6,CH    VOLUME SERIAL - 072
+      SKIP,2                 RESERVED
+      MOUNIT_072,*,8,CH      UNIT TYPE - 072
+    MOVOLENT_073,*,16        VOLUME ENTRY - 073
+      MOVOLSER_073,=,6,CH    VOLUME SERIAL - 073
+      SKIP,2                 RESERVED
+      MOUNIT_073,*,8,CH      UNIT TYPE - 073
+    MOVOLENT_074,*,16        VOLUME ENTRY - 074
+      MOVOLSER_074,=,6,CH    VOLUME SERIAL - 074
+      SKIP,2                 RESERVED
+      MOUNIT_074,*,8,CH      UNIT TYPE - 074
+    MOVOLENT_075,*,16        VOLUME ENTRY - 075
+      MOVOLSER_075,=,6,CH    VOLUME SERIAL - 075
+      SKIP,2                 RESERVED
+      MOUNIT_075,*,8,CH      UNIT TYPE - 075
+    MOVOLENT_076,*,16        VOLUME ENTRY - 076
+      MOVOLSER_076,=,6,CH    VOLUME SERIAL - 076
+      SKIP,2                 RESERVED
+      MOUNIT_076,*,8,CH      UNIT TYPE - 076
+    MOVOLENT_077,*,16        VOLUME ENTRY - 077
+      MOVOLSER_077,=,6,CH    VOLUME SERIAL - 077
+      SKIP,2                 RESERVED
+      MOUNIT_077,*,8,CH      UNIT TYPE - 077
+    MOVOLENT_078,*,16        VOLUME ENTRY - 078
+      MOVOLSER_078,=,6,CH    VOLUME SERIAL - 078
+      SKIP,2                 RESERVED
+      MOUNIT_078,*,8,CH      UNIT TYPE - 078
+    MOVOLENT_079,*,16        VOLUME ENTRY - 079
+      MOVOLSER_079,=,6,CH    VOLUME SERIAL - 079
+      SKIP,2                 RESERVED
+      MOUNIT_079,*,8,CH      UNIT TYPE - 079
+    MOVOLENT_080,*,16        VOLUME ENTRY - 080
+      MOVOLSER_080,=,6,CH    VOLUME SERIAL - 080
+      SKIP,2                 RESERVED
+      MOUNIT_080,*,8,CH      UNIT TYPE - 080
+    MOVOLENT_081,*,16        VOLUME ENTRY - 081
+      MOVOLSER_081,=,6,CH    VOLUME SERIAL - 081
+      SKIP,2                 RESERVED
+      MOUNIT_081,*,8,CH      UNIT TYPE - 081
+    MOVOLENT_082,*,16        VOLUME ENTRY - 082
+      MOVOLSER_082,=,6,CH    VOLUME SERIAL - 082
+      SKIP,2                 RESERVED
+      MOUNIT_082,*,8,CH      UNIT TYPE - 082
+    MOVOLENT_083,*,16        VOLUME ENTRY - 083
+      MOVOLSER_083,=,6,CH    VOLUME SERIAL - 083
+      SKIP,2                 RESERVED
+      MOUNIT_083,*,8,CH      UNIT TYPE - 083
+    MOVOLENT_084,*,16        VOLUME ENTRY - 084
+      MOVOLSER_084,=,6,CH    VOLUME SERIAL - 084
+      SKIP,2                 RESERVED
+      MOUNIT_084,*,8,CH      UNIT TYPE - 084
+    MOVOLENT_085,*,16        VOLUME ENTRY - 085
+      MOVOLSER_085,=,6,CH    VOLUME SERIAL - 085
+      SKIP,2                 RESERVED
+      MOUNIT_085,*,8,CH      UNIT TYPE - 085
+    MOVOLENT_086,*,16        VOLUME ENTRY - 086
+      MOVOLSER_086,=,6,CH    VOLUME SERIAL - 086
+      SKIP,2                 RESERVED
+      MOUNIT_086,*,8,CH      UNIT TYPE - 086
+    MOVOLENT_087,*,16        VOLUME ENTRY - 087
+      MOVOLSER_087,=,6,CH    VOLUME SERIAL - 087
+      SKIP,2                 RESERVED
+      MOUNIT_087,*,8,CH      UNIT TYPE - 087
+    MOVOLENT_088,*,16        VOLUME ENTRY - 088
+      MOVOLSER_088,=,6,CH    VOLUME SERIAL - 088
+      SKIP,2                 RESERVED
+      MOUNIT_088,*,8,CH      UNIT TYPE - 088
+    MOVOLENT_089,*,16        VOLUME ENTRY - 089
+      MOVOLSER_089,=,6,CH    VOLUME SERIAL - 089
+      SKIP,2                 RESERVED
+      MOUNIT_089,*,8,CH      UNIT TYPE - 089
+    MOVOLENT_090,*,16        VOLUME ENTRY - 090
+      MOVOLSER_090,=,6,CH    VOLUME SERIAL - 090
+      SKIP,2                 RESERVED
+      MOUNIT_090,*,8,CH      UNIT TYPE - 090
+    MOVOLENT_091,*,16        VOLUME ENTRY - 091
+      MOVOLSER_091,=,6,CH    VOLUME SERIAL - 091
+      SKIP,2                 RESERVED
+      MOUNIT_091,*,8,CH      UNIT TYPE - 091
+    MOVOLENT_092,*,16        VOLUME ENTRY - 092
+      MOVOLSER_092,=,6,CH    VOLUME SERIAL - 092
+      SKIP,2                 RESERVED
+      MOUNIT_092,*,8,CH      UNIT TYPE - 092
+    MOVOLENT_093,*,16        VOLUME ENTRY - 093
+      MOVOLSER_093,=,6,CH    VOLUME SERIAL - 093
+      SKIP,2                 RESERVED
+      MOUNIT_093,*,8,CH      UNIT TYPE - 093
+    MOVOLENT_094,*,16        VOLUME ENTRY - 094
+      MOVOLSER_094,=,6,CH    VOLUME SERIAL - 094
+      SKIP,2                 RESERVED
+      MOUNIT_094,*,8,CH      UNIT TYPE - 094
+    MOVOLENT_095,*,16        VOLUME ENTRY - 095
+      MOVOLSER_095,=,6,CH    VOLUME SERIAL - 095
+      SKIP,2                 RESERVED
+      MOUNIT_095,*,8,CH      UNIT TYPE - 095
+    MOVOLENT_096,*,16        VOLUME ENTRY - 096
+      MOVOLSER_096,=,6,CH    VOLUME SERIAL - 096
+      SKIP,2                 RESERVED
+      MOUNIT_096,*,8,CH      UNIT TYPE - 096
+    MOVOLENT_097,*,16        VOLUME ENTRY - 097
+      MOVOLSER_097,=,6,CH    VOLUME SERIAL - 097
+      SKIP,2                 RESERVED
+      MOUNIT_097,*,8,CH      UNIT TYPE - 097
+    MOVOLENT_098,*,16        VOLUME ENTRY - 098
+      MOVOLSER_098,=,6,CH    VOLUME SERIAL - 098
+      SKIP,2                 RESERVED
+      MOUNIT_098,*,8,CH      UNIT TYPE - 098
+    MOVOLENT_099,*,16        VOLUME ENTRY - 099
+      MOVOLSER_099,=,6,CH    VOLUME SERIAL - 099
+      SKIP,2                 RESERVED
+      MOUNIT_099,*,8,CH      UNIT TYPE - 099
+    MOVOLENT_100,*,16        VOLUME ENTRY - 100
+      MOVOLSER_100,=,6,CH    VOLUME SERIAL - 100
+      SKIP,2                 RESERVED
+      MOUNIT_100,*,8,CH      UNIT TYPE - 100
+**********************************************************************
+* END OF OWNER INFORMATION                                           *
+**********************************************************************
+MORCEND,*                    END OF MOREC
+**********************************************************************
+* END OF RMM MOREC                                                   *
+**********************************************************************
+

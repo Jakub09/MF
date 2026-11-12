@@ -1,0 +1,50 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM REPORT EXTRACT FILE STORAGE LOCATION BIN RECORD (RSEXT) -      *
+*    TYPE 'S'.                                                       *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+RSRDW,1,4               RDW
+RSEXT,*,110
+**********************************************************************
+* RSEXT:    This file maps the information produced for bin number   *
+*           records in the RMM report extract file.                  *
+*           In this record the date format depends on the DATEFORM   *
+*           selected by EDGHSKP execution parameter or the parmlib   *
+*           specified value.                                         *
+**********************************************************************
+  RSTYPE,=,1,CH         RECORD TYPE
+    RSTYPEID,'S'          TYPE 'S'
+  RSTYPE2,*,1,CH        BIN RECORD ID
+    RSTYPER,'E'           EMPTY BIN
+    RSTYPES,'U'           ASSIGNED BIN
+  RSRMSTID,*,8,CH       STORAGE LOCATION NAME
+  SKIP,1                RESERVED
+  RSBINNO,*,6,CH        BIN NUMBER
+  RSBMEDN,*,8,CH        BIN MEDIA NAME
+  SKIP,23               RESERVED
+**********************************************************************
+*  Start of common fields:                                           *
+*  The common fields are in the same place in each record type       *
+*  in the report extract file.  This allows common processing of     *
+*  these field across multiple record types.                         *
+**********************************************************************
+  RSCRDATE,*,10,CH      CREATE DATE of bin record
+  RSCRTIME,*,6,CH       CREATE TIME (HHMMSS) of bin record
+  RSCRSID,*,8,CH        CREATE SYSTEM ID of bin record
+  RSLCDATE,*,10,CH      LAST CHANGE DATE of bin record
+  RSLCTIME,*,6,CH       LAST CHANGE TIME (HHMMSS) of bin record
+  RSLCUID,*,8,CH        LAST CHANGE USER ID of bin record
+  RSLCSID,*,8,CH        LAST CHANGE SYSTEM ID of bin record
+**********************************************************************
+*  End of common fields                                              *
+**********************************************************************
+  RSVOLSER,*,6,CH       ASSIGNED VOLUME SERIAL NUMBER
+**********************************************************************
+* END OF REPORT EXTRACT STORAGE LOCATION BIN RECORD
+**********************************************************************
+RSRCEND,*               END OF RSEXT
+

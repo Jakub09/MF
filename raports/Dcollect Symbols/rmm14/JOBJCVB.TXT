@@ -1,0 +1,75 @@
+//JOBJCVB  JOB ...
+//**JOBLIB   DD  ... DFSORT R14
+//*********************************************************************
+//* DFSMS/MVS 1.4.0 DFSMSrmm                                          *
+//*********************************************************************
+//*
+//* Build RMM CHANGEVOLUME commands for volumes in storage locations
+//* ----------------------------------------------------------------
+//* Reads the RMM extract file and builds a RMM CV command file for
+//* locations LOCAL, REMOTE and DISTANT and a report on volume counts
+//* by location.
+//*  - optionally can build commands for location CURRENT.
+//*
+//* INPUT: EXTRACT DD CARD - RMM extract file
+//*        SYMNAMES DD CARD - DFSORT symbol data set
+//*
+//* OUTPUT:RMMCVB  DD CARD - RMM CHANGEVOLUME commands
+//*                          'RMM CV volser LOCATION(store) BIN(bin#)'
+//*        RMMCVBS DD CARD - Volume Counts by Location
+//*
+//* NOTE:  To select the location names to use you can edit the
+//*        SORT INCLUDE statement for field RVSTORID.
+//*
+//*********************************************************************
+//CLEAN  EXEC  PGM=IDCAMS
+//SYSPRINT DD SYSOUT=*
+//SYSIN    DD *
+  DELETE 'Y897797.RMM.COMMAND.CVB'
+  DELETE 'Y897797.RMM.REPORT.CVBS'
+//*********************************************************************
+//STEP1  EXEC  PGM=ICETOOL
+//TOOLMSG  DD SYSOUT=*   ICETOOL MESSAGES
+//DFSMSG   DD SYSOUT=*   DFSORT  MESSAGES
+//SYMNAMES DD DSN=Y897797.RMM14.SYM(EDGRVEXT),DISP=SHR
+//SYMNOUT  DD SYSOUT=*
+//TOOLIN   DD *          CONTROL STATEMENTS
+  COPY FROM(EXTRACT) TO(VOLS) USING(VOLS)
+  SORT FROM(VOLS) TO(RMMCVB) USING(VOLF)
+  OCCUR FROM(VOLS) LIST(RMMCVBS) -
+     TITLE('DFSMSrmm - Volume Counts by Location') DATE TIME PAGE -
+     BLANK -
+     HEADER('LOCATION') ON(RVSTORID) -
+     HEADER('COUNT')    ON(VALCNT)
+//EXTRACT  DD DSN=Y897797.PR21889.EXTRACT,DISP=SHR
+//VOLS     DD DSN=&&TEMP,REFDD=*.EXTRACT,SPACE=(CYL,(10,10)),
+//         UNIT=SYSALLDA
+//VOLSCNTL DD *          DFSORT STATEMENTS - SELECT STORE VOLUMES
+  INCLUDE COND=(RVTYPE,EQ,RVTYPEID,AND,    volume records only
+  (RVSTORID,EQ,RVREM,OR,                   store name
+   RVSTORID,EQ,RVLOC,OR,                   store name
+   RVSTORID,EQ,C'DISTANT'),AND,            store name
+* To use for location CURRENT, comment the above 3 lines and
+* remove the comment from the following line:
+* (RVSTORID,EQ,C'CURRENT'),AND,            location=CURRRENT
+   RVDEST,EQ,C' ')                         no destination
+  OPTION VLSHRT
+//VOLFCNTL DD *          DFSORT STATEMENTS - SORT AND REFORMAT
+* sort on bin number field
+  SORT FIELDS=(RVSTORID,A,RVSTBIN,A)         sort on location and BIN#
+*
+* Build RMM CV commands from input records.
+*
+  OUTREC FIELDS=(RVRDW,
+                 C'RMM CV ',         start command
+                 RVVOLSER,
+                 C' LOCATION(',
+                 RVSTORID,
+                 C') BIN(',
+                 RVSTBIN,
+                 C') ')
+//RMMCVB   DD DSN=Y897797.RMM.COMMAND.CVB,DISP=(,CATLG,DELETE),
+//  SPACE=(CYL,(9,9),RLSE)
+//RMMCVBS  DD DSN=Y897797.RMM.REPORT.CVBS,DISP=(,CATLG,DELETE),
+//  SPACE=(CYL,(9,9),RLSE)
+

@@ -1,0 +1,9 @@
+//MYJOB    JOB ,,CLASS=1,MSGCLASS=H,NOTIFY=&SYSUID
+//*-------------------------------------------------------------------
+//RUNPROG  EXEC PGM=IRXJCL,PARM=’TMPLENG’
+//*
+//*        RUN OUR REXX PROGRAM CALLED HELLO
+//*
+//SYSEXEC  DD DSN=ME.USER.EXEC,DISP=SHR
+//SYSTSIN  DD DUMMY
+//SYSTSPRT DD SYSOUT=*

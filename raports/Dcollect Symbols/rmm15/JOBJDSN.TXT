@@ -1,0 +1,84 @@
+//JOBJDSN  JOB ...
+//**JOBLIB   DD  ...  DFSORT R14
+//*********************************************************************
+//* DFSMS/MVS 1.4.0 DFSMSrmm                                          *
+//*********************************************************************
+//*
+//* RMM report on data sets sorted by data set name
+//* -----------------------------------------------
+//* Reads the RMM extract file and creates a report of data sets,
+//* sorted by data set name and the number of data sets per status
+//* (SCRATCH or PRIVATE).
+//*
+//* INPUT: EXTRACT DD CARD - RMM extract file
+//*        SYMNAMES DD CARD - DFSORT symbol data set
+//*
+//* OUTPUT:RMMDSN  DD CARD - Data Sets Sorted by Name
+//*        RMMDSNS DD CARD - Data Set Counts by Status
+//*
+//*        Displayed information includes:
+//*           DSNAME, VOLSER, DATASET SEQ#, VOL SEQ#, CREATE DATE,
+//*           MANAGEMENT CLASS, VRS MANAGEMENT VALUE, STATUS
+//*
+//*********************************************************************
+//CLEAN    EXEC PGM=IDCAMS
+//SYSPRINT DD SYSOUT=*
+//SYSIN    DD *
+  DELETE 'Y897797.RMM.REPORT.DSN'
+  DELETE 'Y897797.RMM.REPORT.DSNS'
+//*********************************************************************
+//STEP1    EXEC PGM=ICETOOL
+//TOOLMSG  DD SYSOUT=*   ICETOOL MESSAGES
+//DFSMSG   DD SYSOUT=*   DFSORT  MESSAGES
+//SYMNAMES DD DSN=Y897797.RMM14.SYM(EDGRDEXT),DISP=SHR
+//SYMNOUT  DD SYSOUT=*
+//TOOLIN   DD *          CONTROL STATEMENTS
+  COPY FROM(EXTRACT) USING(DSNS)
+  SORT FROM(CONCAT)  TO(DSNF)    USING(DSNF)
+  DISPLAY FROM(DSNF) LIST(RMMDSN) -
+     TITLE('DFSMSrmm - Data Sets Sorted by Name') DATE TIME PAGE -
+     HEADER('DSNAME') ON(RDDSNAME) -
+     HEADER('VOLSER') ON(RDVOLSER) -
+     HEADER('DSEQ')   ON(RDDSNSEQ) -
+     HEADER('VSEQ')   ON(RDVOLSEQ) -
+     HEADER('CRDATE') ON(RDCRDATE) -
+     HEADER('MCLASS') ON(RDMCNAME) -
+     HEADER('VRSVAL') ON(RDVRSVAL) -
+     HEADER('STATUS') ON(RDOWNDSN) -
+     BLANK
+  OCCUR FROM(DSNF) LIST(RMMDSNS) -
+     TITLE('DFSMSrmm - Data Set Counts by Status') DATE TIME PAGE -
+     BLANK -
+     HEADER('STATUS') ON(RDOWNDSN) -
+     HEADER('COUNT') ON(VALCNT)
+//EXTRACT  DD DSN=Y897797.PR21889.EXTRACT,DISP=SHR
+//**       DD DSN=Y897797.PR24192.EXTRACT.D0130,DISP=SHR
+//**       DD DSN=Y897797.PR24192.EXTROLD.D0130,DISP=SHR
+//DSNST    DD DSN=&&TEMP1,REFDD=*.EXTRACT,SPACE=(CYL,(10,10)),
+//         UNIT=SYSALLDA
+//DSNPT    DD DSN=&&TEMP2,REFDD=*.EXTRACT,SPACE=(CYL,(10,10)),
+//         UNIT=SYSALLDA
+//CONCAT   DD DSN=*.DSNST,VOL=REF=*.DSNST,DISP=(OLD,PASS)
+//         DD DSN=*.DSNPT,VOL=REF=*.DSNPT,DISP=(OLD,PASS)
+//DSNF     DD DSN=&&TEMP3,REFDD=*.EXTRACT,SPACE=(CYL,(10,10)),
+//         UNIT=SYSALLDA
+//DSNSCNTL DD *
+* Just data records.
+  INCLUDE COND=(RDTYPE,EQ,RDTYPEID)
+* Just data set records that have a null or blank RDOWNDSN field
+  OUTFIL FNAMES=DSNST,
+    INCLUDE=(RDOWNDSN,EQ,C' ',OR,RDOWNDSN,EQ,X'00'),
+    OUTREC=(1,150,C'SCRATCH ',159),VLFILL=C' '
+* Just data set records that do not have a null or blank
+* RDOWNDSN field
+  OUTFIL FNAMES=DSNPT,SAVE,
+    OUTREC=(1,150,C'PRIVATE ',159),VLFILL=C' '
+  OPTION VLSHRT
+//DSNFCNTL DD *
+* Sort on dsname
+  SORT FIELDS=(RDDSNAME,A)
+//RMMDSN   DD DSN=Y897797.RMM.REPORT.DSN,DISP=(,CATLG,DELETE),
+//  SPACE=(CYL,(9,9),RLSE)
+//RMMDSNS  DD DSN=Y897797.RMM.REPORT.DSNS,DISP=(,CATLG,DELETE),
+//  SPACE=(CYL,(9,9),RLSE)
+

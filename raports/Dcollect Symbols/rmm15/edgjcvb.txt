@@ -1,0 +1,93 @@
+//*EDGJCVB  JOB <JOB CARD PARAMETERS>
+//*
+//*********************************************************************
+//* DFSMS/MVS 1.5.0 DFSMSrmm                                          *
+//*                                                                   *
+//* PROPRIETARY V3 STATEMENT                                          *
+//* LICENSED MATERIALS - PROPERTY OF IBM                              *
+//* "RESTRICTED MATERIALS OF IBM"                                     *
+//* 5695-DF1                                                          *
+//* (C) COPYRIGHT 1993,2000  IBM CORP.                                *
+//* STATUS = HDZ11E0                                                  *
+//* END PROPRIETARY V3 STATEMENT                                      *
+//*********************************************************************
+//*
+//* Build RMM CHANGEVOLUME commands for volumes in storage locations
+//* ----------------------------------------------------------------
+//* Reads the RMM extract file and builds a RMM CV command file for
+//* locations LOCAL, REMOTE and DISTANT and a report on volume counts
+//* by location.
+//*  - optionally can build commands for location CURRENT.         @S7A
+//*
+//* INPUT: EXTRACT DD CARD - RMM extract file
+//*
+//* OUTPUT:RMMCVB  DD CARD - RMM CHANGEVOLUME commands
+//*                          'RMM CV volser LOCATION(store) BIN(bin#)'
+//*        RMMCVBS DD CARD - Volume Counts by Location
+//*
+//*
+//* NOTE:  To select the location names to use you can edit the
+//*        SORT INCLUDE statement for offset 156.
+//*
+//* Change History:
+//* $S7=OW30969,140,971217,MWW: Add location CURRENT               @S7A
+//* $LG=           ,990924,AH : DFSORT Symbols                     §LGA
+//* $K1=           ,991125,CHK: Correct the SYMNAMES library name  §K1A
+//*
+//*********************************************************************
+//CLEAN  EXEC  PGM=IDCAMS
+//SYSPRINT DD SYSOUT=*
+//SYSIN    DD *
+  DELETE 'RMM.COMMAND.CVB'
+  DELETE 'RMM.REPORT.CVBS'
+//*********************************************************************
+//STEP1  EXEC  PGM=ICETOOL
+//SYMNAMES DD DISP=SHR,DSN=SYS1.MACLIB(EDGEXTSY)                   @K1C
+//SYMNOUT  DD SYSOUT=*   ICETOOL SYMBOLICS                         @LGA
+//TOOLMSG  DD SYSOUT=*   ICETOOL MESSAGES
+//DFSMSG   DD SYSOUT=*   DFSORT  MESSAGES
+//TOOLIN   DD *          CONTROL STATEMENTS
+  COPY FROM(EXTRACT) TO(VOLS) USING(VOLS)
+  SORT FROM(VOLS) TO(RMMCVB) USING(VOLF)
+  OCCUR FROM(VOLS) LIST(RMMCVBS) -
+     TITLE('DFSMSrmm - Volume Counts by Location') DATE TIME PAGE -
+     BLANK -
+     HEADER('LOCATION') ON(156,8,CH) -
+     HEADER('COUNT')    ON(VALCNT)
+//EXTRACT  DD DSN=RMM.EXTRACT.FILE,DISP=SHR
+//VOLS     DD DSN=&&TEMP,REFDD=*.EXTRACT,SPACE=(CYL,(10,10)),
+//         UNIT=SYSALLDA
+//VOLSCNTL DD *          DFSORT STATEMENTS - SELECT STORE VOLUMES
+  INCLUDE COND=(EXTRACT_TYPID,EQ,RVTYPEID,AND,                     @LGC
+  (RVSTORID,EQ,C'REMOTE  ',OR,             store name              @LGC
+   RVSTORID,EQ,C'LOCAL   ',OR,             store name              @LGC
+   RVSTORID,EQ,C'DISTANT '),AND,           store name              @LGC
+* To use for location CURRENT, comment the above 3 lines and       @S7A
+* remove the comment from the following line:                      @S7A
+* (RVSTORID,EQ,C'CURRENT '),AND,           location=CURRRENT       @LGC
+   RVDEST,EQ,C'        ')                  no destination          @LGC
+  OPTION VLSHRT
+//VOLFCNTL DD *          DFSORT STATEMENTS - SORT AND REFORMAT
+* sort on bin number field
+  SORT FIELDS=(RVSTORID,A,RVSTBIN,A)       sort on loc and BIN#    @LGC
+*
+* The following OUTREC reformats the input records based on the record
+* layout described in Extract Data Set Volume Report Record: EDGRVEXT
+* in DFSMSrmm Implementation and Customization Guide.
+* All offsets into the record must have 5 added to them
+* because of the RDW (variable length record) and that DFSORT
+* uses the position rather than the offset.
+*
+  OUTREC FIELDS=(RVRDW,                                            @LGC
+                 C'RMM CV ',
+                 RVVOLSER,                                         @LGC
+                 C' LOCATION(',
+                 RVSTORID,                                         @LGC
+                 C') BIN(',
+                 RVSTBIN,                                          @LGC
+                 C') ')
+//RMMCVB   DD DSN=RMM.COMMAND.CVB,DISP=(,CATLG,DELETE),
+//  LRECL=121,DSORG=PS,RECFM=VB,AVGREC=K,SPACE=(121,(9,9),RLSE)
+//RMMCVBS  DD DSN=RMM.REPORT.CVBS,DISP=(,CATLG,DELETE),
+//  LRECL=121,DSORG=PS,RECFM=FB,AVGREC=K,SPACE=(121,(9,9),RLSE)
+

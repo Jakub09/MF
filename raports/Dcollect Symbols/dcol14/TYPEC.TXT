@@ -1,0 +1,30 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMS 1.4 AMS DCOLLECT RECORDS.           *
+**********************************************************************
+* DASD CAPACITY PLANNING RECORD - RECORD TYPE 'C'.                   *
+*   SEE "AMS FOR THE ICF (SC26-4906)" FOR FIELD DESCRIPTIONS.        *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,29                  START AFTER HEADER
+UCCAPD,*,23                  DASD CAPACITY PLANNING RECORD
+  UCVOLSR,=,6,CH             VOLUME SERIAL NUMBER
+  UCCOLDT,*,4,PD             DATE THE STATISTICAL DATA WAS COLLECTED
+*                              BY DFSMSHSM FOR THE VOLUME (YYYYDDDF)
+  UCFLAG1,*,1,BI             INFORMATION FLAG #1
+    UCLEVL0,B'00......'        LEVEL 0 VOLUME
+    UCLEVL1,B'01......'        LEVEL 1 VOLUME
+  SKIP,1                     RESERVED
+  UCTOTAL,*,4,FI             TOTAL CAPACITY OF VOLUME (IN KB)
+  UCOCCUP,*,7,CH
+    UCTGOCC,=,1,BI           SPECIFIED TARGET OCCUPANCY OF VOLUME
+    UCTROCC,*,1,BI           SPECIFIED TRIGGER OCCUPANCY OF VOLUME
+    UCBFOCC,*,1,BI           OCCUPANCY OF VOLUME BEFORE PROCESSING
+    UCAFOCC,*,1,BI           OCCUPANCY OF VOLUME AFTER PROCESSING
+    UCNOMIG,*,1,BI           PERCENTAGE OF VOLUME DATA NOT MIGRATED
+*                              BUT ELIGIBLE TO MIGRATE
+    UCNINTV,*,1,BI           NUMBER OF TIMES INTERVAL MIGRATION WAS
+*                              RUN AGAINST THE VOLUME
+    UCINTVM,*,1,BI           NUMBER OF TIMES TARGET OCCUPANCY WAS MET
+*                              FOR THE VOLUME DURING INTERVAL MIGRATION
+UCCAPDE,*                    END OF UCCAPD
+

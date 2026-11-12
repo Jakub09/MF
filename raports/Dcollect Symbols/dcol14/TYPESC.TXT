@@ -1,0 +1,63 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMS 1.4 AMS DCOLLECT RECORDS.           *
+**********************************************************************
+* STORAGE CLASS CONSTRUCT INFORMATION - RECORD TYPE 'SC'.            *
+*   SEE "AMS FOR THE ICF (SC26-4906)" FOR FIELD DESCRIPTIONS.        *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,29                  START AFTER HEADER
+DSCDATA,*,256                STORAGE CLASS DEFINITION
+  DSCNMFLD,=,32              SPACE FOR NAME AND LENGTH
+    DSCNMLEN,=,2,FI          LENGTH OF NAME
+    DSCNAME,*,30,CH          NAME OF STORAGE CLASS
+  DSCUSER,*,8,CH             USERID OF LAST UPDATER
+  DSCDATE,*,10,CH            DATE OF LAST UPDATE
+  SKIP,2                     RESERVED
+  DSCTIME,*,8,CH             TIME OF LAST UPDATE
+  DSCDESC,*,120,CH           DESCRIPTION
+* STORAGE CLASS FLAGS
+  DSCFLAGS,*,1,BI            FLAG #1
+    DSCDFGSP,B'1.......'       GUARANTEED SPACE
+    DSCDFAVL,B'.1......'       AVAILABILITY
+    DSCFDIRR,B'..1.....'       DIRECT RESPONSE TIME OBJECT
+    DSCFDIRB,B'...1....'       DIRECT BIAS
+    DSCFSEQR,B'....1...'       SEQ. RESPONSE TIME OBJECTIVE
+    DSCFSEQB,B'.....1..'       SEQ. BIAS
+    DSCSYNCD,B'......1.'       SYNCDEV
+    DSCFIAD,B'.......1'        INITIAL ACCESS RESPONSE
+  DSCFLAG2,*,1,BI            FLAG #2
+    DSCDFACC,B'1.......'       ACCESSIBILITY
+    DSCDFSDR,B'.1......'       STRIPING SUSTAINED DATA RATE
+    DSCFDCFW,B'..1.....'       DIRECT CF WEIGHT SPECIFIED
+    DSCFSCFW,B'...1....'       SEQUENTIAL WEIGHT SPECIFIED
+  SKIP,2                       RESERVED
+* STORAGE CLASS ATTRIBUTES
+  DSCAVAIL,*,1,FI            AVAILABILITY OPTIONS
+    DSCAVLDC,0                 DON'T CARE
+    DSCAVLST,1                 STANDARD
+    DSCAVLCN,2                 CONTINUOUS
+  DSCDIRB,*,1,FI             DIRECT BIAS
+    DSCBIADC,0                 DON'T CARE
+    DSCBIARD,1                 READ
+    DSCBIAWR,2                 WRITE
+  DSCSEQB,*,1,FI             SEQ. BIAS
+*   SEE DSCDIRB FOR CONSTANTS
+  DSCACCES,*,1,FI            ACCESSIBILITY
+    DSCACCPR,0                 CONTINUOUS PREFERRED
+    DSCACCRQ,1                 CONTINUOUS
+    DSCACCST,2                 STANDARD
+    DSCACCNP,3                 NO PREFERENCE
+  DSCIACDL,*,4,FI            INITIAL ACCESS RESPONSE SECONDS
+  DSCDIRR,*,4,FI             MICROSECOND RESPONSE TIME
+*                              OBJECTIVE - DIRECT
+  DSCSEQR,*,4,FI             MICROSECOND RESPONSE TIME
+*                              OBJECTIVE - SEQUENTIAL
+  DSCSTSDR,*,4,FI            STRIPING SUSTAINED DATA RATE
+  DSCCCHST,*,32              CACHE SET NAME
+    DSCCSLEN,=,2,FI          CACHE SET NAME LENGTH
+    DSCCSNAM,*,30,CH         CACHE SET NAME VALUE
+  DSCDIRCW,*,2,FI            DIRECT CF WEIGHT
+  DSCSEQCW,*,2,FI            SEQUENTIAL CF WEIGHT
+  SKIP,16                    RESERVED
+DSCDATAE,*                   END OF DSCDATA
+

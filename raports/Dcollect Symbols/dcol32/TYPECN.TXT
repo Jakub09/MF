@@ -1,0 +1,21 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF Z/OS 3.2 DFSMS AMS DCOLLECT RECORDS.      *
+**********************************************************************
+* SMS CACHE NAMES DEFINITION - RECORD TYPE 'CN'.                     *
+*   SEE "Z/OS DFSMS ACCESS METHOD SERVICES COMMANDS" - FIELDS.       *
+*   SEE "Z/OS DFSORT APPLICATION PROGRAMMING GUIDE" - SYMBOLS.       *
+**********************************************************************
+POSITION,29                  START AFTER HEADER
+DCNDATA,=,152                SMS CACHE SET AND SES CACHE NAMES
+  DCNCSNAM,=,8,CH            CACHE SET NAME
+  DCNSESNM_ARRAY,*,128,CH    ARRAY OF SES CACHE NAMES (8 ELEMENTS)
+    DCNSESNM_1,=,16,CH       SES CACHE NAME - 1
+    DCNSESNM_2,*,16,CH       SES CACHE NAME - 2
+    DCNSESNM_3,*,16,CH       SES CACHE NAME - 3
+    DCNSESNM_4,*,16,CH       SES CACHE NAME - 4
+    DCNSESNM_5,*,16,CH       SES CACHE NAME - 5
+    DCNSESNM_6,*,16,CH       SES CACHE NAME - 6
+    DCNSESNM_7,*,16,CH       SES CACHE NAME - 7
+    DCNSESNM_8,*,16,CH       SES CACHE NAME - 8
+  SKIP,16                    RESERVED
+DCNDATAE,*                   END OF DCNDATA

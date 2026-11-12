@@ -1,0 +1,11 @@
+**********************************************************************
+* SYMBOLE ROBOCZE DLA JOBA DCRPTMC (RAPORT DCOLLECT)                 *
+* UZYWANE RAZEM Z HEADER, TYPED I DCRWORK                            *
+**********************************************************************
+* MCSUM (FB 105) - JEDEN REKORD NA MANAGEMENT CLASS
+M_MGTCL,1,30,CH
+M_COUNT,31,15,ZD
+M_ALLKB,46,15,ZD
+M_USEKB,61,15,ZD
+M_ALLMB,76,15,ZD
+M_USEMB,91,15,ZD

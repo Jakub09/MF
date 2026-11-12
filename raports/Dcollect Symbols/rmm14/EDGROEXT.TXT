@@ -1,0 +1,54 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM REPORT EXTRACT FILE OWNER RECORD (ROEXT) - TYPE 'O'.           *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+RORDW,1,4               RDW
+ROEXT,*,354
+**********************************************************************
+* ROEXT:    This file maps the information produced for owner        *
+*           records in the RMM report extract file.                  *
+*           In this record the date format depends on the DATEFORM   *
+*           selected by EDGHSKP execution parameter or the parmlib   *
+*           specified value.                                         *
+**********************************************************************
+  ROTYPE,=,1,CH         RECORD TYPE
+    ROTYPEID,'O'          TYPE 'O'
+  SKIP,3                RESERVED
+  ROOWNER,*,8,CH        OWNER ID
+  SKIP,36               RESERVED
+**********************************************************************
+*  Start of common fields:                                           *
+*  The common fields are in the same place in each record type       *
+*  in the report extract file.  This allows common processing of     *
+*  these field across multiple record types.                         *
+**********************************************************************
+  ROCRDATE,*,10,CH      CREATE DATE of owner record
+  ROCRTIME,*,6,CH       CREATE TIME (HHMMSS) of owner record
+  ROCRSID,*,8,CH        CREATE SYSTEM ID of owner record
+  ROLCDATE,*,10,CH      LAST CHANGE DATE of owner record
+  ROLCTIME,*,6,CH       LAST CHANGE TIME (HHMMSS) of owner record
+  ROLCUID,*,8,CH        LAST CHANGE USER ID of owner record
+  ROLCSID,*,8,CH        LAST CHANGE SYSTEM ID of owner record
+**********************************************************************
+*  End of common fields                                              *
+**********************************************************************
+  ROOWNSUR,*,20,CH      OWNER LAST NAME
+  ROOWNFST,*,20,CH      OWNER FIRST NAME
+  ROOWNDEP,*,40,CH      OWNER DEPARTMENT
+  ROOWNAD1,*,40,CH      OWNER ADDRESS LINE 1
+  ROOWNAD2,*,40,CH      OWNER ADDRESS LINE 2
+  ROOWNAD3,*,40,CH      OWNER ADDRESS LINE 3
+  ROOWNTIN,*,8,CH       OWNER INTERNAL TELEPHONE NUMBER
+  ROOWNTEX,*,20,CH      OWNER EXTERNAL TELEPHONE NUMBER
+  ROOWNUID,*,8,CH       OWNER ELECTRONIC USERID
+  ROOWNNOD,*,8,CH       OWNER ELECTRONIC NODE NAME
+  ROOWNVOL,*,6,CH       TOTAL NUMBER OF OWNED VOLUMES
+**********************************************************************
+* END OF REPORT EXTRACT OWNER RECORD                                 *
+**********************************************************************
+RORCEND,*             END OF ROEXT
+

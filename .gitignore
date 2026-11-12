@@ -1,0 +1,15 @@
+# prompty
+prompt*.txt
+
+# dokumentacja Markdown
+*.md
+*.MD
+
+# zależności i artefakty buildu
+node_modules/
+dist/
+__pycache__/
+
+# pliki generowane
+tempalte_engine/TMPLGEN.rexx
+grafana_plugin/loader/sample/

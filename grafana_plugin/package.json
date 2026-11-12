@@ -1,0 +1,26 @@
+{
+  "name": "mainframe-dasdmap-panel",
+  "version": "1.0.0",
+  "description": "Grafana panel: mapa dysków mainframe (DCOLLECT -> CSV -> InfluxDB)",
+  "private": true,
+  "scripts": {
+    "build": "webpack --mode production",
+    "dev": "webpack --mode development --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@emotion/css": "11.13.5",
+    "@grafana/data": "12.3.1",
+    "@grafana/runtime": "^12.3.1",
+    "@grafana/ui": "12.3.1",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "copy-webpack-plugin": "12.0.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "ts-loader": "9.5.1",
+    "typescript": "5.6.3",
+    "webpack": "5.96.1",
+    "webpack-cli": "5.1.4"
+  }
+}

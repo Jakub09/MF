@@ -1,0 +1,20 @@
+**********************************************************************
+* SYMBOLE ROBOCZE DLA JOBA DCRPTMSK (RAPORT DCOLLECT)                *
+* UZYWANE RAZEM Z HEADER, TYPED I DCRWORK                            *
+**********************************************************************
+* PQ (FB 84) - KWALIFIKATORY 1-6 (8 ZNAKOW + SPACJA) + PRZESTRZEN
+P_Q1,1,9,CH
+P_Q2,10,9,CH
+P_Q3,19,9,CH
+P_Q4,28,9,CH
+P_Q5,37,9,CH
+P_Q6,46,9,CH
+P_ALLKB,55,15,ZD
+P_USEKB,70,15,ZD
+* LVSUM (FB 135) - JEDEN REKORD NA MASKE
+K_MASK,1,60,CH
+K_COUNT,61,15,ZD
+K_ALLKB,76,15,ZD
+K_USEKB,91,15,ZD
+K_ALLMB,106,15,ZD
+K_USEMB,121,15,ZD

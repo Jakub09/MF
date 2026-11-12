@@ -1,0 +1,111 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM SMF VITAL RECORD SPECIFICATION INFORMATION - TYPE 'K'.         *
+*   SEE "DFSMS/MVS DFSMSRMM IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,SMFADREC            START AFTER EDGSMFAR
+MKREC,*,212
+**********************************************************************
+* KEY                                                                *
+**********************************************************************
+  MKKEY,=,56                 KEY OF VRS RECORD
+    MKTYPE,=,1,CH            RECORD TYPE
+      MKTYPEID,'K'             VRS RECORD ID
+  MKTYPE2,*,1,CH             VRS TYPE
+    MKTYPVOL,'V'               VOLUME VRS
+    MKTYPNAM,'N'               NAME VRS
+    MKTYPDSN,'D'               DATA SET VRS
+  MKVOLSER,*,6,CH            VOLUME SERIAL MASK
+    MKNAME,=,8,CH            NAME OF VRS
+      MKDSNAME,=,44,CH       DATA SET NAME MASK
+  MKGENKEY,*,1,CH            GENERIC/SPECIFIC INDICATOR
+    MKGKSPEC,'0'               SPECIFIC
+    MKGKGEN,'1'                GENERIC
+  MKCRTJBN,*,8,CH            JOB NAME
+  SKIP,1                     RESERVED
+***********************************************************************
+* CONTROL INFORMATION                                                 *
+***********************************************************************
+  MKRECLN,*,2,FI             RECORD LENGTH
+  SKIP,2                     RESERVED
+  MKCRDATE,*,4,PD            VRS CREATE DATE - YYYYDDD
+  MKCRTIME,*,4,PD            VRS CREATE TIME - HHMMSST
+  MKCRSID,*,8,CH             CREATE SYSTEM ID
+  MKRCCDS,*,8,CH             RECORD CREATE CDS ID
+  MKLCDATE,*,4,PD            LAST CHANGE DATE - YYYYDDD
+  MKLCTIME,*,4,PD            LAST CHANGE TIME - HHMMSST
+  MKLCUID,*,8,CH             LAST CHANGE USER ID
+  MKLCSID,*,8,CH             LAST CHANGE SYSTEM ID
+  MKUCDATE,*,4,PD            LAST "USER" CHANGE DATE
+  MKUCTIME,*,4,PD            LAST "USER" CHANGE TIME
+  MKCFLG,*,1,BI              CONTROL FLAGS 1
+    MKDELFLG,X'80'             RECORD DELETED
+    MKSELFLG,X'10'             SELECT - PROC BY SATELLITE UPDT
+  MKRECLEV,*,1,BI            RECORD LEVEL NUMBER
+  SKIP,6                     RESERVED
+***********************************************************************
+* RETENTION TYPE                                                      *
+***********************************************************************
+  MKRETN,*,1,BI              TYPE OF RETENTION
+    MKRETNC,B'1.......'        CYCLES
+    MKRETND,B'.1......'        DAYS
+    MKRETNR,B'..1.....'        LASTREFERENCEDAYS
+    MKRETNW,B'...1....'        WHILECATALOGED
+    MKRETNX,B'....1...'        UNTILEXPIRED
+    MKRETNXD,B'.....1..'       EXTRADAYS
+    MKRETNCD,B'......1.'       BYDAYSCYCLE
+***********************************************************************
+* DATA SET NAME MASK TYPE                                             *
+***********************************************************************
+  MKDSNTYP,*,1,BI            DATA SET NAME MASK TYPE
+    MKDSNG,X'80'               GENERATION DATA GROUP
+    MKDSNP,X'40'               PSEUDO GDG
+    MKDSND,X'20'               STANDARD DATA SET NAME
+    MKOPEN,X'02'               MASK IS FOR OPEN FILES
+    MKABEND,X'01'              MASK IS FOR ABENDED FILES
+***********************************************************************
+* STORE INFORMATION                                                   *
+***********************************************************************
+  MKSTORE,*,1,CH             STORE REQUIREMENT
+    MKSTOREV,'V'               VITAL RECORD ONLY
+    MKSTORER,'R'               REMOTE STORE
+    MKSTOREL,'L'               LOCAL STORE
+    MKSTORED,'D'               DISTANT STORE
+    MKSTOREB,'B'               BOTH: LOCAL THEN DISTANT
+  SKIP,1                     RESERVED
+  MKLOC,*,8,CH               LOCATION NAME
+    MKLHOM,'HOME'               HOME
+    MKLLCL,'LOCAL'              LOCAL
+    MKLREM,'REMOTE'             REMOTE
+    MKLDIS,'DISTANT'            DISTANT
+    MKLCUR,'CURRENT'            CURRENT
+**  CAN ALSO BE DEFINED LIBRARY NAME
+***********************************************************************
+* VRS CONTROL INFORMATION                                             *
+***********************************************************************
+  MKNEXT,*,8,CH              NAME OF NEXTVRS OR ANDVRS
+  MKCOUNT,*,4,FI             NBR OF CYCLES, DAYS, VOLUMES
+  MKLPRTY,*,2,FI             LOCATION PRIORITY OVERRIDE
+  MKSTART,*,2,FI             STORE START NUMBER
+  MKSTORE1,*,4,FI            STORE KEEP NUMBER
+  MKSTORE2,*,4,FI            DISTANT STORE KEEP NUMBER
+  MKFLAGA,*,1,BI             FLAG-A
+    MKFGAAND,X'80'             MKNEXT IS ANDVRS() OPERAND
+    MKFGANXT,X'40'             MKNEXT IS NEXTVRS() OPERAND
+  MKRLSOPT,*,1,BI            RELEASE OPTIONS
+    MKRLSXDI,B'1.......'       EXPIRY DATE IGNORE
+    MKRLSSCI,B'.1......'       SCRATCH IMMEDIATE
+  MKDELAY,*,2,FI             NUMBER OF DAYS BEFORE MOVE
+  MKOWNER,*,8,CH             VRS OWNER
+  MKDELDAT,*,4,PD            VRS DELETE DATE (YYYYDDD)
+  MKDESC,*,30,CH             DESCRIPTION
+  SKIP,6                     RESERVED
+**********************************************************************
+MKRCEND,*                             END OF MKREC
+**********************************************************************
+* END OF RMM MKREC                                                   *
+**********************************************************************
+

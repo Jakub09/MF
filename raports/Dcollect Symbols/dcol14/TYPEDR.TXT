@@ -1,0 +1,233 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMS 1.4 AMS DCOLLECT RECORDS.           *
+**********************************************************************
+* SMS OPTICAL DRIVE DEFINITION - RECORD TYPE 'DR'.                   *
+*   SEE "AMS FOR THE ICF (SC26-4906)" FOR FIELD DESCRIPTIONS.        *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,29                  START AFTER HEADER
+DDRDATA,=,400                SMS OPTICAL DRIVE DEFINITION
+  DDRNMFLD,=,32              EXTENDED FOR CONSISTENCY
+    DDRDVLEN,=,2,FI          LENGTH OF NAME
+    DDRNAME,*,30,CH
+      DDRDNAME,=,8,CH        DRIVE NAME
+      SKIP,22                RESERVED
+  DDRDUSER,*,8,CH            USERID OF LAST UPDATER
+  DDRDDATE,*,10,CH           DATE OF LAST UPDATE
+  DDRFLAGS,*,1,BI            FLAGS
+    DDR32NAM,B'1.......'       USE DDRSTAT
+  SKIP,1                     RESERVED
+  DDRDTIME,*,8,CH            TIME OF LAST UPDATE
+* LIBRARY NAME FIELDS
+  DDRLB,*,32                 LENGTH AND NAME OF LIBRARY
+    DDRLBLEN,=,2,FI          LENGTH OF LIBRARY NAME
+    DDRLIBRY,*,30,CH         LIBRARY FOR THIS DRIVE
+      DDRLBNM,=,8,CH         LIBRARY NAME
+      SKIP,22                RESERVED
+  DDRNSTAT_ARRAY,*,32        ARRAY OF STATUS FIELDS (8 ELEMENTS)
+    DDROMST_1,=,4            STATUS OF DRIVE - 1
+      DDRSOUT_1,=,1,FI       REQUESTED OAM STATUS - 1
+* CONSTANTS FOR DDRSOUT_N FIELDS
+        DDRNOCON,0             NO CONNECTIVITY
+        DDRONLN,1              ONLINE
+        DDROFFLN,2             OFFLINE
+        DDRNORST,3             OUTSTANDING REQUEST
+      DDRCFCS_1,*,1,FI       CURRENT OAM STATUS - 1
+* CONSTANTS FOR DDRCFCS_N FIELDS - SEE DDRSOUT_1
+      SKIP,2                 RESERVED
+    DDROMST_2,*,4,CH         STATUS OF DRIVE - 2
+      DDRSOUT_2,=,1,FI       REQUESTED OAM STATUS - 2
+      DDRCFCS_2,*,1,FI       CURRENT OAM STATUS - 2
+      SKIP,2                 RESERVED
+    DDROMST_3,*,4,CH         STATUS OF DRIVE - 3
+      DDRSOUT_3,=,1,FI       REQUESTED OAM STATUS - 3
+      DDRCFCS_3,*,1,FI       CURRENT OAM STATUS - 3
+      SKIP,2                 RESERVED
+    DDROMST_4,*,4,CH         STATUS OF DRIVE - 4
+      DDRSOUT_4,=,1,FI       REQUESTED OAM STATUS - 4
+      DDRCFCS_4,*,1,FI       CURRENT OAM STATUS - 4
+      SKIP,2                 RESERVED
+    DDROMST_5,*,4,CH         STATUS OF DRIVE - 5
+      DDRSOUT_5,=,1,FI       REQUESTED OAM STATUS - 5
+      DDRCFCS_5,*,1,FI       CURRENT OAM STATUS - 5
+      SKIP,2                 RESERVED
+    DDROMST_6,*,4,CH         STATUS OF DRIVE - 6
+      DDRSOUT_6,=,1,FI       REQUESTED OAM STATUS - 6
+      DDRCFCS_6,*,1,FI       CURRENT OAM STATUS - 6
+      SKIP,2                 RESERVED
+    DDROMST_7,*,4,CH         STATUS OF DRIVE - 7
+      DDRSOUT_7,=,1,FI       REQUESTED OAM STATUS - 7
+      DDRCFCS_7,*,1,FI       CURRENT OAM STATUS - 7
+      SKIP,2                 RESERVED
+    DDROMST_8,*,4,CH         STATUS OF DRIVE - 8
+      DDRSOUT_8,=,1,FI       REQUESTED OAM STATUS - 8
+      DDRCFCS_8,*,1,FI       CURRENT OAM STATUS - 8
+      SKIP,2                 RESERVED
+* MISCELLANEOUS INFORMATION
+  DDRDCONS,*,4,FI            CONSOLE ID
+  DDRSTAT_ARRAY,*,256        ARRAY OF STATUS FIELDS (32 ELEMENTS)
+    DDRSYSST_01,=,4          STATUS FOR SYSTEM - 01
+      DDRREQST_01,=,1,FI     REQUESTED SYSTEM STATUS - 01
+* CONSTANTS FOR DDRREQST_NN FIELDS - SEE DDRSOUT_1
+      DDRCURST_01,*,1,FI     CURRENT SYSTEM STATUS - 01
+* CONSTANTS FOR DDRCURST_NN FIELDS - SEE DDRSOUT_1
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_02,*,4          STATUS FOR SYSTEM - 02
+      DDRREQST_02,=,1,FI     REQUESTED SYSTEM STATUS - 02
+      DDRCURST_02,*,1,FI     CURRENT SYSTEM STATUS - 02
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_03,*,4          STATUS FOR SYSTEM - 03
+      DDRREQST_03,=,1,FI     REQUESTED SYSTEM STATUS - 03
+      DDRCURST_03,*,1,FI     CURRENT SYSTEM STATUS - 03
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_04,*,4          STATUS FOR SYSTEM - 04
+      DDRREQST_04,=,1,FI     REQUESTED SYSTEM STATUS - 04
+      DDRCURST_04,*,1,FI     CURRENT SYSTEM STATUS - 04
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_05,*,4          STATUS FOR SYSTEM - 05
+      DDRREQST_05,=,1,FI     REQUESTED SYSTEM STATUS - 05
+      DDRCURST_05,*,1,FI     CURRENT SYSTEM STATUS - 05
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_06,*,4          STATUS FOR SYSTEM - 06
+      DDRREQST_06,=,1,FI     REQUESTED SYSTEM STATUS - 06
+      DDRCURST_06,*,1,FI     CURRENT SYSTEM STATUS - 06
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_07,*,4          STATUS FOR SYSTEM - 07
+      DDRREQST_07,=,1,FI     REQUESTED SYSTEM STATUS - 07
+      DDRCURST_07,*,1,FI     CURRENT SYSTEM STATUS - 07
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_08,*,4          STATUS FOR SYSTEM - 08
+      DDRREQST_08,=,1,FI     REQUESTED SYSTEM STATUS - 08
+      DDRCURST_08,*,1,FI     CURRENT SYSTEM STATUS - 08
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_09,*,4          STATUS FOR SYSTEM - 09
+      DDRREQST_09,=,1,FI     REQUESTED SYSTEM STATUS - 09
+      DDRCURST_09,*,1,FI     CURRENT SYSTEM STATUS - 09
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_10,*,4          STATUS FOR SYSTEM - 10
+      DDRREQST_10,=,1,FI     REQUESTED SYSTEM STATUS - 10
+      DDRCURST_10,*,1,FI     CURRENT SYSTEM STATUS - 10
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_11,*,4          STATUS FOR SYSTEM - 11
+      DDRREQST_11,=,1,FI     REQUESTED SYSTEM STATUS - 11
+      DDRCURST_11,*,1,FI     CURRENT SYSTEM STATUS - 11
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_12,*,4          STATUS FOR SYSTEM - 12
+      DDRREQST_12,=,1,FI     REQUESTED SYSTEM STATUS - 12
+      DDRCURST_12,*,1,FI     CURRENT SYSTEM STATUS - 12
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_13,*,4          STATUS FOR SYSTEM - 13
+      DDRREQST_13,=,1,FI     REQUESTED SYSTEM STATUS - 13
+      DDRCURST_13,*,1,FI     CURRENT SYSTEM STATUS - 13
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_14,*,4          STATUS FOR SYSTEM - 14
+      DDRREQST_14,=,1,FI     REQUESTED SYSTEM STATUS - 14
+      DDRCURST_14,*,1,FI     CURRENT SYSTEM STATUS - 14
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_15,*,4          STATUS FOR SYSTEM - 15
+      DDRREQST_15,=,1,FI     REQUESTED SYSTEM STATUS - 15
+      DDRCURST_15,*,1,FI     CURRENT SYSTEM STATUS - 15
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_16,*,4          STATUS FOR SYSTEM - 16
+      DDRREQST_16,=,1,FI     REQUESTED SYSTEM STATUS - 16
+      DDRCURST_16,*,1,FI     CURRENT SYSTEM STATUS - 16
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_17,*,4          STATUS FOR SYSTEM - 17
+      DDRREQST_17,=,1,FI     REQUESTED SYSTEM STATUS - 17
+      DDRCURST_17,*,1,FI     CURRENT SYSTEM STATUS - 17
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_18,*,4          STATUS FOR SYSTEM - 18
+      DDRREQST_18,=,1,FI     REQUESTED SYSTEM STATUS - 18
+      DDRCURST_18,*,1,FI     CURRENT SYSTEM STATUS - 18
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_19,*,4          STATUS FOR SYSTEM - 19
+      DDRREQST_19,=,1,FI     REQUESTED SYSTEM STATUS - 19
+      DDRCURST_19,*,1,FI     CURRENT SYSTEM STATUS - 19
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_20,*,4          STATUS FOR SYSTEM - 10
+      DDRREQST_20,=,1,FI     REQUESTED SYSTEM STATUS - 10
+      DDRCURST_20,*,1,FI     CURRENT SYSTEM STATUS - 10
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_21,*,4          STATUS FOR SYSTEM - 11
+      DDRREQST_21,=,1,FI     REQUESTED SYSTEM STATUS - 11
+      DDRCURST_21,*,1,FI     CURRENT SYSTEM STATUS - 11
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_22,*,4          STATUS FOR SYSTEM - 12
+      DDRREQST_22,=,1,FI     REQUESTED SYSTEM STATUS - 12
+      DDRCURST_22,*,1,FI     CURRENT SYSTEM STATUS - 12
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_23,*,4          STATUS FOR SYSTEM - 13
+      DDRREQST_23,=,1,FI     REQUESTED SYSTEM STATUS - 13
+      DDRCURST_23,*,1,FI     CURRENT SYSTEM STATUS - 13
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_24,*,4          STATUS FOR SYSTEM - 14
+      DDRREQST_24,=,1,FI     REQUESTED SYSTEM STATUS - 14
+      DDRCURST_24,*,1,FI     CURRENT SYSTEM STATUS - 14
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_25,*,4          STATUS FOR SYSTEM - 15
+      DDRREQST_25,=,1,FI     REQUESTED SYSTEM STATUS - 15
+      DDRCURST_25,*,1,FI     CURRENT SYSTEM STATUS - 15
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_26,*,4          STATUS FOR SYSTEM - 16
+      DDRREQST_26,=,1,FI     REQUESTED SYSTEM STATUS - 16
+      DDRCURST_26,*,1,FI     CURRENT SYSTEM STATUS - 16
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_27,*,4          STATUS FOR SYSTEM - 17
+      DDRREQST_27,=,1,FI     REQUESTED SYSTEM STATUS - 17
+      DDRCURST_27,*,1,FI     CURRENT SYSTEM STATUS - 17
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_28,*,4          STATUS FOR SYSTEM - 18
+      DDRREQST_28,=,1,FI     REQUESTED SYSTEM STATUS - 18
+      DDRCURST_28,*,1,FI     CURRENT SYSTEM STATUS - 18
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_29,*,4          STATUS FOR SYSTEM - 19
+      DDRREQST_29,=,1,FI     REQUESTED SYSTEM STATUS - 19
+      DDRCURST_29,*,1,FI     CURRENT SYSTEM STATUS - 19
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_30,*,4          STATUS FOR SYSTEM - 30
+      DDRREQST_30,=,1,FI     REQUESTED SYSTEM STATUS - 30
+      DDRCURST_30,*,1,FI     CURRENT SYSTEM STATUS - 30
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_31,*,4          STATUS FOR SYSTEM - 31
+      DDRREQST_31,=,1,FI     REQUESTED SYSTEM STATUS - 31
+      DDRCURST_31,*,1,FI     CURRENT SYSTEM STATUS - 31
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+    DDRSYSST_32,*,4          STATUS FOR SYSTEM - 32
+      DDRREQST_32,=,1,FI     REQUESTED SYSTEM STATUS - 32
+      DDRCURST_32,*,1,FI     CURRENT SYSTEM STATUS - 32
+      SKIP,2                 RESERVED
+    SKIP,4                   RESERVED
+  SKIP,16                    RESERVED
+DDRDATAE,*                   END OF DDRDATA
+

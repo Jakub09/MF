@@ -1,0 +1,116 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM SMF DATA SET INFORMATION - TYPE 'D'.                           *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,SMFADREC            START AFTER EDGSMFAR
+MDREC,*,456
+**********************************************************************
+* KEY FIELD                                                          *
+**********************************************************************
+  MDKEY,=,56                 KEY FIELD
+    MDTYPE,=,1,CH            RECORD TYPE
+      MDTYPEID,'D'           DSN INFO ID SYMBOL
+    MDDSNAME,*,44,CH         DATASET NAME
+    MDVOLSER,*,6,CH          VOLUME SERIAL NUMBER
+    SKIP,1                   RESERVED
+    MDDSNSEQ,*,2,FI          DATASET SEQUENCE NUMBER
+    SKIP,2                   RESERVED
+**********************************************************************
+* CONTROL INFORMATION                                                *
+**********************************************************************
+  MDRECLN,*,2,FI             RECORD LENGTH
+  SKIP,2                     RESERVED
+  MDCRDATE,*,4,PD            DSN  CREATE DATE - YYYYDDD
+  MDCRTIME,*,4,PD            DSN  CREATE TIME - HHMMSST
+  MDCRSID,*,8,CH             CREATE SYSTEM ID
+  MDRCCDS,*,8,CH             RECORD CREATE CDS ID
+  MDLCDATE,*,4,PD            LAST CHANGE DATE  - YYYYDDD
+  MDLCTIME,*,4,PD            LAST CHANGE TIME -  HHMMSST
+  MDLCUID,*,8,CH             LAST CHANGE USER ID
+  MDLCSID,*,8,CH             LAST CHANGE SYSTEM ID
+  MDUCDATE,*,4,PD            LAST "USER" CHANGE DATE
+  MDUCTIME,*,4,PD            LAST "USER" CHANGE TIME
+  MDCFLG,*,1,BI              CONTROL FLAGS 1
+    MDDELFLG,X'80'             RECORD DELETED
+    MDPDLFLG,X'40'             RECORD PREVIOUSLY DELETED
+    MDSELFLG,X'10'             SELECT - PROC BY SATELLITE UPDT
+    MDDUMMY,X'08'              DUMMY RECORD - ALLOW TSO ADD
+  MDRECLEV,*,1,BI            RECORD LEVEL NUMBER
+  SKIP,6                     RESERVED
+**********************************************************************
+* DSNAME INFORMATION                                                 *
+**********************************************************************
+  SKIP,6                     RESERVED
+  MDVOLSEQ,*,2,FI            VOLUME SEQUENCE NUMBER
+  MDUNITAD,*,4,CH            UNIT ADDRESS
+  MDRECFM,*,4,CH             RECORD FORMAT
+  MDLRECL,*,4,FI             LOGICAL RECORD LENGTH
+  MDBLKSZ,*,4,FI             PHYSICAL BLOCK SIZE
+  MDBLKCNT,*,4,FI            BLOCK COUNT
+  MDOWNDSN,*,8,CH            DATASET OWNER
+  MDSECLEV,*,1,BI            SECURITY LEVEL
+  MDTRTCH,*,1,BI             FROM JFCTRTCH - IDRC SUPPORT
+    MDTCOMP,X'08'              DSN USED 3480 IDRC
+    MDTNCOMP,X'04'             NO COMPACTION
+  MDFILSEQ,*,2,BI            LOGICAL FILE SEQUENCE NO
+  MDTOKEN,*,8,CH             RESERVED FOR RMM INTERNAL USE
+  MDDSSIZE,*,4,FI            DATASET SIZE IN KBYTES
+  MDLRDATE,*,4,PD            DATE LAST READ - YYYYDDD
+  MDLWDATE,*,4,PD            DATE LAST WRITTEN - YYYYDDD
+  MDFLAG,*,1,BI              FLAG BYTE
+    MDFCAT,B'1.......'         DATA SET IS CATALOGED
+    MDFVRSR,B'.1......'        DATA SET IS RETAINED BY VRS
+    MDFNOTCAT,B'..1.....'      INDICATES DS WAS FOUND NOT TO BE
+*                                 CATALOGED DURING VRS
+    MDFABEND,B'....1...'       ABEND IN PROGRESS WHEN DATA SET CLOSED
+    MDFOCEAB,B'.....1..'       ABEND PROBABLY IN O/C/EOV
+    MDFORCE,B'......1.'        FORCE SUPPLIED
+  SKIP,2                     RESERVED
+  MDVRSTYP,*,1,CH            MATCHING VRS TYPE
+    MDVTD,'D'                  DATASET
+    MDVTS,'S'                  SMSMC
+    MDVTV,'V'                  VRSMV
+    MDVTM,'M'                  DSN/MV
+  MDACSMC,*,8,CH             SMS MANAGEMENT CLASS NAME
+    MDFACSMC,=,8,CH          OLD SMS MANAGEMENT CLASS NAME
+  MDVRSVAL,*,8,CH            VRS MANAGEMENT VALUE
+  MDACSSG,*,8,CH             SMS STORAGE GROUP NAME
+  MDACSSC,*,8,CH             SMS STORAGE CLASS NAME
+  MDACSDC,*,8,CH             SMS DATA CLASS NAME
+  MDCRTJBN,*,8,CH            CREATING JOB NAME
+  MDVRSJBN,*,8,CH            MATCHING VRS JOB NAME MASK
+  MDRETDAT,*,4,CH            RETENTION DATE
+  MDSTEPNM,*,8,CH            CREATING STEP NAME
+  MDDDNAME,*,8,CH            CREATING DDNAME
+  MDPVSCH,*,8,CH             PRIMARY VRS SUBSEQUENT SUBCHAIN NAME
+  MDPVSDTE,*,4,PD            PRIMARY VRS SUBSEQUENT SUBCHAIN START DATE
+  MDEXPDT,*,4,PD             EXPIRATION DATE
+  MDEXPDTO,*,4,PD            ORIGINAL EXPIRATION DATE
+  SKIP,8                     RESERVED
+**********************************************************************
+* VARIABLE LENGTH SECTION                                            *
+**********************************************************************
+  MDPDSNL,*,1,BI             LENGTH OF PREVIOUS DSNAME
+  MDNDSNL,*,1,BI             LENGTH OF NEXT DSNAME
+  MDVRSNML,*,1,BI            LENGTH OF MATCHING VRS NAME
+  MD2VMTCL,*,1,BI            LENGTH OF SECOND. VRS FIELDS
+  MDPDSN,*,44,CH             PREVIOUS DSNAME OR NULL
+  MDNDSN,*,44,CH             NEXT DSNAME OR NULL
+  MDVRSNAM,*,44,CH           MATCHING VRS NAME
+  MD2VNAME,*,8,CH            SECONDARY VRS MASK
+  MD2VJBNM,*,8,CH            SECONDARY VRS JOB NAME MASK
+  MD2VSCH,*,8,CH             SECONDARY VRS SUBSEQUENT SUBCHAIN NAME
+  MD2VSDTE,*,4,PD            SECONDARY VRS SUBSEQUENT SUBCHAIN
+*                               START DATE
+**********************************************************************
+* END OF DATA SET INFORMATION                                        *
+**********************************************************************
+MDRCEND,*                    END OF MDREC
+**********************************************************************
+* END OF RMM MDREC                                                   *
+**********************************************************************
+

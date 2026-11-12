@@ -1,0 +1,69 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM SMF ACTION RECORD INFORMATION - TYPE 'C'.                      *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,SMFADREC            START AFTER EDGSMFAR
+MAREC,*,136
+**********************************************************************
+* KEY FIELD                                                          *
+**********************************************************************
+  MAKEY,=,56                 KEY FIELD
+    MATYPE,=,1,CH            RECORD TYPE
+      MATYPEID,'C'             ACTION RECORD ID SYMBOL
+    MATYPE1,*,1,CH           SUB-TYPE
+      MATYPE1_ACTION,'A'       ACTION
+      MATYPE1_MOVE,'M'         MOVE
+    MAACTION,*,8,CH          ACTION TYPE
+      MAMVE,'MOVE'             MOVE
+      MASCR,'SCRATCH'          SCRATCH
+      MARET,'RETURN'           RETURN
+      MAREP,'REPLACE'          REPLACE
+      MAINI,'INIT'             INIT
+      MAERS,'ERASE'            ERASE
+      MANTF,'NOTIFY'           NOTIFY
+    SKIP,8                   RESERVED
+    MALOC,*,8,CH             SOURCE LOCATION FOR MOVE
+    MADEST,*,8,CH            TARGET LOCATION FOR MOVE
+    SKIP,22                  RESERVED
+**********************************************************************
+* CONTROL INFORMATION                                                *
+**********************************************************************
+  MARECLN,*,2,FI             RECORD LENGTH
+  SKIP,2                     RESERVED
+  MACRDATE,*,4,PD            ACTION CREATE DATE - YYYYDDD
+  MACRTIME,*,4,PD            ACTION CREATE TIME - HHMMSST
+  MACRSID,*,8,CH             CREATE SYSTEM ID
+  MARCCDS,*,8,CH             RECORD CREATE CDS ID
+  MALCDATE,*,4,PD            LAST CHANGE DATE  - YYYYDDD
+  MALCTIME,*,4,PD            LAST CHANGE TIME -  HHMMSST
+  MALCUID,*,8,CH             LAST CHANGE USER ID
+  MALCSID,*,8,CH             LAST CHANGE SYSTEM ID
+  MAUCDATE,*,4,PD            LAST "USER" CHANGE DATE
+  MAUCTIME,*,4,PD            LAST "USER" CHANGE TIME
+  MACFLG,*,1,BI              CONTROL FLAGS 1
+    MADELFLG,X'80'             RECORD DELETED
+    MASELFLG,X'10'             SELECT - PROC BY SATELLITE UPDT
+  MARECLEV,*,1,BI            RECORD LEVEL NUMBER
+  SKIP,6                     RESERVED
+**********************************************************************
+* ACTION RECORD SPECIFIC INFORMATION                                 *
+**********************************************************************
+  MACOUNT,*,4,FI             COUNT OF VOLS REQ THIS ACTION
+  MASFLAG,*,1,BI             STATUS OF MOVES AND ACTIONS
+    MASCOMP,X'80'              COMPLETED
+    MASPEND,X'40'              PENDING
+    MASCONF,X'20'              CONFIRMED
+    MASUNK,X'10'               UNKNOWN
+  SKIP,7                     RESERVED
+**********************************************************************
+* END OF ACTION RECORD SPECIFICATION FILE RECORD                     *
+**********************************************************************
+MARCEND,*                    END OF MAREC
+**********************************************************************
+* END OF RMM MAREC                                                   *
+**********************************************************************
+

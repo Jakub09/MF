@@ -1,0 +1,95 @@
+//JOBDCOL3 JOB ...
+//**JOBLIB   DD ...  DFSORT R14
+//******************************************************************
+//* DCOLLECT EXAMPLE 3: CAPACITY PLANNING
+//*   CAPACITY PLANNING ANALYSIS AND REPORTS.
+//******************************************************************
+//SYM   EXEC  PGM=ICETOOL,REGION=1024K
+//DFSMSG    DD  SYSOUT=*
+//TOOLMSG   DD  SYSOUT=*
+//SYMNAMES DD DSN=Y897797.DCOL14.SYM(HEADER),DISP=SHR
+//         DD DSN=Y897797.DCOL14.SYM(TYPEV),DISP=SHR
+//         DD DSN=Y897797.DCOL14.SYM(TYPED),DISP=SHR
+//         DD DSN=Y897797.DCOL14.SYM(TYPEC),DISP=SHR
+//INDD   DD DSN=Y897797.DCOLLECT.OUTPUT,DISP=SHR
+//OUTDD1    DD  DSN=&&TEMP1,DISP=(NEW,PASS),
+//  LIKE=Y897797.DCOLLECT.OUTPUT
+//SGVOLS    DD  SYSOUT=*
+//OUTDD2    DD  DSN=&&TEMP2,DISP=(NEW,PASS),
+//  LIKE=Y897797.DCOLLECT.OUTPUT
+//SCRPT     DD  SYSOUT=*
+//OUTDD3    DD  DSN=&&TEMP3,DISP=(NEW,PASS),
+//  LIKE=Y897797.DCOLLECT.OUTPUT
+//VOLRPT    DD  SYSOUT=*
+//TOOLIN    DD  *
+* Part 1
+*  Show the number of system-managed data sets that may be reblocked
+*  Include only D-type records with DCDSMSM and DCDREBLK flags on
+   COUNT FROM(INDD) USING(SMSM)
+* Part 2
+*  Create a temporary data set with only 'V' type records
+   COPY FROM(INDD) TO(OUTDD1) USING(CPY1)
+*  Show volume free space statistics
+   STATS FROM(OUTDD1) ON(DCVPERCT)
+*  Show the number of volumes with free space > 30%
+   RANGE FROM(OUTDD1) ON(DCVPERCT) HIGHER(30)
+* Part 3
+*  Print a report showing the number of volumes in each storage group
+   OCCUR FROM(OUTDD1) LIST(SGVOLS) BLANK -
+    DATE TITLE('Volumes in Each Storage Group') -
+    HEADER('Storage Group') HEADER('Volume Count') -
+    ON(DCVSGTCL)                   ON(VALCNT)
+* Part 4
+*  Create a temporary data set containing data set records that
+*  are sorted by storage class, with the allocated space totalled
+*  (SUMmed)
+   SORT FROM(INDD) TO(OUTDD2) USING(SRT1)
+*  Print a report showing total allocated space by storage class
+*  including the maximum, minimum and average allocated space
+   DISPLAY FROM(OUTDD2) LIST(SCRPT) BLANK -
+    TITLE('Total Allocated Space (KB) by Storage Class') DATE TIME -
+    HEADER('Storage Class')  HEADER('Total Space (KB)') -
+    ON(DCDSTGCL)                  ON(DCDALLSP) -
+    MAXIMUM('Most Space:') MINIMUM('Least Space:') -
+    AVERAGE('Average Space:')
+* Part 5
+*   Create a temporary data set that contains:
+*    - Type 'C' capacity planning records,
+*    - Occupancy after processing > target occupancy, and
+*    - Volume level is L0
+   COPY FROM(INDD) TO(OUTDD3) USING(CPY2)
+*   Print a report showing volume serial number, target occupancy,
+*   occupancy after processing and date
+    DISPLAY FROM(OUTDD3) LIST(VOLRPT) BLANK -
+      DATE(DMY.) TITLE('Volumes Not Meeting Target Threshold') -
+      HEADER('Volume') ON(UCVOLSR) -
+      HEADER('Target Occupancy') ON(UCTGOCC) -
+      HEADER('Occupancy After Processing') ON(UCAFOCC) -
+      HEADER('Date') ON(UCCOLDT)
+//SMSMCNTL DD *
+* Include only D-type records with DCDSMSM and DCDREBLK flags on
+  OPTION VLSHRT
+  INCLUDE COND=(DCURCTYP,EQ,DCUDATAT,AND,
+                DCDFLAG1,EQ,DCDSMSM,AND,
+                DCDFLAG1,EQ,DCDREBLK)
+/*
+//CPY1CNTL DD *
+* Include only V-type records
+ INCLUDE COND=(DCURCTYP,EQ,DCUVULUT)
+/*
+//SRT1CNTL DD *
+* Include only D-type records, sort by storage class and
+* sum (total) allocated space
+ INCLUDE COND=(DCURCTYP,EQ,DCUDATAT)
+ SORT FIELDS=(DCDSTGCL,A)
+ SUM FIELDS=(DCDALLSP)
+/*
+//CPY2CNTL DD *
+* Include only C-type records with volume level of L0 and
+* occupancy after processing > target occupancy
+ OPTION VLSHRT
+ INCLUDE COND=((DCURCTYP,EQ,UKCDASD),&,
+               (UCFLAG1,EQ,UCLEVL0),&,
+               (UCAFOCC,GT,UCTGOCC))
+/*
+

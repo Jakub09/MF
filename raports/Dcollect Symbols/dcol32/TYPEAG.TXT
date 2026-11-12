@@ -1,0 +1,50 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF Z/OS 3.2 DFSMS AMS DCOLLECT RECORDS.      *
+**********************************************************************
+* AGGREGATE GROUP DEFINITION - RECORD TYPE 'AG'.                     *
+*   SEE "Z/OS DFSMS ACCESS METHOD SERVICES COMMANDS" - FIELDS.       *
+*   SEE "Z/OS DFSORT APPLICATION PROGRAMMING GUIDE" - SYMBOLS.       *
+**********************************************************************
+POSITION,29                  START AFTER HEADER
+DAGDATA,=,616                AGGREGATE GROUP DEFINITION
+  DAGNMFLD,=,32              SPACE FOR NAME AND LENGTH
+    DAGNMLEN,=,2,FI          LENGTH OF NAME
+    DAGNAME,*,30,CH          NAME OF DATA CLASS
+  DAGUSER,*,8,CH             USERID OF LAST UPDATER
+  DAGDATE,*,10,CH            DATE OF LAST UPDATE
+  SKIP,2                     RESERVED
+  DAGTIME,*,8,CH             TIME OF LAST UPDATE
+  DAGDESC,*,120,CH           DESCRIPTION
+* AGGREGATE GROUP FLAG INFORMATION
+  DAGFLAGS,*,1,BI            FLAGS
+    DAGTENQ,B'1.......'        TOLERATE ENQ FAILURE
+    DAGFRET,B'.1......'        RETENTION PERIOD SPECIFIED
+    DAGFNCPY,B'..1.....'       NUMBER OF COPIES SPECIFIED
+  SKIP,3                     RESERVED
+* AGGREGATE GROUP ATTRIBUTES
+  DAGRETPD,*,4,FI            RETENTION PERIOD
+    DAGEXPYR,=,2,FI          EXPIRATION YEAR
+    DAGEXPDY,*,2,FI          ABSOLUTE DAY OF YEAR
+  DAGDEST,*,30,CH            DESTINATION
+  DAGPREFX,*,33,CH           OUTPUT DATA SET PREFIX
+  SKIP,1                     RESERVED
+  DAGIDSNM,*,52,CH           INSTRUCTION DATA SET NAME
+    DAGINDSN,=,44,CH         DATA SET NAME
+    DAGINMEM,*,8,CH          MEMBER NAME
+  DAGDSNMS_ARRAY,*,260,CH    ARRAY OF DATA SET NAMES (5 ELEMENTS)
+    DAGDSN_1,=,44,CH         DATA SET NAME - 1
+    DAGMEM_1,*,8,CH          MEMBER NAME - 1
+    DAGDSN_2,*,44,CH         DATA SET NAME - 2
+    DAGMEM_2,*,8,CH          MEMBER NAME - 2
+    DAGDSN_3,*,44,CH         DATA SET NAME - 3
+    DAGMEM_3,*,8,CH          MEMBER NAME - 3
+    DAGDSN_4,*,44,CH         DATA SET NAME - 4
+    DAGMEM_4,*,8,CH          MEMBER NAME - 4
+    DAGDSN_5,*,44,CH         DATA SET NAME - 5
+    DAGMEM_5,*,8,CH          MEMBER NAME - 5
+  DAGMGMTC,*,32              MANAGEMENT CLASS
+    DAGMCLEN,=,2,FI          MANAGEMENT CLASS LENGTH
+    DAGMCNAM,*,30,CH         MANAGEMENT CLASS NAME
+  DAGNCOPY,*,4,FI            NUMBER OF COPIES
+  SKIP,16                    RESERVED
+DAGDATAE,*                   END OF DAGDATA

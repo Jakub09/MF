@@ -1,0 +1,18 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF Z/OS 3.2 DFSMS AMS DCOLLECT RECORDS.      *
+**********************************************************************
+* TAPE CAPACITY PLANNING RECORD - RECORD TYPE 'T'.                   *
+*   SEE "Z/OS DFSMS ACCESS METHOD SERVICES COMMANDS" - FIELDS.       *
+*   SEE "Z/OS DFSORT APPLICATION PROGRAMMING GUIDE" - SYMBOLS.       *
+**********************************************************************
+POSITION,29                  START AFTER HEADER
+UTCAPT,*,16                  TAPE CAPACITY PLANNING RECORD
+  UTSTYPE,=,1,CH             TYPE OF TAPE CAPACITY PLANNING RECORD
+    UKBKTAPE,C'B'              BACKUP TAPES
+    UKDUTAPE,C'D'              DUMP TAPES
+    UKMGTAPE,C'M'              MIGRATION TAPES
+  SKIP,3                     RESERVED
+  UTFULL,*,4,FI              NUMBER OF FULL TAPE VOLUMES
+  UTPART,*,4,FI              NUMBER OF PARTIALLY FILLED VOLUMES
+  UTEMPTY,*,4,FI             NUMBER OF EMPTY TAPE VOLUMES
+UTCAPTE,*                    END OF UTCAPT

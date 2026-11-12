@@ -1,0 +1,68 @@
+//JOBDCOL1 JOB ...
+//**JOBLIB   DD ...   DFSORT R14
+//******************************************************************
+//* DCOLLECT EXAMPLE 1: VSAM REPORT
+//*   IDENTIFIES NON-SMS-MANAGED VSAM MULTIVOLUME DATA SETS
+//*   AND KEY-RANGE VSAM DATA SETS.
+//*   NOTES: (1) IF DUPLICATE VSAM DATA SETS ARE PRESENT THEY
+//*              WILL BE LISTED ALONG WITH THE MULTIVOLUME DATA SETS
+//*          (2) KEY-RANGE VSAM DATA SETS WILL NOT BE LISTED ALONG
+//*              WITH THE MULTIVOLUME DATA SETS, BUT WILL BE LISTED
+//*              SEPARATELY.
+//******************************************************************
+//SYM    EXEC PGM=ICETOOL
+//DFSMSG   DD   SYSOUT=*
+//TOOLMSG  DD   SYSOUT=*
+//SYMNAMES DD DSN=Y897797.DCOL14.SYM(HEADER),DISP=SHR
+//         DD DSN=Y897797.DCOL14.SYM(TYPED),DISP=SHR
+//         DD DSN=Y897797.DCOL14.SYM(TYPEA),DISP=SHR
+//SYMNOUT DD SYSOUT=*
+//INDD   DD DSN=Y897797.DCOLLECT.OUTPUT,DISP=SHR
+//OUTDD1   DD   DSN=&&TEMP1,DISP=(NEW,PASS),
+//  LIKE=Y897797.DCOLLECT.OUTPUT
+//OUTDD2   DD   DSN=&&TEMP2,DISP=(NEW,PASS),
+//  LIKE=Y897797.DCOLLECT.OUTPUT
+//REPORT1  DD   SYSOUT=*
+//REPORT2  DD   SYSOUT=*
+//TOOLIN   DD *
+*  Create a data set containing only D-type records for VSAM data sets
+*  that are non-SMS-managed
+   COPY FROM(INDD) TO(OUTDD1) USING(CPY1)
+*  Print a report showing all of the non-SMS-managed multi-volume
+*  VSAM data sets including a count of the number of volumes
+*  each resides on
+   OCCUR FROM(OUTDD1) LIST(REPORT1) -
+    ALLDUPS -
+    BLANK -
+    TITLE('Non-SMS-Managed Multi-Volume VSAM Data Set Report') -
+    DATE TIME PAGE -
+    HEADER('VSAM Data Set Name')   ON(DCDDSNAM) -
+    HEADER('Number of Volumes')    ON(VALCNT)
+*  Create a data set containing only A-type records for key-range VSAM
+*  data sets
+   SORT FROM(INDD) TO(OUTDD2) USING(SRT1)
+*  Print a report showing all of the key-range VSAM data sets
+   DISPLAY FROM(OUTDD2) LIST(REPORT2) -
+    BLANK -
+    TITLE('Key-range VSAM Data Set Report') -
+    DATE TIME PAGE -
+    HEADER('VSAM Data Set Name') ON(DCADSNAM)
+/*
+//CPY1CNTL DD *
+*  Include D-type records for non-SMS-managed (DCDSMSM)
+*  VSAM data sets (DCDDSGVS).
+   INCLUDE COND=(DCURCTYP,CH,EQ,DCUDATAT,AND,
+                 DCDFLAG1,NE,DCDSMSM,AND,
+                 DCDDSOR1,EQ,DCDDSGVS)
+   OPTION VLSHRT
+/*
+//SRT1CNTL DD *
+*  Include A-type records for key-range VSAM data sets (DCAKRDS).
+   INCLUDE COND=(DCURCTYP,CH,EQ,DCUASSOC,AND,
+              DCAFLAG1,EQ,DCAKRDS)
+*  Sort on dataset name.
+   SORT FIELDS=(DCADSNAM,A)
+   OPTION VLSHRT
+/*
+//*
+

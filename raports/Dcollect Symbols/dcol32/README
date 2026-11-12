@@ -1,0 +1,86 @@
+Symbole DFSORT dla rekordow DCOLLECT - aktualizacja do z/OS 3.2
+==============================================================
+
+Zrodlo bazowe: ../dcol14 (IBM DFSORT R14 / DFSMS 1.4, 1998).
+Wzorzec:       z/OS 3.2 DFSMS Access Method Services Commands,
+               "Interpreting DCOLLECT output" (tabele struktur rekordow).
+
+Instalacja na z/OS
+------------------
+  - PDS np. userid.DCOL32.SYM, RECFM=FB, LRECL=80.
+  - Upload HEADER, TYPE* i JOB* jako membery (tryb tekstowy/ASCII->EBCDIC).
+  - SYMNAMES: HEADER + potrzebne TYPEx (mozna laczyc kilka - nazwy sa
+    unikalne w calym zestawie, z wyjatkiem TYPEBC/TYPEBCO, ktore sa
+    alternatywami; uzywaj tylko jednego z nich).
+
+Konwencja pozycji
+-----------------
+  Pozycja DFSORT = offset IBM + 1 + 4 (RDW). Rekord typu w poz. 9,
+  dane rekordu od poz. 29 - tak samo jak w wersji dcol14.
+
+Zasady aktualizacji
+-------------------
+  - Zadne istniejace symbole nie zostaly usuniete ani przesuniete;
+    formaty istniejacych pol bez zmian (kompatybilnosc z jobami).
+  - Nowe pola z tabel z/OS 3.2 dopisane w miejsce bajtow RESERVED.
+  - Format nowych pol: SIGNED/FIXED -> FI, UNSIGNED/BITSTRING -> BI,
+    CHARACTER -> CH (UMLRECL jako BI).
+  - Maski wielobitowe (DCDEATRC, DCDEATRV, DCDDS9CR, DCDRECFM, DCVINXST,
+    DCVUSATR, DCVPHYST, UMLEVEL) opisane w komentarzach - DFSORT nie
+    definiuje pol krotszych niz bajt.
+
+Zmiany per member
+-----------------
+  TYPED   312 -> 444  DCDCKDSI, DCDCPOIT, DCDGT64K, DCDCMPTV, DCDCATF,
+                      DCDDSCBF (EATTR), DCDFLAG5 (+4 bity), DCDDS9F1,
+                      DCDJBNMC, DCDSTNMC, DCDTIMEC, DCDALLSX/USESX/SCALX/
+                      NMBLX (63-bit), DCDXPSEV, DCDCTYPE, DCDENCR/DCDTYPE/
+                      DCDKLBL
+  TYPEA   180         DCAZFS, DCATRDT
+  TYPEV   112 -> 136  DCVTRPCT, DCVEAVOL/DCVCYLMG, DCVTRFSP, DCVTRALC,
+                      DCVTRVLC, DCVTRFRG, DCVTRLGE, DCVTRFRX, DCVFCYLS,
+                      DCVFTRKS
+  TYPEM   224 -> 424  UMLFS, UMENCRP, UMPDSEV, UMLRECL, UMFLAG3-5 z bitami,
+                      *_FMB, UM_CLD_*/UM_CLOUD_*, UMENCRYPTA..UMENCRPR
+  TYPEB   184 -> 300  UBLFS, UBNEWNAME, UBFLAG3 z bitami, UB_RETAINDAYS,
+                      UBFLAG4 z bitami, UBENCRYPTA..UBENCRPR
+  TYPEDC  292 -> 540  bity DDCSPEC4/A, DDCSPECB/C/D, DDCDVC, DDCBSZLM,
+                      DDCFRLOG, DDCMEDA3/4, DDCSFLG, DDCVSAM1, DDCEATTR,
+                      DDCCT, DDCDSCF, DDCRBYTE, DDCBLKLM, DDCTAPE1, DDCVSP,
+                      DDCKYLB1/2, DDCRMODE, DDCDKYBL
+                      DDCSPECX: dlugosc 1 -> 4 (zgodnie z IBM)
+  TYPESC  256         bity DSCFLAG2, DSCVERSN, DSCBAKUP, DSCAVLPR,
+                      DSCFLAG3, DSCPAV, DSCSTOSL, DSCVFLG2, DSCCMMFT
+  TYPEMC  284 -> 338  DMCPREL/PRCN/PRIM, DMCCTSRL, DMCCTCPY, MCDL2DY,
+                      DMCCLOUD, DCMSZLTE, DCMSZGT, DMCACLTE, DMCACGT
+                      (pisownia MCDL2DY / DCMSZ* jak w tabeli IBM)
+  TYPEBC  904 -> 960  DBCSEPNL, DBSEPNM  (to samo w TYPEBCO)
+  TYPESG  824 -> 898  DSGTARGT, DSGFRETP, DSGFDELP, DSGOFLOW, DSGEXNLN,
+                      DSGEXNM, DSGDFLAG2 z bitami, DSGSBKPT, DSGSHTHR,
+                      DSGSLTHR, DSGTOTAP, DSGTMSAP, DSGOAMID
+                      Literowki DSGDMPC2_2..DSGDMPC5_5 -> DSGDMPCL_2..5
+  TYPEVL  416         bity DVLFLAGS, DVLSRSMS_nn/DVLOGSMS_nn w DVLSSTAT,
+                      DVLTRKCP, DVLTRKFR, DVLTRKEX, DVLPVTOC, DVLPIDX
+  pozostale           (HEADER, C, T, AG, DR, LB, CN, AI) - uklad bez zmian,
+                      tylko naglowek komentarza; JOB*: DCOL14 -> DCOL32
+
+ZMIENIONE WARTOSCI (sprawdz joby!)
+----------------------------------
+  TYPEMC  DMCAUTBK  B'..1.....' -> B'...1....'
+          DMCCPYTF  B'...1....' -> B'....1...'
+          (wg tabeli z/OS 3.2; bit 2 DMCBKFLG jest tam RESERVED)
+
+Do weryfikacji w makrach IDCDOUT / ARCUTILP (SYS1.MACLIB)
+---------------------------------------------------------
+  Tabele IBM sa miejscami niespojne - pozycje oznaczone w komentarzach:
+  - TYPEDC: DDCA2GB / DDCRECLM (IBM podaje ten sam bit dla obu),
+            DDCBSZLM wystepuje w tabeli dwa razy (240 i 317) - tu
+            zdefiniowany pod 240, a 313-320 jako DDCBLKLM (8 bajtow).
+  - TYPEMC: DMCEXPF..DMCRDARC (offset 212-215) - w z/OS 3.2 RESERVED.
+            Dlugosc DMCDATA: IBM podaje 284, a koniec rekordu wypada
+            na offsecie 362 (= 338); przyjeto 338.
+  - TYPESG: DSGFLAGS..DSG32NAM - tabela struktury pokazuje 204-207 jako
+            RESERVED, ale opis pol nadal opisuje DSGFLAGS; zostawione.
+  - TYPEVL: DVLCSMSS_n (offset 136-143) brak w tabeli 3.2;
+            DVLCNSMS_nn - w tabeli 3.2 RESERVED; zostawione.
+  - Opisy oznaczone "SEE IBM DOC" - znaczenie pola niepewne.

@@ -1,0 +1,32 @@
+//TMPLJOBS JOB ,'TMPLGEN JOB',CLASS=A,MSGCLASS=H,NOTIFY=&SYSUID
+//*--------------------------------------------------------------------
+//* TMPLGEN - tryb JOB: osobny job na kazdy rekord; od razu na INTRDR
+//*--------------------------------------------------------------------
+//RUN      EXEC PGM=IRXJCL,PARM='TMPLGEN'
+//SYSEXEC  DD DISP=SHR,DSN=YOUR.USERID.REXX.EXEC
+//SYSTSIN  DD DUMMY
+//SYSTSPRT DD SYSOUT=*
+//GENOUT   DD SYSOUT=(A,INTRDR)
+//LISTIN   DD *
+VOLSR0 1000
+VOLSR1 1001
+VOLSR2 1002
+/*
+//VARDEF   DD *
+VOLSR UNIT
+/*
+//TMPLTIN  DD DATA,DLM=@@
+//{VOLSR}  JOB ,'DSS {UNIT}',CLASS=A,MSGCLASS=H,NOTIFY=&SYSUID
+//DUMP     EXEC PGM=ADRDSSU
+//SYSPRINT DD  SYSOUT=*
+//INDD     DD  DISP=SHR,UNIT=3390,VOL=SER={VOLSR}
+//OUTDD    DD  DSN={HLQ}.DUMP.{VOLSR},DISP=(NEW,CATLG),
+//             UNIT=SYSDA,SPACE=(CYL,(500,100),RLSE)
+//SYSIN    DD  *
+  DUMP FULL INDD(INDD) OUTDD(OUTDD) ALLDATA(*) ALLEXCP
+/*
+@@
+//CMDIN    DD *
+  SET HLQ('BACKUP.DSS')
+  JOB
+/*

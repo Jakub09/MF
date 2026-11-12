@@ -1,0 +1,62 @@
+//JOBJSMF  JOB ...
+//**JOBLIB   DD  ...  DFSORT R14
+//*********************************************************************
+//* DFSMS/MVS 1.4.0 DFSMSrmm                                          *
+//*********************************************************************
+//*
+//* List of all RMM SMF volume records
+//* ----------------------------------
+//* Lists RMM SMF volume records in readable format
+//*
+//* INPUT: RAWSMF DD CARD - Raw SMF data
+//*        SYMNAMES DD CARD - DFSORT symbol data sets
+//*
+//* NOTE:  Customize the RMM SMFAUD record number in file SMFVCNTL below
+//*
+//* OUTPUT: VREPT  DD CARD - SMF audit records
+//*         RMMV   DD CARD - Raw Audit Volume records (can be used
+//*                          to look for more informaton).
+//*
+//*********************************************************************
+//CLEANUP EXEC PGM=IDCAMS
+//SYSPRINT DD SYSOUT=*
+//SYSIN DD *
+  DELETE Y897797.RMM.SMF.DATA
+//NEW    EXEC  PGM=ICETOOL
+//TOOLMSG DD SYSOUT=*    ICETOOL MESSAGES
+//DFSMSG   DD SYSOUT=*   DFSORT  MESSAGES
+//SYMNAMES DD DSN=Y897797.RMM14.SYM(EDGSMFAR),DISP=SHR
+//         DD DSN=Y897797.RMM14.SYM(EDGSVREC),DISP=SHR
+//TOOLIN   DD *          CONTROL STATEMENTS
+* FIND THE RMM SMF AUDIT 'VOLUME' RECORDS
+  COPY FROM(RAWSMF) TO(RMMV) USING(SMFV)
+* DISPLAY VARIOUS FIELDS FROM THE SMF HEADER AND VOLUME SECTION
+  DISPLAY FROM(RMMV) LIST(VREPT) -
+     TITLE('DFSMSrmm - SMF Audit Records') DATE TIME PAGE -
+     BLANK -
+*  SMF HEADER FIELDS
+     HEADER('TIME') ON(SMFADTME,HEX) -
+     HEADER('DATE') ON(SMFADDTE) -
+     HEADER('SYS')  ON(SMFADSID) -
+     HEADER('USER') ON(SMFADUID) -
+     HEADER('ACT')  ON(SMFADACT) -
+*  VOLUME SECTION FIELDS
+     HEADER('VOLUME') ON(MVVOLSER)  -
+     HEADER('CREATE') ON(MVCRDATE)  -
+     HEADER('LASTCH') ON(MVLCDATE)  -
+     HEADER('USER')   ON(MVLCUID) -
+     HEADER('SYS')    ON(MVLCSID) -
+     HEADER('LASTUSCH') ON(MVUCDATE)
+//RAWSMF   DD DSN=Y897797.SMFAUD.DFRMM,DISP=SHR
+//RMMV     DD DSN=Y897797.RMM.SMF.DATA,DISP=(,CATLG,CATLG),
+//     RECFM=VB,LRECL=32756,BLKSIZE=32760,DSORG=PS,
+//     SPACE=(CYL,(100,100),RLSE),UNIT=SYSALLDA
+//SMFVCNTL DD *
+* The X'F8' is the SMF record number specified to RMM SMFAUD
+* The X'F8' is record number 248 - Change it to your record number
+  INCLUDE COND=(SMFADRTY,EQ,X'F8',        - RMM SMF AUDIT RECORDS -
+                AND,MVTYPE,EQ,MVTYPEID)   - VOLUME TYPE RECORDS -
+  OPTION VLSHRT                           - IGNORE SHORT RECORDS -
+//VREPT    DD SYSOUT=*
+//*
+

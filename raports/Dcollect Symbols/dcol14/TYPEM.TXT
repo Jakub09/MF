@@ -1,0 +1,65 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMS 1.4 AMS DCOLLECT RECORDS.           *
+**********************************************************************
+* MIGRATED DATA SET INFORMATION - RECORD TYPE 'M'.                   *
+*   SEE "AMS FOR THE ICF (SC26-4906)" FOR FIELD DESCRIPTIONS.        *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,29                  START AFTER HEADER
+UMMDSI,*,224                 MIGRATED DATA SET INFORMATION
+  UMDSNAM,=,44,CH            USER DATA SET NAME
+  UMFLAG1,*,1,BI             INFORMATION FLAG #1
+    UKLEVL0,B'00......'        LEVEL 0 MIGRATION
+    UKLEVL1,B'01......'        LEVEL 1 MIGRATION
+    UKLEVL2,B'10......'        LEVEL 2 MIGRATION
+    UMCHIND,B'..1.....'        CHANGED-SINCE-LAST-BACKUP INDICATOR
+    UMSDSP,B'...1....'         SMALL DATA SET PACKING (SDSP)
+*                                MIGRATED DATA SET
+  UMDEVCL,*,1,CH             DEVICE CLASS OF THE MIGRATION VOLUME
+    UKDASDV,C'D'               DASD VOLUME
+    UKTAPEV,C'T'               TAPE VOLUME
+  UMDSORG,*,2,CH             DATA SET ORGANIZATION AT TIME OF MIGRATION
+  UMDSIZE,*,4,FI             MIGRATION COPY DATA SET SIZE (IN KB)
+  UMMDATE,*,8,PD             MIGRATION DATE/TIME
+    UMTIME,=,4,BI            MIGRATED TIME (HHMMSSTH)
+    UMDATE,*,4,PD            MIGRATED DATE (YYYYDDDF)
+  UMCLASS,*,96
+    UMDCLAS,=,32
+      UMDCLNG,=,2,FI         DATA CLASS NAME LENGTH
+      UMDATCL,*,30,CH        DATA CLASS NAME
+    UMSCLAS,*,32
+      UMSCLNG,=,2,FI         STORAGE CLASS NAME LENGTH
+      UMSTGCL,*,30,CH        STORAGE CLASS NAME
+    UMMCLAS,*,32
+      UMMCLNG,=,2,FI         MANAGEMENT CLASS NAME LENGTH
+      UMMGTCL,*,30,CH        MANAGEMENT CLASS NAME
+  UMRECRD,*,1,BI             RECORD FORMAT BYTE
+  UMRECOR,*,1,BI             VSAM ORGANIZATION OF THIS DATA SET
+    UMESDS,B'1.......'         ENTRY-SEQUENCED DATA SET
+    UMKSDS,B'.1......'         KEY-SEQUENCED DATA SET
+    UMLDS,B'..1.....'          LINEAR DATA SET
+    UMRRDS,B'...1....'         RELATIVE-RECORD DATA SET
+  UMBKLNG,*,2,FI             BLOCK LENGTH
+  UMFLAG2,*,1,BI             INFORMATION FLAG #2
+    UMRACFD,B'1.......'        RACF-INDICATED DATA SET
+    UMGDS,B'.1......'          GENERATION GROUP DATA SET
+    UMREBLK,B'..1.....'        SYSTEM-REBLOCKABLE DATA SET
+    UMPDSE,B'...1....'         PARTITIONED DATA SET EXTENDED
+    UMSMSM,B'....1...'         SMS-MANAGED DATA SET
+    UMCOMPR,B'.....1..'        COMPRESSED DATA SET
+  SKIP,1                     RESERVED
+  UMNMIG,*,2,FI              NUMBER OF MIGRATIONS FOR THIS DATA SET
+  UMALLSP,*,4,FI             SPACE ALLOCATED (IN KB)
+  UMUSESP,*,4,FI             SPACE USED (IN KB)
+  UMRECSP,*,4,FI             RECALL SPACE ESTIMATE (IN KB)
+  UMCREDT,*,4,PD             CREATION DATE (YYYYDDDF)
+  UMEXPDT,*,4,PD             EXPIRATION DATE (YYYYDDDF)
+  UMLBKDT,*,8,CH             DATE OF LAST BACKUP
+  UMLRFDT,*,4,PD             DATE LAST REFERENCED (YYYYDDDF)
+  UM_USER_DATASIZE,*,4,FI    DATA SET SIZE IF NOT COMPRESSED (IN KB)
+  UM_COMP_DATASIZE,*,4,FI    COMPRESSED DATA SET SIZE (IN KB)
+  UMFRVOL,*,6,CH             THE FIRST SOURCE VOLUME SERIAL OF THE
+*                              MIGRATED DATA
+  SKIP,14                    RESERVED
+UMMDSIE,*                    END OF UMMDSI
+

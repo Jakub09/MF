@@ -1,0 +1,121 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM REPORT EXTRACT FILE DATASET NAME RECORD (RDEXT) - TYPE 'D'.    *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR DETAILS ON RMM RECORDS.                 *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+SKIP,4                  RDW
+RDEXT,*,420
+**********************************************************************
+* RDEXT:    This file maps the information produced for data set     *
+*           records in the RMM report extract file.                  *
+*           In this record the date format depends on the DATEFORM   *
+*           selected by EDGHSKP execution parameter or the parmlib   *
+*           specified value.                                         *
+**********************************************************************
+  RDTYPE,=,1,CH         RECORD TYPE
+    RDTYPEID,'D'          TYPE 'D'
+  SKIP,3                RESERVED
+  RDDSNAME,*,44,CH      DATA SET NAME
+**********************************************************************
+*  Start of common fields:                                           *
+*  The common fields are in the same place in each record type       *
+*  in the report extract file.  This allows common processing of     *
+*  these field across multiple record types.                         *
+**********************************************************************
+  RDCRDATE,*,10,CH      CREATE DATE of data set record
+  RDCRTIME,*,6,CH       CREATE TIME (HHMMSS) of data set
+  RDCRSID,*,8,CH        CREATE SYSTEM ID of data set record
+  RDLCDATE,*,10,CH      LAST CHANGE DATE of data set record
+  RDLCTIME,*,6,CH       LAST CHANGE TIME (HHMMSS) of data set record
+  RDLCUID,*,8,CH        LAST CHANGE USER ID of data set record
+  RDLCSID,*,8,CH        LAST CHANGE SYSTEM ID of data set record
+**********************************************************************
+*  End of common fields                                              *
+**********************************************************************
+  RDVOLSER,*,6,CH       VOLUME SERIAL NUMBER
+  RDDSNSEQ,*,4,CH       DATA SET SEQUENCE NUMBER
+  RDUNITAD,*,4,CH       CREATING DRIVE ADDRESS
+  RDRECFM,*,4,CH        RECORD FORMAT
+  RDVOLSEQ,*,4,CH       VOLUME SEQUENCE NUMBER
+  RDLRECL,*,6,CH        LOGICAL RECORD LENGTH
+  RDBLKSZ,*,6,CH        PHYSICAL BLOCK SIZE
+  RDBLKCNT,*,8,CH       BLOCK COUNT
+  RDOWNDSN,*,8,CH       DATA SET OWNER
+  RDSECLEV,*,8,CH       SECURITY LEVEL - SHORT
+  RDSECLNG,*,30,CH      SECURITY LEVEL - LONG
+  RDCOMP,*,1,CH         COMPACTION USED
+    RDYES,'Y'             YES
+    RDNO,'N'              NO
+  RDLRDDAT,*,10,CH      DATE DATA SET LAST READ
+  RDLWTDAT,*,10,CH      DATE DATA SET LAST WRITTEN
+  RDMCNAME,*,8,CH       SMS MANAGEMENT CLASS
+  RDVRSVAL,*,8,CH       VRS MANAGEMENT VALUE
+  RDSGNAME,*,8,CH       SMS STORAGE GROUP NAME
+  RDSCNAME,*,8,CH       SMS STORAGE CLASS NAME
+  RDDCNAME,*,8,CH       SMS DATA CLASS NAME
+  RDCRTJBN,*,8,CH       CREATING JOB NAME
+  RDVRSTYP,*,1,CH       MATCHING VRS TYPE FLAG
+    RDVD,'D'              DATASET
+    RDVS,'S'              SMSMC
+    RDVV,'V'              VRSMV
+    RDVM,'M'              DATASET AND VRSMV
+    RDVC,'C'              DATASET AND SMSMC
+  RDVRSNAM,*,44,CH      MATCHING VRS NAME
+  RDVRSJBN,*,8,CH       MATCHING VRS JOB NAME MASK
+  RDRETDAT,*,10,CH      RETENTION DATE
+  RDSTEPNM,*,8,CH       CREATING STEP NAME
+  RDDDNAME,*,8,CH       CREATING DD NAME
+**********************************************************************
+* RDMDMVID: Is a unique token assigned to every volume and every     *
+*           data set in a multi-volume set.                          *
+**********************************************************************
+  RDMDMVID,*,8,CH       MULTI-DSET MULTI-VOL ID
+**********************************************************************
+* Data set size:  This is calculated by multiplying the blocksize    *
+*                 by the number of blocks.                           *
+**********************************************************************
+  RDDSSIZE,*,10,CH      APPROX. SIZE OF FILE KBYTES
+  RDABEND,*,1,CH        DSET CLOSED BY ABEND
+*   RDYES,'Y'             YES
+*   RDNO,'N'              NO
+**********************************************************************
+* RDCAT: Set to 'Y' when opened after allocation determines VOLSER   *
+*        by reference to the catalog. Once set to 'Y' it is never    *
+*        changed.                                                    *
+**********************************************************************
+  RDCAT,*,1,CH          DSET USED VIA CATALOG  Y/N
+*   RDYES,'Y'             YES
+*   RDNO,'N'              NO
+  RDVRSR,*,1,CH         RETAINED BY VRS
+*   RDYES,'Y'             YES
+*   RDNO,'N'              NO
+  SKIP,3                RESERVED
+  RDLABNO,*,4,CH        LABEL NUMBER LABEL=(xx,ll)
+**********************************************************************
+* Primary VRS subchain name:                                         *
+*                     This is the retaining VRS in the matching      *
+*                     primary VRS chain.  It is set only if retained *
+*                     by a NAME VRS subchain in the primary VRS.     *
+**********************************************************************
+  RDVRSSCH,*,8,CH       Primary VRS subchain NAME
+  RDVRSXDS,*,10,CH      Primary VRS subchain start date
+**********************************************************************
+* Retaining Secondary VRS name:                                      *
+*                     Matching vrs name and job name are included    *
+*                     where a secondary VRS also matches.            *
+*                     The retaining VRS subchain NAME in this        *
+*                     matching VRS is set if it is used to retain    *
+*                     the data set.                                  *
+**********************************************************************
+  RD2VNME,*,8,CH        Secondary VRS name mask
+  RD2VJBN,*,8,CH        Secondary VRS jobname mask
+  RD2VSCH,*,8,CH        Secondary VRS subchain NAME
+  RD2VXDS,*,10,CH       Secondary VRS subchain startdate
+**********************************************************************
+* END OF REPORT EXTRACT DATA SET NAME RECORD                         *
+**********************************************************************
+RDRCEND,*               END OF RDEXT
+

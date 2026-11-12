@@ -1,0 +1,89 @@
+//*EDGJSMF  JOB <JOB CARD PARAMETERS>
+//*
+//*********************************************************************
+//* DFSMS/MVS 1.5.0 DFSMSrmm                                          *
+//*                                                                   *
+//* PROPRIETARY V3 STATEMENT                                          *
+//* LICENSED MATERIALS - PROPERTY OF IBM                              *
+//* "RESTRICTED MATERIALS OF IBM"                                     *
+//* 5695-DF1                                                          *
+//* (C) COPYRIGHT 1993,2000  IBM CORP.                                *
+//* STATUS = HDZ11E0                                                  *
+//* END PROPRIETARY V3 STATEMENT                                      *
+//*********************************************************************
+//*
+//* List of all RMM SMF volume records
+//* ----------------------------------
+//* Lists RMM SMF volume records in readable format
+//*
+//* INPUT: RAWSMF DD CARD - Raw SMF data
+//*        Customize the RMM SMFAUD record number in file SMFVCNTL below
+//*
+//* OUTPUT:VREPT  DD CARD - SMF audit records
+//*
+//*        Also copy raw SMF data to 'RMM.SMF.DATA' to look
+//*        for more information
+//*
+//* Change History:
+//* $LG=           ,990924,AH : DFSORT Symbols                     §LGA
+//* $K1=           ,991125,CHK: Correct the SYMNAMES library name  §K1A
+//*
+//*********************************************************************
+//STEP1  EXEC  PGM=ICETOOL
+//SYMNAMES DD DISP=SHR,DSN=SYS1.MACLIB(EDGSMFSY)                   §K1C
+//SYMNOUT  DD SYSOUT=*   ICETOOL SYMBOLICS                         §LGA
+//TOOLMSG  DD SYSOUT=*   ICETOOL MESSAGES
+//DFSMSG   DD SYSOUT=*   DFSORT  MESSAGES
+//TOOLIN   DD *          CONTROL STATEMENTS
+* FIND THE RMM SMF AUDIT 'VOLUME' RECORDS
+  COPY FROM(RAWSMF) TO(RMMV) USING(SMFV)
+* DISPLAY VARIOUS FIELDS FROM THE SMF HEADER AND VOLUME SECTION
+  DISPLAY FROM(RMMV) LIST(VREPT) -
+     TITLE('DFSMSrmm - SMF Audit Records') DATE TIME PAGE -
+     BLANK -
+*  SMF HEADER FIELDS
+     HEADER('TIME') ON(SMFADTME,HEX) -                             @LGC
+     HEADER('DATE') ON(SMFADDTE) -                                 @LGC
+     HEADER('SYS')  ON(SMFADSID) -                                 @LGC
+     HEADER('USER') ON(SMFADUID) -                                 @LGC
+     HEADER('ACT')  ON(SMFADACT) -                                 @LGC
+*  VOLUME SECTION FIELDS
+     HEADER('VOLUME')   ON(MVVOLSER)  -                            @LGC
+     HEADER('CREATE')   ON(MVCRDATE)  -                            @LGC
+     HEADER('LASTCH')   ON(MVLCDATE)  -                            @LGC
+     HEADER('USER ')    ON(MVLCUID)   -                            @LGC
+     HEADER('SYS')      ON(MVLCSID)   -                            @LGA
+     HEADER('LASTUSCH') ON(MVUCDATE)                               @LGC
+//RAWSMF   DD DSN=ACCT.SJFEMVSA.D921213.T230004,DISP=SHR
+//         DD DSN=ACCT.SJFEMVSA.D921214.T060007,DISP=SHR
+//         DD DSN=ACCT.SJFEMVSA.D921214.T120005,DISP=SHR
+//         DD DSN=ACCT.SJFEMVSA.D921214.T180004,DISP=SHR
+//         DD DSN=ACCT.SJFEMVSA.D921214.T230004,DISP=SHR
+//         DD DSN=ACCT.SJFEMVSA.D921217.T230004,DISP=SHR
+//         DD DSN=ACCT.SJFEMVSA.D921218.T060007,DISP=SHR
+//         DD DSN=ACCT.SJFEMVSA.D921218.T120005,DISP=SHR
+//         DD DSN=ACCT.SJFEMVSA.D921218.T180005,DISP=SHR
+//         DD DSN=ACCT.SJFEMVSA.D921218.T230004,DISP=SHR
+//RMMV     DD DSN=&&TEMPV,REFDD=*.RAWSMF,DISP=(,PASS)
+//SMFVCNTL DD *
+* The X'FC' is the SMF record number specified to RMM SMFAUD
+* The X'FC' is record number 252 - Change it to your record number
+  INCLUDE COND=(SMFADRTY,EQ,X'FC',                                 @LGC
+                AND,MVTYPE,EQ,MVTYPEID)                            @LGC
+  OPTION VLSHRT
+//VREPT    DD SYSOUT=*
+//*
+//CLEANUP EXEC PGM=IDCAMS
+//SYSPRINT DD SYSOUT=*
+//SYSIN DD *
+  DELETE RMM.SMF.DATA
+//S1OF1  EXEC PGM=IEBGENER
+//SYSPRINT DD SYSOUT=*
+//SYSUT1    DD DSN=*.STEP1.RMMV,DISP=(OLD,PASS),LRECL=32756
+//SYSUT2    DD DSN=RMM.SMF.DATA,DISP=(,CATLG,CATLG),
+//     RECFM=VB,LRECL=32756,BLKSIZE=32760,DSORG=PS,
+//     SPACE=(CYL,(100,100),RLSE),UNIT=SYSALLDA
+//SYSUT3   DD UNIT=SYSALLDA,SPACE=(CYL,(100,100))
+//SYSUT4   DD UNIT=SYSALLDA,SPACE=(CYL,(100,100))
+//SYSIN    DD DUMMY
+

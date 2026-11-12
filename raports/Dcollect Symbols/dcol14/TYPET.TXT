@@ -1,0 +1,19 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMS 1.4 AMS DCOLLECT RECORDS.           *
+**********************************************************************
+* TAPE CAPACITY PLANNING RECORD - RECORD TYPE 'T'.                   *
+*   SEE "AMS FOR THE ICF (SC26-4906)" FOR FIELD DESCRIPTIONS.        *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+POSITION,29                  START AFTER HEADER
+UTCAPT,*,16                  TAPE CAPACITY PLANNING RECORD
+  UTSTYPE,=,1,CH             TYPE OF TAPE CAPACITY PLANNING RECORD
+    UKBKTAPE,C'B'              BACKUP TAPES
+    UKDUTAPE,C'D'              DUMP TAPES
+    UKMGTAPE,C'M'              MIGRATION TAPES
+  SKIP,3                     RESERVED
+  UTFULL,*,4,FI              NUMBER OF FULL TAPE VOLUMES
+  UTPART,*,4,FI              NUMBER OF PARTIALLY FILLED VOLUMES
+  UTEMPTY,*,4,FI             NUMBER OF EMPTY TAPE VOLUMES
+UTCAPTE,*                    END OF UTCAPT
+

@@ -1,0 +1,41 @@
+**********************************************************************
+* DFSORT SYMBOL MAPPING OF DFSMSRMM 1.4 9807 RECORDS                 *
+**********************************************************************
+* RMM SMF AUDIT RECORD HEADER INFORMATION.                           *
+*   SEE "DFSMS/MVS DFSMSrmm IMPLEMENTATION AND CUSTOMIZATION         *
+*     GUIDE (SC26-4932)" FOR FIELD DETAILS ON RMM RECORDS.           *
+*   SEE "DFSORT APG (SC33-4035)" FOR DETAILS OF USING SYMBOLS.       *
+**********************************************************************
+* START OF RMM SMFAR                                                 *
+**********************************************************************
+SMFAR,1,43
+  SMFADLEN,=,2,BI       RECORD LENGTH
+  SKIP,2                RESERVED
+  SMFADFLG,*,1,BI       SYSTEM TYPE
+    SMFAXA,X'04'          MVS/XA
+    SMFAESA,X'0E'         MVS/ESA
+  SMFADRTY,*,1,CH       RECORD TYPE
+  SMFADTME,*,4,BI       TIME SINCE MIDNIGHT IN HUNDREDTHS OF A SECOND
+*                          THAT RECORD WAS MOVED TO THE SMF BUFFER.
+  SMFADDTE,*,4,PD       DATE RECORD WAS MOVED TO THE SMF BUFFER
+*                          IN THE FORM 0CYYDDDF WHERE F IS THE SIGN AND
+*                          C IS 0 FOR 19YY AND 1 FOR 20YY.
+  SMFADSID,*,4,CH       SYSTEM IDENTIFICATION
+  SMFADJBN,*,8,CH       JOB NAME
+  SMFADRST,*,4,CH       READER START TIME
+  SMFADRSD,*,4,CH       READER START DATE
+**********************************************************************
+* END OF SMF RECORD HEADER SECTION                                   *
+**********************************************************************
+  SMFADUID,*,8,CH       RACF USER ID
+  SMFADACT,*,1,CH       ACTIVITY TYPE
+    SMFADD,'A'            RECORD ADDED
+    SMFCHG,'C'            RECORD CHANGED
+    SMFDEL,'D'            RECORD DELETED
+SMFADREC,*              START OF INFORMATION
+**********************************************************************
+* END OF SMF AUDIT RECORD                                            *
+**********************************************************************
+* END OF RMM SMFAR                                                   *
+**********************************************************************
+
