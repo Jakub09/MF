@@ -1,19 +1,23 @@
 #!/bin/sh
-# Build pluginu + (re)start Grafany ze środowiska grafana_automation_js z zamontowanym pluginem
-# + dane przykładowe + dashboard.
+# Build pluginu + (re)start Grafany ze srodowiska grafana_automation_js z zamontowanym pluginem
+# + dane przykladowe (mf-loader: mf-load dcollect, baza mfmetrics) + dashboard.
 #   sh dev/deploy.sh            - wszystko
-#   sh dev/deploy.sh --no-data  - bez ładowania danych przykładowych
+#   sh dev/deploy.sh --no-data  - bez ladowania danych przykladowych
+# Zmienne: GRAFANA_ENV_DIR (domyslnie ~/Documents/projects/grafana_automation_js),
+#          MF_LOADER_DIR (domyslnie ~/Documents/projects/mf-loader), GRAFANA_URL, INFLUXDB_URL.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ENV_DIR="${GRAFANA_ENV_DIR:-$ROOT/../grafana_automation_js}"
+ENV_DIR="${GRAFANA_ENV_DIR:-$HOME/Documents/projects/grafana_automation_js}"
+MF_LOADER_DIR="${MF_LOADER_DIR:-$HOME/Documents/projects/mf-loader}"
 GRAFANA="${GRAFANA_URL:-http://localhost:3000}"
-export MAINFRAME_PLUGIN_DIST="$ROOT/grafana_plugin/dist"
+export INFLUXDB_URL="${INFLUXDB_URL:-http://localhost:8086}"
+export MAINFRAME_PLUGIN_DIST="$ROOT/dist"
 
-(cd "$ROOT/grafana_plugin" && npm run build --silent)
+(cd "$ROOT" && npm run build --silent)
 
-# Plugin już zamontowany -> wystarczy build (dist/ jest bind-mountem), wystarczy odświeżyć przeglądarkę.
-# W przeciwnym razie odtwarzamy Grafanę z nakładką (podman-compose sam nie odtworzy działającego kontenera).
-# Kontener "app" zależy od grafany, więc trzeba go zatrzymać i usunąć razem z nią.
+# Plugin juz zamontowany -> wystarczy build (dist/ jest bind-mountem), wystarczy odswiezyc przegladarke.
+# W przeciwnym razie odtwarzamy Grafane z nakladka (podman-compose sam nie odtworzy dzialajacego kontenera).
+# Kontener "app" zalezy od grafany, wiec trzeba go zatrzymac i usunac razem z nia.
 if ! podman exec grafana-automation_grafana_1 test -f /var/lib/grafana/plugins/mainframe-dasdmap-panel/plugin.json 2>/dev/null; then
     APP_RUNNING=$(podman ps --format '{{.Names}}' | grep -c '^grafana-automation_app_1$' || true)
     podman rm -f grafana-automation_app_1 >/dev/null 2>&1 || true
@@ -24,13 +28,15 @@ if ! podman exec grafana-automation_grafana_1 test -f /var/lib/grafana/plugins/m
     fi
 fi
 
-echo "czekam na Grafanę..."
+echo "czekam na Grafane..."
 until curl -sf "$GRAFANA/api/health" >/dev/null; do sleep 1; done
 
 if [ "$1" != "--no-data" ]; then
-    rm -f "$ROOT"/loader/sample/*.CSV
-    python3 "$ROOT/loader/gen_sample_csv.py" --days 7 --out "$ROOT/loader/sample" >/dev/null
-    python3 "$ROOT/loader/dcol2influx.py" --no-confirm "$ROOT"/loader/sample/*.CSV
+    SAMPLE="$(mktemp -d)"
+    curl -sf -XPOST "$INFLUXDB_URL/query" --data-urlencode 'q=CREATE DATABASE "mfmetrics"' >/dev/null
+    (cd "$MF_LOADER_DIR" && npx tsx tools/dcollect/gen-sample-csv.ts --days 7 --out "$SAMPLE" >/dev/null \
+        && npx tsx src/cli.ts dcollect --db mfmetrics --no-confirm "$SAMPLE"/*.CSV)
+    rm -rf "$SAMPLE"
 fi
 
 curl -sf -u admin:admin -H 'Content-Type: application/json' \

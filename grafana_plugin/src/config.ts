@@ -102,7 +102,7 @@ export const DEFAULT_CONFIG: MapConfig = {
     { field: 'pct_used', op: 'gte', value: 95, level: 'error', message: 'Zajętość {value}%' },
     { field: 'frag_index', op: 'gte', value: 800, level: 'warning', message: 'Fragmentacja {value}' },
     { field: 'free_dscbs', op: 'lt', value: 50, level: 'warning', message: 'Mało wolnych DSCB ({value})' },
-    // konflikty między systemami - wynik uzgadniania w loader/dcol2influx.py
+    // konflikty między systemami - wynik uzgadniania w mf-load dcollect (repo mf-loader)
     { field: 'conflict_error', op: 'ne', value: '', level: 'error', message: '{value}' },
     { field: 'conflict_warning', op: 'ne', value: '', level: 'warning', message: '{value}' },
   ],

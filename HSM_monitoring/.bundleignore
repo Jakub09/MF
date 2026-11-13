@@ -1,0 +1,6 @@
+# Wykluczenia archiwum jednoplikowego (node tools/pack.mjs) - dodatkowo do .gitignore (takze MF/.gitignore).
+# Archiwum wdrozeniowe HSM_monitoring: zrodla z/OS (src/, jcl/, sym/, members/) i dashboardy do importu.
+# Pelna kopia: node tools/pack.mjs --full
+.bundleignore
+# podglad dashboardu (PNG ~0,5 MB) - tylko do dokumentacji
+grafana/*.png

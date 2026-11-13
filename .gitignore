@@ -12,4 +12,3 @@ __pycache__/
 
 # pliki generowane
 tempalte_engine/TMPLGEN.rexx
-grafana_plugin/loader/sample/

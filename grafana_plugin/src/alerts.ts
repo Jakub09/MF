@@ -109,7 +109,7 @@ export interface RuleState {
 }
 
 const SOURCE_LABEL = 'dasd-map';
-/** Measurement z loader/dcol2influx.py */
+/** Measurement z mf-load dcollect (repo mf-loader) */
 const MEASUREMENT = 'dasd_volume';
 
 // --------------------------------------------------------------------------- zapytanie InfluxQL

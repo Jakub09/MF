@@ -21,7 +21,7 @@
           "type": "query",
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb-dev"
+            "uid": "influxdb-mf"
           },
           "query": "SHOW TAG VALUES FROM \"dasd_volume\" WITH KEY = \"sysid\"",
           "refresh": 1,
@@ -38,7 +38,7 @@
           "type": "query",
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb-dev"
+            "uid": "influxdb-mf"
           },
           "query": "SHOW TAG VALUES FROM \"dasd_volume\" WITH KEY = \"storgrp\" WHERE \"sysid\" =~ /^$sysid$/",
           "refresh": 1,
@@ -58,7 +58,7 @@
         "title": "Mapa dysków (DCOLLECT)",
         "datasource": {
           "type": "influxdb",
-          "uid": "influxdb-dev"
+          "uid": "influxdb-mf"
         },
         "gridPos": {
           "x": 0,
@@ -71,7 +71,7 @@
             "refId": "A",
             "datasource": {
               "type": "influxdb",
-              "uid": "influxdb-dev"
+              "uid": "influxdb-mf"
             },
             "rawQuery": true,
             "resultFormat": "table",
@@ -81,7 +81,7 @@
             "refId": "B",
             "datasource": {
               "type": "influxdb",
-              "uid": "influxdb-dev"
+              "uid": "influxdb-mf"
             },
             "rawQuery": true,
             "resultFormat": "table",
@@ -102,7 +102,7 @@
         "title": "Średnia zajętość wg storage group",
         "datasource": {
           "type": "influxdb",
-          "uid": "influxdb-dev"
+          "uid": "influxdb-mf"
         },
         "gridPos": {
           "x": 0,
@@ -115,7 +115,7 @@
             "refId": "A",
             "datasource": {
               "type": "influxdb",
-              "uid": "influxdb-dev"
+              "uid": "influxdb-mf"
             },
             "rawQuery": true,
             "resultFormat": "time_series",

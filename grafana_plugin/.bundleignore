@@ -1,0 +1,5 @@
+# Wykluczenia archiwum jednoplikowego (node tools/pack.mjs) - dodatkowo do .gitignore (także MF/.gitignore).
+# Środowisko deweloperskie na kontenerach (Grafana dev z grafana_automation_js) nie trafia do archiwum wdrożeniowego.
+# Pełna kopia: node tools/pack.mjs --full
+dev/
+.bundleignore

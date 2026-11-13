@@ -3,7 +3,7 @@ import { PanelData } from '@grafana/data';
 import { config, getBackendSrv, getDataSourceSrv } from '@grafana/runtime';
 import { Change } from './types';
 
-/** Measurement ze zmianami - ten sam, który czyta i potwierdza loader/dcol2influx.py */
+/** Measurement ze zmianami - ten sam, który czyta i potwierdza mf-load dcollect (repo mf-loader) */
 export const CHANGE_MEASUREMENT = 'dasd_change';
 
 export function canEdit(): boolean {
