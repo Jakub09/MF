@@ -20,7 +20,7 @@
  *   --encoding ENC     kodowanie pliku CSV (domyslnie utf-8; plik przeslany z z/OS jako tekst)
  *   --dry-run          tylko raport na standardowe wyjscie, bez plikow
  *
- * Wynik (katalog --out, domyslnie ./out):
+ * Wynik (katalog --out, domyslnie out/ w katalogu projektu acs_masks, niezaleznie od biezacego katalogu):
  *   RAPORT.txt, maski.csv, <REGULA>.niepokryte.csv, <REGULA>.nadmiarowe.csv
  *   zos/ACMSG, ACMSC, ACMMC, ACMDC - przykladowe rutyny ACS (FB 80)
  *   zos/ACMCARD, ACMSYMV, ACMLIST  - karty, symbole i lista masek dla joba ACMREPR (FB 80)
@@ -47,7 +47,8 @@ const STDIO: Io = { out: t => process.stdout.write(t), err: t => process.stderr.
 
 const USAGE = 'Uzycie: acs-masks <plik.csv> --config reguly.json [--out katalog] [--min-purity X] [--min-count N]\n'
     + '        [--max-masks N] [--literals] [--exclude-fp] [--no-digit-masks] [--vsam cluster|component]\n'
-    + '        [--today RRRR-MM-DD] [--top N] [--encoding utf-8] [--dry-run]\n';
+    + '        [--today RRRR-MM-DD] [--top N] [--encoding utf-8] [--dry-run]\n'
+    + '        wynik domyslnie w out/ katalogu projektu (--out zmienia)\n';
 
 function num(v: string | undefined, name: string, min: number, max: number, int: boolean): number | undefined {
     if (v === undefined) return undefined;
@@ -57,6 +58,16 @@ function num(v: string | undefined, name: string, min: number, max: number, int:
     }
     return x;
 }
+
+/** Katalog projektu: pierwszy w gore od pliku z package.json (src/, dist/src/ albo rozpakowany bundle). */
+export function projectDir(start = __dirname): string {
+    for (let d = start; ; d = path.dirname(d)) {
+        if (fs.existsSync(path.join(d, 'package.json'))) return d;
+        if (path.dirname(d) === d) return process.cwd();
+    }
+}
+
+export const DEFAULT_OUT = path.join(projectDir(), 'out');
 
 const today = () => {
     const d = new Date();
@@ -71,7 +82,7 @@ export async function main(argv: string[], io: Io = STDIO): Promise<number> {
             allowPositionals: true,
             options: {
                 config: { type: 'string', short: 'c' },
-                out: { type: 'string', short: 'o', default: 'out' },
+                out: { type: 'string', short: 'o', default: DEFAULT_OUT },
                 'min-purity': { type: 'string' },
                 'min-count': { type: 'string' },
                 'max-masks': { type: 'string' },
@@ -142,7 +153,7 @@ export async function main(argv: string[], io: Io = STDIO): Promise<number> {
             for (const r of routines) io.out(`\n----- ${r.member} (${r.routine}) -----\n${r.lines.join('\n')}\n`);
             return 0;
         }
-        const outDir = o.out!;
+        const outDir = path.resolve(o.out!);
         fs.mkdirSync(path.join(outDir, 'zos'), { recursive: true });
         const write = (rel: string, text: string) => fs.writeFileSync(path.join(outDir, rel), text);
         write('RAPORT.txt', report);

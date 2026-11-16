@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { filtlist } from '../src/acs';
-import { main } from '../src/cli';
+import { DEFAULT_OUT, main } from '../src/cli';
 import { sampleCsv } from '../tools/gen-sample';
 
 const ROOT = path.join(__dirname, '..');
@@ -86,7 +86,41 @@ describe('acs-masks - caly przebieg', () => {
     });
 });
 
+describe('dlugie nazwy i opisy - linie ACS <= 71', () => {
+    it('regula 26 znakow, pelne nazwy, wiele grup, dlugi wyraz w opisie', async () => {
+        const cfg = path.join(dir, 'dluga.json');
+        fs.writeFileSync(cfg, JSON.stringify({
+            minPurity: 0.95,
+            otherwise: { STORGRP: Array.from({ length: 12 }, (_, i) => `SGDEF${i}`) },
+            rules: [{
+                name: 'NADMIAROWA_ALOKACJA_315TRK', routine: 'STORGRP',
+                value: Array.from({ length: 10 }, (_, i) => `SGPROD${i}`),
+                description: `opis ${'X'.repeat(150)} koniec`,
+                when: { all: [{ field: 'allocTrk', op: 'eq', value: 315 }, { field: 'usedTrk', op: 'le', value: 1 }] },
+                acsCondition: "&DSORG = 'PS' AND &DSTYPE NE 'TEMP' AND &SIZE > 0",
+            }],
+        }));
+        const out = path.join(dir, 'out3');
+        const r = await run([csvFile, '-c', cfg, '-o', out, '--literals', '--exclude-fp']);
+        assert.equal(r.code, 0, r.err);
+        const sg = fs.readFileSync(path.join(out, 'zos/ACMSG'), 'utf-8').split('\n');
+        for (const l of sg) assert.ok(l.length <= 71, `${l.length}: ${l}`);
+        assert.ok(sg.some(l => /FILTLIST NADMIAROWA_ALOKACJA_315TRK_1 INCLUDE\(/.test(l)));
+        assert.ok(sg.some(l => /^ {4}'SGDEF\d+'|^ {10}'SGPROD\d+'/.test(l)), 'SET zawiniety');
+    });
+
+    it('domyslny katalog wynikow: out/ w katalogu projektu', () => {
+        assert.equal(DEFAULT_OUT, path.join(ROOT, 'out'));
+    });
+});
+
 describe('FILTLIST - zawijanie', () => {
+    it('dluga nazwa listy i pelne nazwy 44 znaki', () => {
+        const items = Array.from({ length: 5 }, (_, i) => `PROD.ABCDEFGH.ABCDEFGH.ABCDEFGH.ABCDEFG${i}.XY`);
+        const lines = filtlist('NADMIAROWA_ALOKACJA_315TR_X1', items);
+        for (const l of lines) assert.ok(l.length <= 71, l);
+    });
+
     it('linie <= 71, przecinek na koncu, nawias na koncu listy', () => {
         const items = Array.from({ length: 40 }, (_, i) => `PROD.APPLICATION${i % 10}.**.LONGNAME`.slice(0, 44));
         const lines = filtlist('REGULA_1', items);

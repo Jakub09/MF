@@ -11,6 +11,7 @@
  */
 import type { RuleResult } from './engine';
 import { Routine, ROUTINES } from './rules';
+import { ZosTextError } from './zos';
 
 export const ACS_MAX_COL = 71;
 const MAX_LIST = 255;
@@ -41,17 +42,42 @@ function entry(text: string): string {
     return /[-{]/.test(text) && !/[*%]/.test(text) ? `'${text}'` : text;
 }
 
-/** FILTLIST z zawijaniem do ACS_MAX_COL; kazda linia poza ostatnia konczy sie przecinkiem. */
+/** Najdluzsza pozycja FILTLIST: nazwa 44 znaki w apostrofach + przecinek. */
+const MAX_ENTRY = 47;
+
+/**
+ * FILTLIST z zawijaniem do ACS_MAX_COL; kazda linia poza ostatnia konczy sie przecinkiem (albo nawiasem
+ * otwierajacym, gdy pierwsza pozycja nie miesci sie za naglowkiem). Wciecie kontynuacji pod nawiasem,
+ * a gdy przy dlugiej nazwie listy pelna nazwa zbioru by sie nie zmiescila - 4 spacje.
+ */
 export function filtlist(name: string, items: string[]): string[] {
     const head = `  FILTLIST ${name} INCLUDE(`;
-    const indent = ' '.repeat(head.length);
+    const indent = ' '.repeat(head.length + MAX_ENTRY <= ACS_MAX_COL ? head.length : 4);
     const lines: string[] = [];
     let cur = head;
     items.forEach((it, i) => {
         const piece = entry(it) + (i < items.length - 1 ? ',' : ')');
-        if (cur.length + piece.length > ACS_MAX_COL && cur !== head && cur !== indent) {
+        if (cur.length + piece.length > ACS_MAX_COL && cur !== indent) {
             lines.push(cur);
             cur = indent;
+        }
+        cur += piece;
+    });
+    lines.push(cur);
+    return lines;
+}
+
+/** Lista wartosci SET ('A','B',...) zawinieta po przecinkach do ACS_MAX_COL. */
+function setLines(v: string, values: string[], indent: number): string[] {
+    const head = `${' '.repeat(indent)}SET ${v} = `;
+    const cont = ' '.repeat(indent + 4);
+    const lines: string[] = [];
+    let cur = head;
+    values.forEach((x, i) => {
+        const piece = `'${x}'` + (i < values.length - 1 ? ',' : '');
+        if (cur.length + piece.length > ACS_MAX_COL && cur !== head) {
+            lines.push(cur);
+            cur = cont;
         }
         cur += piece;
     });
@@ -71,7 +97,9 @@ export function zosText(s: string): string {
 /** Komentarz ACS zawiniety do kolumny 71. */
 function comment(text: string, indent = 0): string[] {
     const width = ACS_MAX_COL - indent - 6;
-    const words = zosText(text).replace(/\*\//g, '* /').split(/\s+/).filter(Boolean);
+    // wyraz dluzszy niz szerokosc komentarza - dzielony na kawalki
+    const words = zosText(text).replace(/\*\//g, '* /').split(/\s+/).filter(Boolean)
+        .flatMap(w => w.match(new RegExp(`.{1,${width}}`, 'g')) ?? []);
     const out: string[] = [];
     let cur = '';
     for (const w of words) {
@@ -141,25 +169,27 @@ export function generateRoutine(routine: Routine, results: RuleResult[], otherwi
         const incExpr = incNames.map(n => `&DSN = &${n}`).join(' OR ');
         const parts = [incNames.length > 1 ? `(${incExpr})` : incExpr, ...excNames.map(n => `&DSN NE &${n}`)];
         if (r.rule.acsCondition) parts.push(`(${zosText(r.rule.acsCondition)})`);
-        const values = (Array.isArray(r.rule.value) ? r.rule.value : [r.rule.value]).map(x => `'${x}'`).join(',');
         whens.push([
             ...comment(`REGULA ${name}`, 4),
             ...wrapExpr('    WHEN (', `${parts.join(' AND ')})`, 10),
-            `      SET ${v} = ${values}`,
+            ...setLines(v, Array.isArray(r.rule.value) ? r.rule.value : [r.rule.value], 6),
         ]);
     }
     lines.push('  SELECT');
     for (const w of whens) lines.push(...w);
     if (otherwise !== undefined) {
-        const values = (Array.isArray(otherwise) ? otherwise : [otherwise]).map(x => `'${x}'`).join(',');
         lines.push('    OTHERWISE');
-        lines.push(`      SET ${v} = ${values}`);
+        lines.push(...setLines(v, Array.isArray(otherwise) ? otherwise : [otherwise], 6));
     }
     lines.push('  END');
     lines.push('END');
-    for (const l of lines) {
-        if (l.length > ACS_MAX_COL) throw new Error(`linia ACS dluzsza niz ${ACS_MAX_COL}: ${l}`);
-    }
+    // zostaje tylko acsCondition z bardzo dlugim tokenem (np. literal w apostrofach)
+    lines.forEach((l, i) => {
+        if (l.length > ACS_MAX_COL) {
+            throw new ZosTextError(`${ROUTINE_MEMBER[routine]}:${i + 1} linia ACS dluzsza niz ${ACS_MAX_COL}`
+                + ` (${l.length}) - skroc acsCondition albo opis reguly:\n  ${l}`);
+        }
+    });
     return lines;
 }
 
