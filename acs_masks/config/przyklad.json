@@ -1,0 +1,35 @@
+{
+  "minPurity": 0.95,
+  "minCount": 3,
+  "maxMasks": 100,
+  "scope": { "field": "sms", "op": "eq", "value": true },
+  "rules": [
+    {
+      "name": "NADALOK",
+      "description": "Alokacja 315 TRK, uzycie do 1 TRK",
+      "when": {
+        "all": [
+          { "field": "allocTrk", "op": "eq", "value": 315 },
+          { "field": "usedTrk", "op": "le", "value": 1 }
+        ]
+      },
+      "routine": "DATACLAS",
+      "value": "DCMALY",
+      "exclude": ["SYS1.**"]
+    },
+    {
+      "name": "DUZE_PS",
+      "description": "Sekwencyjne od 15000 TRK",
+      "when": {
+        "all": [
+          { "field": "dsorg", "op": "eq", "value": "PS" },
+          { "field": "allocTrk", "op": "ge", "value": 15000 }
+        ]
+      },
+      "routine": "STORGRP",
+      "value": ["SGDUZE"],
+      "minPurity": 0.9,
+      "acsCondition": "&DSORG = 'PS'"
+    }
+  ]
+}

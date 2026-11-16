@@ -1,0 +1,6 @@
+**********************************************************************
+* SYMBOLE ROBOCZE JOBA ACMCSV (ACS-MASKS: DCOLLECT -> CSV)           *
+* UZYWANE RAZEM Z HEADER, TYPED, TYPEA (DCOL32)                      *
+**********************************************************************
+* REKORD VB PO INREC: KOL. 5-400 = LINIA CSV (PRZED SQZ)
+E_CSV,5,396

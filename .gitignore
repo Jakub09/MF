@@ -12,6 +12,8 @@ __pycache__/
 
 # pliki generowane
 tempalte_engine/TMPLGEN.rexx
+# wyniki lokalnych przebiegow acs-masks
+acs_masks/out/
 
 # notatki robocze
 temp
