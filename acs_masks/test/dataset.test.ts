@@ -82,6 +82,28 @@ describe('CSV z ACMCSV', () => {
         assert.equal(ds.dsn, 'A.B');
     });
 
+    it('stary CSV: VOLSQ binarny (NUL SOH) - ostrzezenie, kolejnosc z pliku', () => {
+        const bin = (dsn: string, vol: string, q: string) =>
+            dline({ dsn, vol, allkb: kbForTrk(100), usekb: 10 }).replace(/;\d\d;/, `;${q};`);
+        const p = parseCsv(csv([bin('A.B', 'VOL1', '\x00\x01'), bin('A.B', 'VOL2', '\x00\x02'),
+            bin('C.D', 'VOL3', '\x00\x01')]));
+        assert.equal(p.d.length, 3);
+        assert.ok(p.d.every(r => r.volsq === 0));
+        assert.equal(p.warnings.length, 1);
+        assert.match(p.warnings[0], /3 rekordow D z binarnym VOLSQ/);
+        const [ab] = buildDataSets(p, { vsamCluster: false, today: TODAY });
+        assert.equal(ab.vols, 2);
+        assert.equal(ab.vol, 'VOL1');
+        // linia rozbita przez bajt X'15'/X'25' -> blad z podpowiedzia
+        assert.throws(() => parseCsv(csv([bin('E.F', 'VOL1', '\x00') + '\n\x01;x'])), /starej wersji joba ACMCSV/);
+    });
+
+    it('nowy CSV: VOLSQ liczbowy, bez ostrzezen', () => {
+        const p = parseCsv(csv([dline({ dsn: 'A.B', volsq: 2 })]));
+        assert.equal(p.d[0].volsq, 2);
+        assert.deepEqual(p.warnings, []);
+    });
+
     it('bledy: inny naglowek, brak kolumn, nieznany typ', () => {
         assert.throws(() => parseCsv('T;DSN;X\n'), CsvError);
         assert.throws(() => parseCsv(`${HEADER}\nD;A.B;VOL\n`), CsvError);

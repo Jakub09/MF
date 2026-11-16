@@ -54,7 +54,8 @@
 * KOLUMN JAK W NAGLOWKU (HEADER1) I W SRC/DATASET.TS (DCOL_COLUMNS)
   INREC IFTHEN=(WHEN=(DCURCTYP,EQ,DCUDATAT),
           BUILD=(DCURDW,C'D;',DCDDSNAM,C';',DCDVOLSR,C';',
-                 DCDVOLSQ,C';',DCDDSORG,HEX,C';',DCDRECRD,HEX,C';',
+                 E_VOLSQ,EDIT=(IIIIT),C';',
+                 DCDDSORG,HEX,C';',DCDRECRD,HEX,C';',
                  DCDLRECL,EDIT=(IIIIIT),C';',
                  DCDBKLNG,EDIT=(IIIIIT),C';',
                  DCDNMEXT,EDIT=(IIT),C';',

@@ -116,11 +116,12 @@ export async function main(argv: string[], io: Io = STDIO): Promise<number> {
         const top = num(o.top, 'top', 0, 1e6, true)!;
         const cfg = loadConfig(o.config);
         const stamp = o.today ?? today();
-        const { dataSets, dRecords, assoc } = readDataSets(csvFile, {
+        const { dataSets, dRecords, assoc, warnings } = readDataSets(csvFile, {
             encoding: o.encoding as BufferEncoding,
             vsamCluster: o.vsam ? o.vsam === 'cluster' : undefined,
             today: o.today ? new Date(`${o.today}T00:00:00Z`) : undefined,
         });
+        for (const w of warnings) io.err(`Uwaga: ${w}\n`);
         io.err(`CSV: ${dRecords} rekordow D, ${assoc} rekordow A -> ${dataSets.length} zbiorow\n`);
 
         const res = runRules(dataSets, cfg, override);

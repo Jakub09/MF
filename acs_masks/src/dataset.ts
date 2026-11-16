@@ -146,13 +146,22 @@ export interface ParsedCsv {
     d: RawD[];
     /** komponent VSAM -> klaster */
     assoc: Map<string, string>;
+    /** ostrzezenia dla uzytkownika (np. CSV ze starej wersji joba) */
+    warnings: string[];
 }
+
+/** Znaki sterujace / nieprzeliczalne po transferze (bajty binarne w CSV). */
+const BINARY = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ufffd]/;
+const OLD_JOB_HINT = 'CSV zawiera bajty binarne (np. NUL SOH) - pochodzi ze starej wersji joba ACMCSV,'
+    + ' ktora zapisywala VOLSQ binarnie; uruchom ACMCSV ponownie (wersja z E_VOLSQ)';
 
 export function parseCsv(text: string): ParsedCsv {
     const d: RawD[] = [];
     const assoc = new Map<string, string>();
     const lines = text.split(/\r?\n/);
     let seenHeader = false;
+    let binVolsq = 0;
+    const hint = BINARY.test(text) ? `\n  (${OLD_JOB_HINT})` : '';
     lines.forEach((raw, i) => {
         const line = i + 1;
         const l = raw.replace(/\s+$/, '');
@@ -174,9 +183,9 @@ export function parseCsv(text: string): ParsedCsv {
             if (comp && cl) assoc.set(comp, cl);
             return;
         }
-        if (t !== 'D') throw new CsvError(`wiersz ${line}: nieznany typ rekordu "${t}" (oczekiwano T, D, A)`);
+        if (t !== 'D') throw new CsvError(`wiersz ${line}: nieznany typ rekordu "${t}" (oczekiwano T, D, A)${hint}`);
         if (f.length < DCOL_COLUMNS.length) {
-            throw new CsvError(`wiersz ${line}: ${f.length} kolumn, oczekiwano ${DCOL_COLUMNS.length}`);
+            throw new CsvError(`wiersz ${line}: ${f.length} kolumn, oczekiwano ${DCOL_COLUMNS.length}${hint}`);
         }
         const col = (name: (typeof DCOL_COLUMNS)[number]) => f[DCOL_COLUMNS.indexOf(name)];
         const flag2 = hexByte(col('FLAG2'), 'FLAG2', line);
@@ -186,12 +195,15 @@ export function parseCsv(text: string): ParsedCsv {
             : flag2 & 0x08 ? int(col('ALLKB'), 'ALLKB', line) : 0;
         const usedKb = flag5 & 0x40 ? int(col('USEKBX'), 'USEKBX', line)
             : flag2 & 0x04 ? int(col('USEKB'), 'USEKB', line) : 0;
+        // VOLSQ binarny (stara wersja ACMCSV): nieznany -> 0, kolejnosc wolumenow jak w DCOLLECT
+        const vq = col('VOLSQ') ?? '';
+        const volsq = BINARY.test(vq) ? (binVolsq++, 0) : int(vq, 'VOLSQ', line);
         const dsn = clean(col('DSN')).toUpperCase();
         if (!dsn) throw new CsvError(`wiersz ${line}: pusta nazwa zbioru`);
         d.push({
             dsn,
             vol: clean(col('VOLSER')),
-            volsq: int(col('VOLSQ'), 'VOLSQ', line),
+            volsq,
             dsorg: dsorgName(clean(col('DSORG'))),
             recfm: recfmName(hexByte(col('RECFM'), 'RECFM', line)),
             lrecl: int(col('LRECL'), 'LRECL', line),
@@ -214,7 +226,10 @@ export function parseCsv(text: string): ParsedCsv {
     if (!seenHeader && d.length > 0) {
         throw new CsvError('brak wiersza naglowka (T;DSN;...) - plik nie pochodzi z joba ACMCSV?');
     }
-    return { d, assoc };
+    const warnings = binVolsq > 0
+        ? [`${binVolsq} rekordow D z binarnym VOLSQ - pominiety (kolejnosc wolumenow jak w pliku). ${OLD_JOB_HINT}`]
+        : [];
+    return { d, assoc, warnings };
 }
 
 export interface BuildOptions {
@@ -295,6 +310,7 @@ export function readDataSets(file: string, opt: Partial<BuildOptions> & { encodi
     dataSets: DataSet[];
     dRecords: number;
     assoc: number;
+    warnings: string[];
 } {
     const text = fs.readFileSync(file, opt.encoding ?? 'utf-8');
     const p = parseCsv(text);
@@ -302,5 +318,5 @@ export function readDataSets(file: string, opt: Partial<BuildOptions> & { encodi
         vsamCluster: opt.vsamCluster ?? p.assoc.size > 0,
         today: opt.today ?? new Date(),
     });
-    return { dataSets, dRecords: p.d.length, assoc: p.assoc.size };
+    return { dataSets, dRecords: p.d.length, assoc: p.assoc.size, warnings: p.warnings };
 }
