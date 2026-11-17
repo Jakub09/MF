@@ -2,7 +2,7 @@
   "name": "acs-masks",
   "version": "0.1.0",
   "private": true,
-  "description": "Maski DSN i przykladowe rutyny ACS z CSV DCOLLECT (na PC) + joby z/OS: DCOLLECT -> CSV, reprezentanci wg masek",
+  "description": "Maski DSN, kontrola i emulacja rutyn ACS na CSV z DCOLLECT (na PC), rozszerzenie VS Code dla rutyn ACS + joby z/OS",
   "bin": {
     "acs-masks": "dist/src/cli.js"
   },
@@ -14,13 +14,16 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\"",
     "cli": "tsx src/cli.ts",
-    "bundle": "node tools/pack.mjs"
+    "bundle": "node tools/pack.mjs",
+    "vscode:build": "tsc -p vscode/tsconfig.json",
+    "vscode:package": "npm run vscode:build && node tools/vsix.mjs"
   },
   "dependencies": {
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/vscode": "1.85.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

@@ -14,6 +14,9 @@ __pycache__/
 tempalte_engine/TMPLGEN.rexx
 # wyniki lokalnych przebiegow acs-masks
 acs_masks/out/
+# rozszerzenie VS Code: skompilowany kod i paczka (npm run vscode:package)
+acs_masks/vscode/out/
+*.vsix
 
 # notatki robocze
 temp

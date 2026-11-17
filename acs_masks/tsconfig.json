@@ -10,5 +10,10 @@
     "outDir": "dist",
     "rootDir": "."
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "tools/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "tools/**/*.ts",
+    "vscode/src/**/*.ts"
+  ]
 }

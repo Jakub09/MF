@@ -1,0 +1,30 @@
+PROC STORCLAS
+/*********************************************************************/
+/* PRZYKLADOWA RUTYNA KLASY PAMIECI                                  */
+/*********************************************************************/
+  FILTLIST NONSMS INCLUDE(SYS1.**,USER%%.ISPF.*)
+                  EXCLUDE('SYS1.TRACE.T001')
+  FILTLIST VALID_UNITS INCLUDE('3380','3390','SYSDA','')
+
+  IF &UNIT ^= &VALID_UNITS THEN
+    DO
+      SET &STORCLAS = ''
+      WRITE 'UNIT ' &UNIT ' POZA SMS'
+      EXIT
+    END
+
+  IF &DSN = &NONSMS THEN
+    DO
+      SET &STORCLAS = ''
+      EXIT
+    END
+
+  SELECT
+    WHEN (&HLQ = 'PROD' AND &SIZE >= 500MB)
+      SET &STORCLAS = 'SCBIG'
+    WHEN (&HLQ = 'PROD')
+      SET &STORCLAS = 'SCPROD'
+    OTHERWISE
+      SET &STORCLAS = 'SCSTD'
+  END
+END

@@ -1,0 +1,9 @@
+**********************************************************************
+* SYMBOLE ROBOCZE JOBA ACMRSEL (ACS-MASKS: REKORDY REPREZENTANTOW)   *
+* UZYWANE RAZEM Z HEADER, TYPED (DCOL32)                             *
+**********************************************************************
+* MEMBER ACMRLST (FB 80) ZE SKRYPTU "ACS-MASKS REPR"
+L_REC,1,80                    CALA LINIA
+L_DSN,1,44                    NAZWA ZBIORU Z REKORDU D (JOINKEYS)
+L_VOL,46,6                    WOLUMEN (JOINKEYS)
+L_GRP,53,7,CH                 NUMER GRUPY (GNNNNNN)

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { filtlist } from '../src/acs';
 import { DEFAULT_OUT, main } from '../src/cli';
+import { runDir, runStamp } from '../src/outdir';
 import { sampleCsv } from '../tools/gen-sample';
 
 const ROOT = path.join(__dirname, '..');
@@ -112,6 +113,34 @@ describe('dlugie nazwy i opisy - linie ACS <= 71', () => {
     it('domyslny katalog wynikow: out/ w katalogu projektu', () => {
         assert.equal(DEFAULT_OUT, path.join(ROOT, 'out'));
     });
+
+    it('bez --out: kazdy przebieg w osobnym podkatalogu out/<rodzaj>/<data_godzina>', async () => {
+        const base = path.join(dir, 'baza');
+        const prev = process.env.ACS_MASKS_OUT;
+        process.env.ACS_MASKS_OUT = base;
+        try {
+            const cfg = path.join(ROOT, 'config/przyklad.json');
+            assert.equal((await run([csvFile, '-c', cfg])).code, 0);
+            assert.equal((await run([csvFile, '-c', cfg])).code, 0);
+            const runs = fs.readdirSync(path.join(base, 'maski')).sort();
+            assert.equal(runs.length, 2);
+            assert.match(runs[0], /^\d{4}-\d{2}-\d{2}_\d{6}(-\d+)?$/);
+            for (const r of runs) {
+                assert.ok(fs.existsSync(path.join(base, 'maski', r, 'RAPORT.txt')));
+                assert.match(fs.readFileSync(path.join(base, 'maski', r, 'wywolanie.txt'), 'utf-8'), /wywolanie: acs-masks .*PROBA\.CSV -c /);
+            }
+            const ex = path.join(ROOT, 'przyklady');
+            assert.equal((await run(['repr', csvFile, '--acs', path.join(ex, 'ACSSC'), '--tests'])).code, 0);
+            assert.equal((await run(['sim', csvFile, '--acs', path.join(ex, 'ACSSC')])).code, 0);
+            const [rr] = fs.readdirSync(path.join(base, 'repr'));
+            assert.ok(fs.existsSync(path.join(base, 'repr', rr, 'zos/ACMTEST')));
+            assert.match(fs.readFileSync(path.join(base, 'repr', rr, 'wywolanie.txt'), 'utf-8'), /acs-masks repr .* --tests/);
+            assert.equal(fs.readdirSync(path.join(base, 'sim')).length, 1);
+        } finally {
+            if (prev === undefined) delete process.env.ACS_MASKS_OUT;
+            else process.env.ACS_MASKS_OUT = prev;
+        }
+    });
 });
 
 describe('FILTLIST - zawijanie', () => {
@@ -129,5 +158,18 @@ describe('FILTLIST - zawijanie', () => {
             assert.ok(l.endsWith(','), l);
         }
         assert.ok(lines[lines.length - 1].endsWith(')'));
+    });
+});
+
+describe('katalog przebiegu', () => {
+    it('nazwa z data i godzina; kolizja w tej samej sekundzie -> -2', () => {
+        const now = new Date(2026, 10, 17, 9, 5, 7);
+        assert.equal(runStamp(now), '2026-11-17_090507');
+        const base = fs.mkdtempSync(path.join(os.tmpdir(), 'acs-run-'));
+        const a = runDir('repr', base, now);
+        assert.equal(a, path.join(base, 'repr', '2026-11-17_090507'));
+        fs.mkdirSync(a, { recursive: true });
+        assert.equal(runDir('repr', base, now), `${a}-2`);
+        fs.rmSync(base, { recursive: true, force: true });
     });
 });

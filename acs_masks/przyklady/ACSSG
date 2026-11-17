@@ -1,0 +1,15 @@
+PROC STORGRP
+/*********************************************************************/
+/* PRZYKLADOWA RUTYNA GRUPY PAMIECI                                  */
+/*********************************************************************/
+  SELECT
+    WHEN (&STORCLAS = 'SCBIG')
+      SET &STORGRP = 'SGBIG1','SGBIG2'
+    WHEN (&DSN(1) = 'TEST' | &DSN(1) = 'DEV')
+      SET &STORGRP = 'SGTEST'
+    WHEN (&NQUAL > 4 && &DSN(&NQUAL) = SYS*)
+      SET &STORGRP = 'SGBATCH'
+    OTHERWISE
+      SET &STORGRP = 'SGPROD'
+  END
+END

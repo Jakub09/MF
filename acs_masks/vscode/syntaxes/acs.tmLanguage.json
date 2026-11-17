@@ -1,0 +1,121 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "ACS",
+  "scopeName": "source.acs",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#string"
+    },
+    {
+      "include": "#proc"
+    },
+    {
+      "include": "#filtlist"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#variables"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#mask"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.block.acs",
+      "begin": "/\\*",
+      "end": "\\*/"
+    },
+    "string": {
+      "name": "string.quoted.single.acs",
+      "begin": "'",
+      "end": "'(?!')",
+      "patterns": [
+        {
+          "name": "constant.character.escape.acs",
+          "match": "''"
+        }
+      ]
+    },
+    "proc": {
+      "match": "(?i)\\b(PROC)\\b(?:\\s+(\\d+))?\\s+(&?(?:DATACLAS|STORCLAS|MGMTCLAS|STORGRP))\\b",
+      "captures": {
+        "1": {
+          "name": "keyword.control.acs"
+        },
+        "2": {
+          "name": "constant.numeric.acs"
+        },
+        "3": {
+          "name": "entity.name.function.acs"
+        }
+      }
+    },
+    "filtlist": {
+      "match": "(?i)\\b(FILTLIST)\\s+(&?[A-Z0-9$@#][A-Z0-9$@#_]*)",
+      "captures": {
+        "1": {
+          "name": "keyword.other.acs"
+        },
+        "2": {
+          "name": "entity.name.type.filtlist.acs"
+        }
+      }
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.acs",
+          "match": "(?i)(?<![A-Z0-9$@#_.*%&])(PROC|IF|THEN|ELSE|SELECT|WHEN|OTHERWISE|DO|END|EXIT)(?![A-Z0-9$@#_.*%])"
+        },
+        {
+          "name": "keyword.other.acs",
+          "match": "(?i)(?<![A-Z0-9$@#_.*%&])(SET|WRITE|LOGWRITES|CODE|FILTLIST|INCLUDE|EXCLUDE)(?![A-Z0-9$@#_.*%])"
+        },
+        {
+          "name": "keyword.operator.word.acs",
+          "match": "(?i)(?<![A-Z0-9$@#_.*%&])(AND|OR|EQ|NE|GT|LT|GE|LE|NG|NL)(?![A-Z0-9$@#_.*%])"
+        }
+      ]
+    },
+    "operators": {
+      "name": "keyword.operator.acs",
+      "match": "&&|\\||[¬^][=<>]|>=|<=|=|>|<"
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.language.acs",
+          "match": "(?i)&(DATACLAS|STORCLAS|MGMTCLAS|STORGRP)(?![A-Z0-9$@#_])"
+        },
+        {
+          "name": "support.variable.acs",
+          "match": "(?i)&(DEF_DATACLAS|DEF_MGMTCLAS|DEF_STORCLAS|DSN_VERSION|USER_ACSVAR|SECOND_QTY|SPACE_TYPE|ACCT_STEP|DAYOFWEEK|ACCT_JOB|ACSENVIR|ACSENVR2|DSKEYLBL|MEMNQUAL|MSPOLICY|BLKSIZE|DB2SSID|DSNTYPE|DSOWNER|FILENUM|LIBNAME|MAXGENS|MAXSIZE|MSPDEST|SECLABL|SYSNAME|SYSPLEX|ALLVOL|ANYVOL|APPLIC|DSTYPE|MEMHLQ|MEMLLQ|MSPARM|MSPOOL|RECORG|DSORG|EATTR|EXPDT|GROUP|LABEL|MSVGP|NQUAL|RETPD|XMODE|DATE|MEMN|NVOL|SIZE|STEP|TIME|UNIT|USER|DSN|HLQ|JOB|LLQ|PGM|DD)(?![A-Z0-9$@#_])"
+        },
+        {
+          "name": "variable.other.filtlist.acs",
+          "match": "(?i)&[A-Z0-9$@#][A-Z0-9$@#_]*"
+        }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.acs",
+      "match": "(?i)(?<![A-Z0-9$@#_.*%&])\\d+(\\s*(KB|MB))?(?![A-Z0-9$@#_.*%])"
+    },
+    "mask": {
+      "name": "string.regexp.mask.acs",
+      "match": "(?i)(?<![A-Z0-9$@#_&])[A-Z0-9$@#%*][A-Z0-9$@#_%*.]*(?:[*%.])[A-Z0-9$@#_%*.]*"
+    }
+  }
+}

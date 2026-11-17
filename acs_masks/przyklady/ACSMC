@@ -1,0 +1,16 @@
+PROC MGMTCLAS
+/*********************************************************************/
+/* PRZYKLADOWA RUTYNA KLASY ZARZADZANIA                              */
+/*********************************************************************/
+  SELECT (&DSTYPE)
+    WHEN ('GDS')
+      SET &MGMTCLAS = 'MCGDG'
+    WHEN ('TEMP')
+      SET &MGMTCLAS = ''
+    OTHERWISE
+      IF &DATACLAS = 'DCTEMP' THEN
+        SET &MGMTCLAS = 'MCSHORT'
+      ELSE
+        SET &MGMTCLAS = 'MCSTD'
+  END
+END

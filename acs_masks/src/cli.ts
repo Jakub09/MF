@@ -2,7 +2,12 @@
 /**
  * acs-masks - maski DSN i przykladowe rutyny ACS z CSV DCOLLECT (job ACMCSV). Uruchamiany na PC.
  *
- * Uzycie:
+ * Polecenia na zrodlach rutyn ACS (opis: src/cli-acs.ts):
+ *   acs-masks check <rutyna>...                      kontrola skladni rutyn
+ *   acs-masks repr <plik.csv> --acs <rutyna>...      reprezentanci do testow wg warunkow rutyn
+ *   acs-masks sim  <plik.csv> --acs <rutyna>...      emulacja rutyn, regresja stara / nowa wersja
+ *
+ * Dobor masek z danych (to polecenie):
  *   acs-masks <plik.csv> --config reguly.json [--out katalog] [opcje]
  *   acs-masks DCOLLECT.CSV --config config/przyklad.json --min-purity 0.95 --dry-run
  *
@@ -20,7 +25,8 @@
  *   --encoding ENC     kodowanie pliku CSV (domyslnie utf-8; plik przeslany z z/OS jako tekst)
  *   --dry-run          tylko raport na standardowe wyjscie, bez plikow
  *
- * Wynik (katalog --out, domyslnie out/ w katalogu projektu acs_masks, niezaleznie od biezacego katalogu):
+ * Wynik (katalog --out, domyslnie osobny podkatalog przebiegu out/maski/RRRR-MM-DD_GGMMSS w katalogu projektu
+ * acs_masks; katalog bazowy zmienia ACS_MASKS_OUT - src/outdir.ts):
  *   RAPORT.txt, maski.csv, <REGULA>.niepokryte.csv, <REGULA>.nadmiarowe.csv
  *   zos/ACMSG, ACMSC, ACMMC, ACMDC - przykladowe rutyny ACS (FB 80)
  *   zos/ACMCARD, ACMSYMV, ACMLIST  - karty, symbole i lista masek dla joba ACMREPR (FB 80)
@@ -31,11 +37,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { generateRoutines } from './acs';
+import { ACS_COMMANDS, AcsCommand, mainAcs } from './cli-acs';
 import { CsvError, readDataSets } from './dataset';
 import { CardError, generateCards, generateList, generateSymbols, vectorMasks } from './dfsort';
 import { runRules } from './engine';
 import { dataSetsCsv, masksCsv, textReport } from './report';
 import { ConfigError, loadConfig, Tuning } from './rules';
+import { runDir, runInfo } from './outdir';
 import { checkZosLines, ZosTextError } from './zos';
 
 export interface Io {
@@ -48,7 +56,8 @@ const STDIO: Io = { out: t => process.stdout.write(t), err: t => process.stderr.
 const USAGE = 'Uzycie: acs-masks <plik.csv> --config reguly.json [--out katalog] [--min-purity X] [--min-count N]\n'
     + '        [--max-masks N] [--literals] [--exclude-fp] [--no-digit-masks] [--vsam cluster|component]\n'
     + '        [--today RRRR-MM-DD] [--top N] [--encoding utf-8] [--dry-run]\n'
-    + '        wynik domyslnie w out/ katalogu projektu (--out zmienia)\n';
+    + '        wynik domyslnie w out/maski/<data_godzina>/ katalogu projektu (--out: wskazany katalog)\n'
+    + '        acs-masks check|repr|sim ... - polecenia na zrodlach rutyn ACS (acs-masks repr --help)\n';
 
 function num(v: string | undefined, name: string, min: number, max: number, int: boolean): number | undefined {
     if (v === undefined) return undefined;
@@ -59,15 +68,7 @@ function num(v: string | undefined, name: string, min: number, max: number, int:
     return x;
 }
 
-/** Katalog projektu: pierwszy w gore od pliku z package.json (src/, dist/src/ albo rozpakowany bundle). */
-export function projectDir(start = __dirname): string {
-    for (let d = start; ; d = path.dirname(d)) {
-        if (fs.existsSync(path.join(d, 'package.json'))) return d;
-        if (path.dirname(d) === d) return process.cwd();
-    }
-}
-
-export const DEFAULT_OUT = path.join(projectDir(), 'out');
+export { DEFAULT_OUT, projectDir } from './outdir';
 
 const today = () => {
     const d = new Date();
@@ -75,6 +76,10 @@ const today = () => {
 };
 
 export async function main(argv: string[], io: Io = STDIO): Promise<number> {
+    // polecenia na zrodlach rutyn ACS: check, repr, sim (src/cli-acs.ts)
+    if ((ACS_COMMANDS as readonly string[]).includes(argv[0])) {
+        return mainAcs(argv[0] as AcsCommand, argv.slice(1), io);
+    }
     let a;
     try {
         a = parseArgs({
@@ -82,7 +87,7 @@ export async function main(argv: string[], io: Io = STDIO): Promise<number> {
             allowPositionals: true,
             options: {
                 config: { type: 'string', short: 'c' },
-                out: { type: 'string', short: 'o', default: DEFAULT_OUT },
+                out: { type: 'string', short: 'o' },
                 'min-purity': { type: 'string' },
                 'min-count': { type: 'string' },
                 'max-masks': { type: 'string' },
@@ -127,10 +132,11 @@ export async function main(argv: string[], io: Io = STDIO): Promise<number> {
         const top = num(o.top, 'top', 0, 1e6, true)!;
         const cfg = loadConfig(o.config);
         const stamp = o.today ?? today();
-        const { dataSets, dRecords, assoc, warnings } = readDataSets(csvFile, {
+        const { dataSets, dRecords, assoc, warnings } = await readDataSets(csvFile, {
             encoding: o.encoding as BufferEncoding,
             vsamCluster: o.vsam ? o.vsam === 'cluster' : undefined,
             today: o.today ? new Date(`${o.today}T00:00:00Z`) : undefined,
+            onProgress: (lines, part) => io.err(`CSV: ${lines.toLocaleString('pl-PL')} linii (${Math.round(part * 100)}%)\n`),
         });
         for (const w of warnings) io.err(`Uwaga: ${w}\n`);
         io.err(`CSV: ${dRecords} rekordow D, ${assoc} rekordow A -> ${dataSets.length} zbiorow\n`);
@@ -153,8 +159,9 @@ export async function main(argv: string[], io: Io = STDIO): Promise<number> {
             for (const r of routines) io.out(`\n----- ${r.member} (${r.routine}) -----\n${r.lines.join('\n')}\n`);
             return 0;
         }
-        const outDir = path.resolve(o.out!);
+        const outDir = o.out ? path.resolve(o.out) : runDir('maski');
         fs.mkdirSync(path.join(outDir, 'zos'), { recursive: true });
+        fs.writeFileSync(path.join(outDir, 'wywolanie.txt'), runInfo('', argv));
         const write = (rel: string, text: string) => fs.writeFileSync(path.join(outDir, rel), text);
         write('RAPORT.txt', report);
         write('maski.csv', masksCsv(res));

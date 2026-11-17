@@ -1,0 +1,19 @@
+PROC DATACLAS
+/*********************************************************************/
+/* PRZYKLADOWA RUTYNA KLASY DANYCH (DANE: TOOLS/GEN-SAMPLE.TS)       */
+/*********************************************************************/
+  FILTLIST TMPLLQ INCLUDE(WORK,SORTOUT,SYSOUT)
+
+  SELECT
+    WHEN (&DSN = SYS1.**)
+      SET &DATACLAS = ''
+    WHEN (&LLQ = &TMPLLQ)
+      SET &DATACLAS = 'DCTEMP'
+    WHEN (&DSORG = 'VS' AND &RECORG = 'KS')
+      SET &DATACLAS = 'DCKSDS'
+    WHEN (&DSORG = 'PO')
+      SET &DATACLAS = 'DCPDSE'
+    OTHERWISE
+      SET &DATACLAS = 'DCSTD'
+  END
+END
