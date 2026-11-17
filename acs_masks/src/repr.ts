@@ -31,13 +31,18 @@ export interface GroupOptions {
 
 export const classKey = (d: DataSet) => `${d.dc}/${d.sc}/${d.mc}/${d.sg}`;
 
-export function buildGroups(dataSets: DataSet[], keys: string[], opt: GroupOptions): Group[] {
+/**
+ * Grupowanie wg klucza. Klucz jest liczony po kolei dla kazdego zbioru (keyOf(i), i rosnaco) i nie jest
+ * przechowywany per zbior - w pamieci zostaja tylko klucze grup (duze CSV: miliony zbiorow).
+ */
+export function buildGroups(dataSets: DataSet[], keyOf: (i: number) => string, opt: GroupOptions): Group[] {
     const map = new Map<string, number[]>();
-    keys.forEach((k, i) => {
+    for (let i = 0; i < dataSets.length; i++) {
+        const k = keyOf(i);
         const m = map.get(k);
         if (m) m.push(i);
         else map.set(k, [i]);
-    });
+    }
     const groups: Group[] = [];
     for (const [key, members] of map) {
         const classes = new Map<string, number>();
@@ -89,9 +94,13 @@ export function groupsCsv(groups: Group[], describe: (g: Group) => string, extra
     return [head.join(';'), ...rows].join('\n') + '\n';
 }
 
-export function membersCsv(dataSets: DataSet[], groups: Group[]): string {
-    const of = new Array<number>(dataSets.length).fill(0);
+/** zbiory.csv - linie generowane w trakcie zapisu (bez jednego napisu na caly plik). */
+export function* membersCsv(dataSets: DataSet[], groups: Group[]): Generator<string> {
+    const of = new Int32Array(dataSets.length);
     for (const g of groups) for (const i of g.members) of[i] = g.id;
-    const rows = dataSets.map((d, i) => `${d.dsn};${of[i]};${d.dc};${d.sc};${d.mc};${d.sg}`);
-    return ['dsn;grupa;dc;sc;mc;sg', ...rows].join('\n') + '\n';
+    yield 'dsn;grupa;dc;sc;mc;sg';
+    for (let i = 0; i < dataSets.length; i++) {
+        const d = dataSets[i];
+        yield `${d.dsn};${of[i]};${d.dc};${d.sc};${d.mc};${d.sg}`;
+    }
 }

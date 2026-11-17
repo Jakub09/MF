@@ -7,13 +7,14 @@
  * Porzadek znakow: EBCDIC (litery przed cyframi); literaly dopelniane spacjami.
  */
 
-const reCache = new Map<string, RegExp>();
+/** maska -> wyrazenie regularne albo null (maska bez * i %: porownanie wprost) */
+const reCache = new Map<string, RegExp | null>();
 
-function wildcardRegex(mask: string): RegExp {
+function wildcardRegex(mask: string): RegExp | null {
     let re = reCache.get(mask);
-    if (!re) {
+    if (re === undefined) {
         const body = mask.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/%/g, '[^ ]');
-        re = new RegExp(`^${body}$`);
+        re = /[*%]/.test(mask) ? new RegExp(`^${body}$`) : null;
         reCache.set(mask, re);
     }
     return re;
@@ -21,8 +22,9 @@ function wildcardRegex(mask: string): RegExp {
 
 /** Maska prosta (bez znaczenia kropek). */
 export function simpleMatch(mask: string, value: string): boolean {
-    if (!/[*%]/.test(mask)) return mask === value;
-    return wildcardRegex(mask).test(value);
+    if (mask === '*') return true;
+    const re = wildcardRegex(mask);
+    return re ? re.test(value) : mask === value;
 }
 
 function qualMatch(maskQual: string, qual: string): boolean {

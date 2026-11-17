@@ -61,6 +61,50 @@ export interface Io {
     err: (t: string) => void;
 }
 
+/** Zapis pliku linia po linii, porcjami po ok. 1 MB (duze CSV bez jednego napisu na caly plik). */
+class LineWriter {
+    private fd: number;
+    private buf: string[] = [];
+    private len = 0;
+
+    constructor(file: string) {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        this.fd = fs.openSync(file, 'w');
+    }
+
+    line(s: string): void {
+        this.buf.push(s);
+        this.len += s.length + 1;
+        if (this.len >= 1 << 20) this.flush();
+    }
+
+    private flush(): void {
+        if (this.buf.length) fs.writeSync(this.fd, this.buf.join('\n') + '\n');
+        this.buf = [];
+        this.len = 0;
+    }
+
+    close(): void {
+        this.flush();
+        fs.closeSync(this.fd);
+    }
+}
+
+/** Zapis pliku: napis od razu, linie przez LineWriter. */
+function writeBody(file: string, body: string | Iterable<string>): void {
+    if (typeof body === 'string') {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, body);
+        return;
+    }
+    const w = new LineWriter(file);
+    try {
+        for (const line of body) w.line(line);
+    } finally {
+        w.close();
+    }
+}
+
 export const ACS_COMMANDS = ['check', 'repr', 'sim'] as const;
 export type AcsCommand = (typeof ACS_COMMANDS)[number];
 
@@ -259,16 +303,31 @@ export async function mainAcs(cmd: AcsCommand, argv: string[], io: Io): Promise<
         for (const w of warnings) io.err(`Uwaga: ${w}\n`);
         io.err(`CSV: ${dRecords} rekordow D, ${assoc} rekordow A -> ${dataSets.length} zbiorow\n`);
         const assumed = assumedVars(sets.all, base);
-        const files: Record<string, string> = {};
+        // tresc pliku: napis albo linie (duze CSV zapisywane porcjami, bez jednego napisu na caly plik)
+        const files: Record<string, string | Iterable<string>> = {};
+        // pliki zapisane juz w trakcie obliczen (symulacja.csv / roznice.csv - wiersze nie sa trzymane w pamieci)
+        const streamed: string[] = [];
+        let outDirMemo: string | undefined;
+        const out = () => (outDirMemo ??= o.out ? path.resolve(o.out) : runDir(cmd as RunKind));
         let report: string[];
 
         const sim = (set: RoutineSet, d: DataSet) => simulate(set, makeEnv(d, base), cfg.sim);
+        // postep przy duzych CSV (emulacja / warunki dla milionow zbiorow trwa minuty)
+        const tick = (i: number, what: string) => {
+            if (i > 0 && i % 500_000 === 0) io.err(`${what}: ${i.toLocaleString('pl-PL')} z ${dataSets.length.toLocaleString('pl-PL')} zbiorow\n`);
+        };
 
         if (cmd === 'sim') {
             report = header('sim - emulacja rutyn ACS', csvFile, sets, dataSets, stamp, assumed, cfg.env);
-            const rows: string[] = [];
-            const diffRows: string[] = [];
             const fields = ['dc', 'sc', 'mc', 'sg'] as const;
+            const head = ['dsn', 'dc_dcollect', 'sc_dcollect', 'mc_dcollect', 'sg_dcollect', 'dc', 'sc', 'mc', 'sg', 'exit',
+                ...(sets.neu ? ['dc_nowa', 'sc_nowa', 'mc_nowa', 'sg_nowa', 'exit_nowa', 'zmiana'] : [])].join(';');
+            const simOut = o['dry-run'] ? null : new LineWriter(path.join(out(), 'symulacja.csv'));
+            const diffOut = o['dry-run'] || !sets.neu ? null : new LineWriter(path.join(out(), 'roznice.csv'));
+            if (simOut) streamed.push('symulacja.csv');
+            if (diffOut) streamed.push('roznice.csv');
+            simOut?.line(head);
+            diffOut?.line(head);
             const supplied = new Set(loadedList(sets.old).map(l => l.label.toLowerCase()));
             // zgodnosc z obecnymi klasami i przejscia obecna -> wyliczona
             const agree = { dc: 0, sc: 0, mc: 0, sg: 0 };
@@ -281,7 +340,9 @@ export async function mainAcs(cmd: AcsCommand, argv: string[], io: Io): Promise<
             };
             let fails = 0;
             let changed = 0;
-            for (const d of dataSets) {
+            for (let i = 0; i < dataSets.length; i++) {
+                const d = dataSets[i];
+                tick(i, 'Emulacja');
                 const ro = sim(sets.old, d);
                 const rn = sets.neu ? sim(sets.neu, d) : undefined;
                 if (ro.fail) fails++;
@@ -306,14 +367,14 @@ export async function mainAcs(cmd: AcsCommand, argv: string[], io: Io): Promise<
                     }
                     if (diff) changed++;
                 }
-                const row = [d.dsn, d.dc, d.sc, d.mc, d.sg, ...simCols(ro), ...(rn ? [...simCols(rn), diff.trim()] : [])].join(';');
-                rows.push(row);
-                if (diff) diffRows.push(row);
+                if (simOut || (diff && diffOut)) {
+                    const row = [d.dsn, d.dc, d.sc, d.mc, d.sg, ...simCols(ro), ...(rn ? [...simCols(rn), diff.trim()] : [])].join(';');
+                    simOut?.line(row);
+                    if (diff) diffOut?.line(row);
+                }
             }
-            const head = ['dsn', 'dc_dcollect', 'sc_dcollect', 'mc_dcollect', 'sg_dcollect', 'dc', 'sc', 'mc', 'sg', 'exit',
-                ...(sets.neu ? ['dc_nowa', 'sc_nowa', 'mc_nowa', 'sg_nowa', 'exit_nowa', 'zmiana'] : [])].join(';');
-            files['symulacja.csv'] = [head, ...rows].join('\n') + '\n';
-            if (sets.neu) files['roznice.csv'] = [head, ...diffRows].join('\n') + '\n';
+            simOut?.close();
+            diffOut?.close();
             const sorted = (m: Map<string, { count: number; example: string }>) => [...m].sort((x, y) => y[1].count - x[1].count);
             report.push('--- Wynik rutyn (--acs) a obecne klasy z DCOLLECT');
             report.push('    (roznice: klasa nadana recznie, zmienna spoza DCOLLECT, stara wersja rutyny albo blad emulacji)');
@@ -336,33 +397,42 @@ export async function mainAcs(cmd: AcsCommand, argv: string[], io: Io): Promise<
             }
         } else {
             report = header('repr - reprezentanci do testow ACS', csvFile, sets, dataSets, stamp, assumed, cfg.env);
-            let keys: string[];
+            let keyOf: (i: number) => string;
             let describe: (g: Group) => string;
             let atoms: Atom[] = [];
+            let counts: number[] = [];
             if (o.trace) {
-                keys = dataSets.map(d => {
-                    const ro = sim(sets.old, d).path;
-                    return sets.neu ? `${ro} || ${sim(sets.neu, d).path}` : ro;
-                });
+                keyOf = i => {
+                    const ro = sim(sets.old, dataSets[i]).path;
+                    return sets.neu ? `${ro} || ${sim(sets.neu, dataSets[i]).path}` : ro;
+                };
                 describe = g => g.key;
                 report.push('Grupy wg sciezki wykonania rutyn (--trace): numer decyzji IF (T/F) i SELECT (numer WHEN od 0, O = OTHERWISE).');
             } else {
                 atoms = extractAtoms(sets.all, o.granularity);
-                const counts = new Array<number>(atoms.length).fill(0);
-                const bits = dataSets.map(d => {
-                    const env = makeEnv(d, base);
-                    let s = '';
-                    atoms.forEach((at, i) => {
-                        const t = at.test(env);
-                        if (t) counts[i]++;
-                        s += t ? '1' : '0';
-                    });
-                    return s;
-                });
-                const live = atoms.map((_, i) => counts[i] > 0 && counts[i] < dataSets.length);
-                const liveIdx = atoms.map((_, i) => i).filter(i => live[i]);
-                keys = bits.map(b => liveIdx.map(i => b[i]).join(''));
-                describe = g => liveIdx.filter((_, k) => g.key[k] === '1').map(i => i + 1).join(' ') || '(zaden)';
+                // klucz = wektor wszystkich warunkow ('0'/'1'), liczony przy grupowaniu i nieprzechowywany per zbior.
+                // Warunki stale (NIGDY / ZAWSZE) maja ten sam bit we wszystkich kluczach, wiec nie zmieniaja grup.
+                const all = atoms;
+                const cnt = counts = new Array<number>(all.length).fill(0);
+                const bit = Buffer.alloc(all.length);
+                keyOf = i => {
+                    const env = makeEnv(dataSets[i], base);
+                    for (let k = 0; k < all.length; k++) {
+                        const t = all[k].test(env);
+                        if (t) cnt[k]++;
+                        bit[k] = t ? 49 : 48;
+                    }
+                    return bit.toString('latin1');
+                };
+                describe = g => liveIdx.filter(i => g.key[i] === '1').map(i => i + 1).join(' ') || '(zaden)';
+            }
+            const key = keyOf;
+            const groups = buildGroups(dataSets, i => {
+                tick(i, 'Grupowanie');
+                return key(i);
+            }, { perGroup, byClasses: o['by-classes'] });
+            const liveIdx = counts.map((_, i) => i).filter(i => counts[i] > 0 && counts[i] < dataSets.length);
+            if (!o.trace) {
                 const rw = atoms.filter(at => at.vars.some(x => VARS.get(x)?.rw));
                 report.push(`Warunkow w rutynach: ${atoms.length} (ziarnistosc FILTLIST: ${o.granularity}); rozrozniajacych zbiory: ${liveIdx.length}`);
                 if (rw.length) {
@@ -378,7 +448,6 @@ export async function mainAcs(cmd: AcsCommand, argv: string[], io: Io): Promise<
                 const dead = atoms.filter((_, i) => counts[i] === 0).length;
                 if (dead) report.push(`  NIGDY = warunek nie jest prawdziwy dla zadnego zbioru z CSV (${dead}) - martwa maska albo zmienna spoza DCOLLECT`);
             }
-            const groups = buildGroups(dataSets, keys, { perGroup, byClasses: o['by-classes'] });
             const reps = groups.reduce((s, g) => s + g.reps.length, 0);
             report.push('');
             report.push(`--- Grupy: ${n(groups.length)}, reprezentantow: ${n(reps)} (zbiorow: ${n(dataSets.length)})`);
@@ -468,7 +537,7 @@ export async function mainAcs(cmd: AcsCommand, argv: string[], io: Io): Promise<
         const text = report.join('\n') + '\n';
         io.out(text);
         if (o['dry-run']) return 0;
-        const outDir = o.out ? path.resolve(o.out) : runDir(cmd as RunKind);
+        const outDir = out();
         fs.mkdirSync(path.join(outDir, 'zos'), { recursive: true });
         files['wywolanie.txt'] = runInfo(cmd, argv);
         files[cmd === 'sim' ? 'SYMULACJA.txt' : 'REPREZENTANCI.txt'] = text;
@@ -478,10 +547,10 @@ export async function mainAcs(cmd: AcsCommand, argv: string[], io: Io): Promise<
         }
         for (const [rel, body] of Object.entries(files)) {
             fs.mkdirSync(path.dirname(path.join(outDir, rel)), { recursive: true });
-            fs.writeFileSync(path.join(outDir, rel), body);
+            writeBody(path.join(outDir, rel), body);
         }
-        const shown = Object.keys(files).filter(k => !k.startsWith(path.join('zos', 'testy') + path.sep)).sort();
-        const nTests = Object.keys(files).length - shown.length;
+        const shown = [...streamed, ...Object.keys(files)].filter(k => !k.startsWith(path.join('zos', 'testy') + path.sep)).sort();
+        const nTests = Object.keys(files).length + streamed.length - shown.length;
         io.err(`Zapisano: ${outDir}/ (${shown.join(', ')}${nTests ? `, zos/testy/: ${nTests} memberow` : ''})\n`);
         return 0;
     } catch (err) {

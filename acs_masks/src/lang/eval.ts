@@ -48,12 +48,13 @@ export function normalize(c: Cmp): { subject: VarRef; op: CmpOp; other: Operand 
     return null;
 }
 
+const eqOp = (op: CmpOp, m: boolean) => (op === 'EQ' ? m : op === 'NE' ? !m : false);
+
 function single(sv: string | number, quals: string[] | null, op: CmpOp, other: Operand, env: Env, lists: Lists): boolean {
-    const eq = (m: boolean) => (op === 'EQ' ? m : op === 'NE' ? !m : false);
     switch (other.kind) {
         case 'var': {
             const f = VARS.has(other.name) ? undefined : lists.get(other.name);
-            if (f) return eq(listMatch(f, String(sv), quals));
+            if (f) return eqOp(op, listMatch(f, String(sv), quals));
             if (!VARS.has(other.name)) return false;
             const ov = getVar(env, other.name, other.index);
             const o = Array.isArray(ov) ? ov[0] ?? '' : ov;
@@ -64,11 +65,11 @@ function single(sv: string | number, quals: string[] | null, op: CmpOp, other: O
             return applyOp(op, compareChar(String(sv), other.value));
         case 'mask':
             if (typeof sv === 'number') return false;
-            return eq(quals ? dsnMatch(other.text, quals) : simpleMatch(other.text, sv));
+            return eqOp(op, quals ? dsnMatch(other.text, quals) : simpleMatch(other.text, sv));
         default:
             if (typeof sv === 'number') return applyOp(op, sv - (other.unit === 'MB' ? other.value * 1024 : other.value));
             // zmienna znakowa i slowo z samych cyfr (&UNIT = 3390): jak maska
-            return eq(simpleMatch(other.text, sv));
+            return eqOp(op, simpleMatch(other.text, sv));
     }
 }
 

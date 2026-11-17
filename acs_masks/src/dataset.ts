@@ -306,31 +306,46 @@ export interface BuildOptions {
 const trkRound = (kb: number) => Math.floor((kb * 1024 + TRACK_BYTES / 2) / TRACK_BYTES);
 const trkUp = (kb: number) => Math.floor((kb * 1024 + TRACK_BYTES - 1) / TRACK_BYTES);
 
-/** Rekordy D -> zbiory (jeden na nazwe). */
+/** Wspolna pusta lista komponentow (zbiory bez komponentow VSAM - wiekszosc). Nie modyfikowac. */
+const NO_COMPONENTS: string[] = [];
+
+/** Rekordy D -> zbiory (jeden na nazwe). Oproznia p.d (rekordy przechodza do zbiorow). */
 export function buildDataSets(p: ParsedCsv, opt: BuildOptions): DataSet[] {
     const todayDay = Math.floor(Date.UTC(opt.today.getUTCFullYear(), opt.today.getUTCMonth(),
         opt.today.getUTCDate()) / 86400000);
-    const byName = new Map<string, { recs: RawD[]; components: Set<string> }>();
+    // nazwa -> rekord D (zbior na jednym wolumenie) albo lista rekordow; komponenty tylko dla klastrow VSAM
+    // (duze CSV: bez obiektu i Set na kazdy zbior)
+    const byName = new Map<string, RawD | RawD[]>();
+    const comps = new Map<string, Set<string>>();
     for (const r of p.d) {
         const cluster = opt.vsamCluster ? p.assoc.get(r.dsn) : undefined;
         const name = cluster ?? r.dsn;
-        let e = byName.get(name);
-        if (!e) byName.set(name, e = { recs: [], components: new Set() });
-        e.recs.push(r);
-        if (cluster) e.components.add(r.dsn);
+        const e = byName.get(name);
+        if (e === undefined) byName.set(name, r);
+        else if (Array.isArray(e)) e.push(r);
+        else byName.set(name, [e, r]);
+        if (cluster) {
+            let c = comps.get(name);
+            if (!c) comps.set(name, c = new Set());
+            c.add(r.dsn);
+        }
     }
+    // rekordy D sa juz w byName - lista nie jest dalej potrzebna
+    p.d.length = 0;
     const out: DataSet[] = [];
     for (const [dsn, e] of byName) {
         // zwalnianie rekordow D w trakcie budowania (duze CSV: nie trzymac rekordow i zbiorow naraz)
         byName.delete(dsn);
-        const recs = [...e.recs].sort((a, b) => a.volsq - b.volsq);
+        const recs = Array.isArray(e) ? e.sort((a, b) => a.volsq - b.volsq) : [e];
+        const components = comps.get(dsn);
         const f = recs[0];
         const allocKb = recs.reduce((s, r) => s + r.allocKb, 0);
         const usedKb = recs.reduce((s, r) => s + r.usedKb, 0);
         const allocTrk = trkRound(allocKb);
         const usedTrk = trkUp(usedKb);
         const quals = dsn.split('.');
-        const vsam = f.dsorg === 'VS' || e.components.size > 0;
+        const volsers = recs.length === 1 ? [f.vol] : [...new Set(recs.map(r => r.vol))];
+        const vsam = f.dsorg === 'VS' || components !== undefined;
         let aflag = 0;
         for (const r of recs) aflag |= p.assocFlag.get(r.dsn) ?? 0;
         const recorg = aflag & 0x80 ? 'KS' : aflag & 0x40 ? 'ES' : aflag & 0x20 ? 'RR' : aflag & 0x10 ? 'LS' : '';
@@ -341,7 +356,7 @@ export function buildDataSets(p: ParsedCsv, opt: BuildOptions): DataSet[] {
             llq: quals[quals.length - 1],
             nqual: quals.length,
             vol: f.vol,
-            vols: new Set(recs.map(r => r.vol)).size,
+            vols: volsers.length,
             dsorg: vsam ? 'VS' : f.dsorg,
             recfm: f.recfm,
             lrecl: f.lrecl,
@@ -368,8 +383,8 @@ export function buildDataSets(p: ParsedCsv, opt: BuildOptions): DataSet[] {
             ef: (f.flag3 & 0x40) !== 0,
             vsam,
             createJob: f.createJob,
-            components: [...e.components].sort(),
-            volsers: [...new Set(recs.map(r => r.vol))],
+            components: components ? [...components].sort() : NO_COMPONENTS,
+            volsers,
             recDsn: f.dsn,
             recorg,
             large: (f.flag3 & 0x08) !== 0,
@@ -416,7 +431,7 @@ export async function readDataSets(file: string, opt: ReadOptions = {}): Promise
         stream.destroy();
     }
     const p = reader.finish();
-    const dRecords = p.d.length;
+    const dRecords = p.d.length; // przed buildDataSets (oproznia p.d)
     const dataSets = buildDataSets(p, {
         vsamCluster: opt.vsamCluster ?? p.assoc.size > 0,
         today: opt.today ?? new Date(),
