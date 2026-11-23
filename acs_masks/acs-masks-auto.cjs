@@ -274,6 +274,8 @@ exports.mine = mine;
  * Rodzaje kandydatow (prefiks = wezel drzewa kwalifikatorow, 0 = pusty):
  *   P prefiks.**   E pelna nazwa   L prefiks.**.LLQ (pusty prefiks: *.**.LLQ)
  *   PD prefiks.wzorzec.**   ED prefiks.wzorzec   LD prefiks.**.wzorzec
+ * Narzucony poczatek masek (head): wezel 0 to ten poczatek, a z nazw brane sa tylko dalsze kwalifikatory;
+ * dochodza wtedy kandydaci P (head.**) i E (sam head) wezla 0.
  */
 const auto_util_1 = require("./auto-util");
 const P = 0;
@@ -294,14 +296,29 @@ function mine(input, opt, stages) {
     const { pool } = names;
     const min = opt.minCount;
     const np = pos.length;
+    const headText = (opt.head ?? []).join('.');
+    const skip = opt.head?.length ?? 0;
+    /** ile kwalifikatorow (za head) musi miec nazwa dla masek prefiks.**.LLQ; bez head: *.**.LLQ, czyli dwa */
+    const minL = skip ? 1 : 2;
+    /** poczatek kwalifikatorow za head; nazwa bez dalszych kwalifikatorow: koniec nazwy + 1 */
+    const rest = (row) => {
+        let p = names.start[row];
+        const e = p + names.len[row];
+        for (let k = 0; k < skip; k++) {
+            while (p < e && pool[p] !== DOT)
+                p++;
+            p++;
+        }
+        return p;
+    };
     // ---- kwalifikatory malych zbiorow
     const quals = new auto_util_1.Interner();
     const off = new Int32Array(np + 1);
     const qList = new auto_util_1.IntList();
     let maxQ = 0;
     for (let i = 0; i < np; i++) {
-        const s = names.start[pos[i]];
-        const e = s + names.len[pos[i]];
+        const s = rest(pos[i]);
+        const e = names.start[pos[i]] + names.len[pos[i]];
         let b = s;
         for (let p = s; p <= e; p++) {
             if (p < e && pool[p] !== DOT)
@@ -351,6 +368,16 @@ function mine(input, opt, stages) {
     let levelNo = 0;
     const level = (i, n) => stages.candidates(0.3 + 0.7 * ((levelNo + i / Math.max(1, n)) / levels));
     const nextLevel = () => void levelNo++;
+    if (skip) {
+        let exact = 0;
+        for (let i = 0; i < np; i++)
+            if (off[i] === off[i + 1])
+                exact++;
+        if (np >= min)
+            addCand(P, 0, 0, np);
+        if (exact >= min)
+            addCand(E, 0, 0, exact);
+    }
     // P i E: prefiksy poziomami
     {
         let alive = new Int32Array(np);
@@ -408,7 +435,7 @@ function mine(input, opt, stages) {
         let alive = new Int32Array(np);
         let n = 0;
         for (let i = 0; i < np; i++)
-            if (off[i + 1] - off[i] >= 2)
+            if (off[i + 1] - off[i] >= minL)
                 alive[n++] = i;
         for (let k = 0; k < maxQ && n > 0; k++, nextLevel()) {
             const tmp = new auto_util_1.PairMap();
@@ -500,7 +527,7 @@ function mine(input, opt, stages) {
         let ai = new auto_util_1.IntList();
         let ap = new auto_util_1.IntList();
         for (let i = 0; i < np; i++) {
-            if (off[i + 1] - off[i] < 2)
+            if (off[i + 1] - off[i] < minL)
                 continue;
             const l = q[off[i + 1] - 1];
             for (let y = patOff[l]; y < patOff[l + 1]; y++) {
@@ -512,7 +539,7 @@ function mine(input, opt, stages) {
             const n = ai.n;
             registered((reg, count) => {
                 for (let i = 0; i < np; i++) {
-                    if (off[i + 1] - off[i] < 2 || k > off[i + 1] - off[i] - 1)
+                    if (off[i + 1] - off[i] < minL || k > off[i + 1] - off[i] - 1)
                         continue;
                     const g = gen[q[off[i + 1] - 1]];
                     if (g >= 0 && headAt(i, k) >= 0)
@@ -575,8 +602,8 @@ function mine(input, opt, stages) {
     };
     const matching = (row) => {
         outN = 0;
-        const s = names.start[row];
-        const e = s + names.len[row];
+        const s = rest(row);
+        const e = names.start[row] + names.len[row];
         let n = 0;
         let b = s;
         for (let p = s; p <= e; p++) {
@@ -585,6 +612,11 @@ function mine(input, opt, stages) {
             qs[n] = b;
             qe[n++] = p;
             b = p + 1;
+        }
+        emit(candP[0]);
+        if (n === 0) {
+            emit(candE[0]);
+            return;
         }
         const llq = quals.find(pool, qs[n - 1], qe[n - 1]);
         let llqReady = false;
@@ -597,7 +629,7 @@ function mine(input, opt, stages) {
         for (let j = 0; j < n; j++) {
             const h = has[head];
             const last = j === n - 1;
-            if (n >= 2) {
+            if (n >= minL) {
                 if (h & HAS_L && llq >= 0)
                     emit(mapL.get(head, llq));
                 if (h & HAS_LD) {
@@ -671,6 +703,8 @@ function mine(input, opt, stages) {
         const parts = [];
         for (let x = node; x > 0; x = parent.a[x])
             parts.push(quals.text(nodeQual.a[x]));
+        if (skip)
+            parts.push(headText);
         return parts.reverse().join('.');
     };
     const texts = new Array(good.length);
@@ -1891,6 +1925,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseConds = parseConds;
+exports.parseHead = parseHead;
 exports.search = search;
 exports.report = report;
 exports.toCsv = toCsv;
@@ -1902,6 +1937,8 @@ exports.main = main;
  *
  *   --scope "WARUNKI"  zbiory brane pod uwage                  (domyslnie "sms=true dsorg=PS")
  *   --when "WARUNKI"   kryterium: zbior "maly"; reszta = "duze" (domyslnie "allocTrk=315 usedTrk<=3")
+ *   --prefix MASKA     poczatek kazdej maski, np. "ABC%.**": ABC%.**, ABC%.X.**, ABC%.**.LIST; liczone sa tylko zbiory
+ *                      o tak zaczynajacych sie nazwach (% i * w kwalifikatorach; ** tylko na koncu, mozna pominac)
  *   --min-purity X     najmniejsza czystosc maski 0-1: male / (male + duze)      (domyslnie 0.95)
  *   --min-count N      ile malych, nieobjetych wczesniejszymi maskami, ma dodac maska (domyslnie 10)
  *   --max-masks N      najwiecej masek                                            (domyslnie 100)
@@ -1925,8 +1962,8 @@ const dataset_1 = require("./dataset");
 const mask_1 = require("./mask");
 const STDIO = { out: t => process.stdout.write(t), err: t => process.stderr.write(t), tty: process.stderr.isTTY };
 const USAGE = 'Uzycie: node acs-masks-auto.cjs DCOLLECT.CSV [--scope "sms=true dsorg=PS"]\n'
-    + '        [--when "allocTrk=315 usedTrk<=3"] [--min-purity 0.95] [--min-count 10] [--max-masks 100]\n'
-    + '        [--out maski.csv]\n'
+    + '        [--when "allocTrk=315 usedTrk<=3"] [--prefix "ABC%.**"] [--min-purity 0.95]\n'
+    + '        [--min-count 10] [--max-masks 100] [--out maski.csv]\n'
     + `Pola liczbowe: ${auto_read_1.NUM.join(' ')}\n     tekstowe: ${auto_read_1.STR.join(' ')}\n     true / false: ${auto_read_1.BOOL.join(' ')}\n`
     + 'Operatory: = != < <= > >=; kilka warunkow po spacji = wszystkie naraz\n';
 class ArgError extends Error {
@@ -2002,6 +2039,62 @@ function strTest(st, field, ok) {
     const memo = [];
     return r => memo[code(r)] ??= ok(get(r));
 }
+/** "ABC%.**" -> kwalifikatory, od ktorych zaczyna sie kazda maska: ['ABC%']. */
+function parseHead(text) {
+    const { quals } = (0, mask_1.parseMask)(text);
+    if (quals[quals.length - 1] === '**')
+        quals.pop();
+    if (quals.includes('**'))
+        throw new ArgError(`--prefix: "${text}" - ** tylko na koncu`);
+    return quals;
+}
+/** Czy nazwa zaczyna sie od kwalifikatorow pasujacych kolejno do head (na bajtach: miliony nazw). */
+function headTest(names, head) {
+    const masks = head.map(q => Buffer.from(q, 'latin1'));
+    const { pool } = names;
+    return row => {
+        let b = names.start[row];
+        const end = b + names.len[row];
+        for (const m of masks) {
+            if (b >= end)
+                return false;
+            let e = b;
+            while (e < end && pool[e] !== 46)
+                e++;
+            if (!qualLike(m, pool, b, e))
+                return false;
+            b = e + 1;
+        }
+        return true;
+    };
+}
+/** Kwalifikator maski (% = znak, * = zero lub wiecej znakow) wobec buf[s..e). */
+function qualLike(m, buf, s, e) {
+    let i = 0;
+    let p = s;
+    let star = -1;
+    let from = 0;
+    while (p < e) {
+        if (i < m.length && m[i] === 42) {
+            star = i++;
+            from = p;
+        }
+        else if (i < m.length && (m[i] === 37 || m[i] === buf[p])) {
+            i++;
+            p++;
+        }
+        else if (star >= 0) {
+            i = star + 1;
+            p = ++from;
+        }
+        else {
+            return false;
+        }
+    }
+    while (i < m.length && m[i] === 42)
+        i++;
+    return i === m.length;
+}
 function num(v, name, min, max, int) {
     const x = Number(v.replace(',', '.'));
     if (v.trim() === '' || !Number.isFinite(x) || x < min || x > max || (int && !Number.isInteger(x))) {
@@ -2017,13 +2110,14 @@ function search(file, scope, when, opt, bar, warn = () => { }) {
     const tick = bar.stage('Kryteria i maski');
     const inScope = scope.compile(st);
     const small = when.compile(st);
+    const inHead = opt.head?.length ? headTest(st.names, opt.head) : () => true;
     const kind = new Uint8Array(st.rows);
     let np = 0;
     let nn = 0;
     for (let r = 0; r < st.rows; r++) {
         if ((r & 0xffff) === 0)
             tick(0.1 * (r / st.rows));
-        if (st.dead[r] || !inScope(r))
+        if (st.dead[r] || !inHead(r) || !inScope(r))
             continue;
         if (small(r)) {
             kind[r] = 1;
@@ -2084,6 +2178,7 @@ function main(argv, io = STDIO) {
             options: {
                 scope: { type: 'string', default: 'sms=true dsorg=PS' },
                 when: { type: 'string', default: 'allocTrk=315 usedTrk<=3' },
+                prefix: { type: 'string' },
                 'min-purity': { type: 'string', default: '0.95' },
                 'min-count': { type: 'string', default: '10' },
                 'max-masks': { type: 'string', default: '100' },
@@ -2105,9 +2200,11 @@ function main(argv, io = STDIO) {
             minPurity: num(o['min-purity'], 'min-purity', 0, 1, false),
             minCount: num(o['min-count'], 'min-count', 1, 1e9, true),
             maxMasks: num(o['max-masks'], 'max-masks', 1, 1e6, true),
+            head: o.prefix === undefined ? [] : parseHead(o.prefix),
         };
         const r = search(positionals[0], scope, when, opt, bar, io.err);
-        io.out(`Zakres: ${o.scope}   kryterium: ${o.when}   min. purity: ${pct(opt.minPurity)}, min. zbiorow: ${opt.minCount}\n`);
+        const start = opt.head.length ? `   poczatek masek: ${opt.head.join('.')}` : '';
+        io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${start}   min. purity: ${pct(opt.minPurity)}, min. zbiorow: ${opt.minCount}\n`);
         io.out(report(r));
         if (o.out) {
             node_fs_1.default.writeFileSync(o.out, toCsv(r));

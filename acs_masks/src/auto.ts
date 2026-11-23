@@ -5,6 +5,8 @@
  *
  *   --scope "WARUNKI"  zbiory brane pod uwage                  (domyslnie "sms=true dsorg=PS")
  *   --when "WARUNKI"   kryterium: zbior "maly"; reszta = "duze" (domyslnie "allocTrk=315 usedTrk<=3")
+ *   --prefix MASKA     poczatek kazdej maski, np. "ABC%.**": ABC%.**, ABC%.X.**, ABC%.**.LIST; liczone sa tylko zbiory
+ *                      o tak zaczynajacych sie nazwach (% i * w kwalifikatorach; ** tylko na koncu, mozna pominac)
  *   --min-purity X     najmniejsza czystosc maski 0-1: male / (male + duze)      (domyslnie 0.95)
  *   --min-count N      ile malych, nieobjetych wczesniejszymi maskami, ma dodac maska (domyslnie 10)
  *   --max-masks N      najwiecej masek                                            (domyslnie 100)
@@ -23,7 +25,7 @@ import fs from 'node:fs';
 import { parseArgs } from 'node:util';
 import { mine, MaskRow, MineOptions } from './auto-mine';
 import { BOOL, BoolField, Field, NUM, NumField, readStore, Store, STR, StrField } from './auto-read';
-import { Progress, thousands } from './auto-util';
+import { Interner, Progress, thousands } from './auto-util';
 import { CsvError } from './dataset';
 import { MaskError, matches, parseMask } from './mask';
 
@@ -37,8 +39,8 @@ export interface Io {
 const STDIO: Io = { out: t => process.stdout.write(t), err: t => process.stderr.write(t), tty: process.stderr.isTTY };
 
 const USAGE = 'Uzycie: node acs-masks-auto.cjs DCOLLECT.CSV [--scope "sms=true dsorg=PS"]\n'
-    + '        [--when "allocTrk=315 usedTrk<=3"] [--min-purity 0.95] [--min-count 10] [--max-masks 100]\n'
-    + '        [--out maski.csv]\n'
+    + '        [--when "allocTrk=315 usedTrk<=3"] [--prefix "ABC%.**"] [--min-purity 0.95]\n'
+    + '        [--min-count 10] [--max-masks 100] [--out maski.csv]\n'
     + `Pola liczbowe: ${NUM.join(' ')}\n     tekstowe: ${STR.join(' ')}\n     true / false: ${BOOL.join(' ')}\n`
     + 'Operatory: = != < <= > >=; kilka warunkow po spacji = wszystkie naraz\n';
 
@@ -119,6 +121,56 @@ function strTest(st: Store, field: StrField, ok: (v: string) => boolean): Test {
     return r => memo[code(r)] ??= ok(get(r));
 }
 
+/** "ABC%.**" -> kwalifikatory, od ktorych zaczyna sie kazda maska: ['ABC%']. */
+export function parseHead(text: string): string[] {
+    const { quals } = parseMask(text);
+    if (quals[quals.length - 1] === '**') quals.pop();
+    if (quals.includes('**')) throw new ArgError(`--prefix: "${text}" - ** tylko na koncu`);
+    return quals;
+}
+
+/** Czy nazwa zaczyna sie od kwalifikatorow pasujacych kolejno do head (na bajtach: miliony nazw). */
+function headTest(names: Interner, head: string[]): Test {
+    const masks = head.map(q => Buffer.from(q, 'latin1'));
+    const { pool } = names;
+    return row => {
+        let b = names.start[row];
+        const end = b + names.len[row];
+        for (const m of masks) {
+            if (b >= end) return false;
+            let e = b;
+            while (e < end && pool[e] !== 46) e++;
+            if (!qualLike(m, pool, b, e)) return false;
+            b = e + 1;
+        }
+        return true;
+    };
+}
+
+/** Kwalifikator maski (% = znak, * = zero lub wiecej znakow) wobec buf[s..e). */
+function qualLike(m: Uint8Array, buf: Uint8Array, s: number, e: number): boolean {
+    let i = 0;
+    let p = s;
+    let star = -1;
+    let from = 0;
+    while (p < e) {
+        if (i < m.length && m[i] === 42) {
+            star = i++;
+            from = p;
+        } else if (i < m.length && (m[i] === 37 || m[i] === buf[p])) {
+            i++;
+            p++;
+        } else if (star >= 0) {
+            i = star + 1;
+            p = ++from;
+        } else {
+            return false;
+        }
+    }
+    while (i < m.length && m[i] === 42) i++;
+    return i === m.length;
+}
+
 function num(v: string, name: string, min: number, max: number, int: boolean): number {
     const x = Number(v.replace(',', '.'));
     if (v.trim() === '' || !Number.isFinite(x) || x < min || x > max || (int && !Number.isInteger(x))) {
@@ -145,12 +197,13 @@ export function search(file: string, scope: Conds, when: Conds, opt: MineOptions
     const tick = bar.stage('Kryteria i maski');
     const inScope = scope.compile(st);
     const small = when.compile(st);
+    const inHead = opt.head?.length ? headTest(st.names, opt.head) : () => true;
     const kind = new Uint8Array(st.rows);
     let np = 0;
     let nn = 0;
     for (let r = 0; r < st.rows; r++) {
         if ((r & 0xffff) === 0) tick(0.1 * (r / st.rows));
-        if (st.dead[r] || !inScope(r)) continue;
+        if (st.dead[r] || !inHead(r) || !inScope(r)) continue;
         if (small(r)) {
             kind[r] = 1;
             np++;
@@ -211,6 +264,7 @@ export function main(argv: string[], io: Io = STDIO): number {
             options: {
                 scope: { type: 'string', default: 'sms=true dsorg=PS' },
                 when: { type: 'string', default: 'allocTrk=315 usedTrk<=3' },
+                prefix: { type: 'string' },
                 'min-purity': { type: 'string', default: '0.95' },
                 'min-count': { type: 'string', default: '10' },
                 'max-masks': { type: 'string', default: '100' },
@@ -232,9 +286,11 @@ export function main(argv: string[], io: Io = STDIO): number {
             minPurity: num(o['min-purity']!, 'min-purity', 0, 1, false),
             minCount: num(o['min-count']!, 'min-count', 1, 1e9, true),
             maxMasks: num(o['max-masks']!, 'max-masks', 1, 1e6, true),
+            head: o.prefix === undefined ? [] : parseHead(o.prefix),
         };
         const r = search(positionals[0], scope, when, opt, bar, io.err);
-        io.out(`Zakres: ${o.scope}   kryterium: ${o.when}   min. purity: ${pct(opt.minPurity)}, min. zbiorow: ${opt.minCount}\n`);
+        const start = opt.head.length ? `   poczatek masek: ${opt.head.join('.')}` : '';
+        io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${start}   min. purity: ${pct(opt.minPurity)}, min. zbiorow: ${opt.minCount}\n`);
         io.out(report(r));
         if (o.out) {
             fs.writeFileSync(o.out, toCsv(r));

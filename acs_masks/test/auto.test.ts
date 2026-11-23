@@ -5,13 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { main as autoMain, parseConds, search } from '../src/auto';
+import { main as autoMain, parseConds, parseHead, search } from '../src/auto';
 import { BOOL, Field, NUM, readStore, STR } from '../src/auto-read';
 import { Interner, PairMap, Progress } from '../src/auto-util';
 import { main } from '../src/cli';
 import { DataSet, readDataSets, stripGds } from '../src/dataset';
 import { matches, parseMask } from '../src/mask';
-import { buildCandidates, purity, selectMasks } from '../src/mine';
+import { buildCandidates, Candidate, MaskIndex, purity, selectMasks } from '../src/mine';
 import { sampleCsv } from '../tools/gen-sample';
 import { csv, dline, kbForTrk, rng } from './helpers';
 
@@ -101,7 +101,8 @@ describe('szukanie masek - jeden plik', () => {
         for (const a of [[], ['P.CSV', 'X'], ['BRAK.CSV'], ['P.CSV', '--when', 'allocTrk 315'], ['P.CSV', '--when', 'alok=1'],
             ['P.CSV', '--when', 'allocTrk=x'], ['P.CSV', '--when', 'dsn<A'], ['P.CSV', '--scope', 'sms=tak'],
             ['P.CSV', '--scope', 'dsn=A**.B'], ['P.CSV', '--min-purity', '95'], ['P.CSV', '--min-count', '1.5'],
-            ['P.CSV', '--nieznana'], ['P.CSV', '--out', 'brak/m.csv'], [config]]) {
+            ['P.CSV', '--nieznana'], ['P.CSV', '--prefix', 'A.**.B'], ['P.CSV', '--prefix', 'A..B'],
+            ['P.CSV', '--prefix', 'ZADLUGIQUAL.**'], ['P.CSV', '--prefix', ''], ['P.CSV', '--out', 'brak/m.csv'], [config]]) {
             const r = auto(a);
             assert.equal(r.code, 1, a.join(' '));
             assert.ok(r.err.length > 0);
@@ -260,6 +261,61 @@ describe('nowy silnik = wzorzec (dataset.ts, mine.ts, mask.ts)', () => {
             }
         });
     }
+
+    // --prefix: kandydaci z nazw z podmienionym poczatkiem, kazdy porownany z kazda nazwa
+    for (const prefix of ['A%.**', 'A%', 'PROD.**', 'A*.%*', '*.**', '*.A%%.**', 'A{.*', 'A*.*1*.*%', '%%.%%%.**', 'A*.*.*.**', '*1*.**', 'BRAK.**', '**']) {
+        it(`--prefix ${prefix}`, async () => {
+            const head = parseHead(prefix);
+            assert.throws(() => parseHead(`X.**.${prefix}`), /tylko na koncu/);
+            const starts = parseMask([...head, '**'].join('.'));
+            let found = 0;
+            for (let seed = 1; seed <= 6; seed++) {
+                const file = write('R.CSV', randomCsv(seed + 300, 300));
+                const { dataSets } = await readDataSets(file);
+                stripGds(dataSets);
+                const u = dataSets.filter(x => x.sms && x.dsorg === 'PS' && matches(starts, x.dsn));
+                const small = (x: DataSet) => x.allocTrk === 315 && x.usedTrk <= 3;
+                const pos = u.filter(small);
+                const neg = u.filter(x => !small(x));
+                const texts = new MaskIndex(true);
+                for (const x of pos) texts.addFrom([...head, ...x.quals.slice(head.length)]);
+                const byText = new Map<string, Candidate>();
+                for (const text of texts.byText.keys()) {
+                    if (head.length && text !== head.join('.') && !text.startsWith(`${head.join('.')}.`)) continue;
+                    const m = parseMask(text);
+                    byText.set(text, {
+                        id: byText.size, text, neg: neg.filter(x => matches(m, x.dsn)).length,
+                        pos: [...pos.keys()].filter(i => matches(m, pos[i].dsn)),
+                    });
+                }
+                for (const o of opts) {
+                    const want = selectMasks({ byText } as MaskIndex, pos.length, { ...o, digitMasks: true })
+                        .map(x => [x.cand.text, x.cand.pos.length, x.cand.neg, purity(x.cand)]);
+                    const r = search(file, parseConds('sms=true dsorg=PS', 's'), parseConds('allocTrk=315 usedTrk<=3', 'w'), { ...o, head }, silent());
+                    assert.deepEqual([r.inScope, r.small], [u.length, pos.length]);
+                    assert.deepEqual(r.masks.map(m => [m.text, m.small, m.large, m.purity]), want);
+                    const masks = r.masks.map(m => parseMask(m.text));
+                    const hit = u.filter(x => masks.some(m => matches(m, x.dsn)));
+                    assert.deepEqual([r.total.small, r.total.large], [hit.filter(small).length, hit.filter(x => !small(x)).length]);
+                    found += want.length;
+                }
+            }
+            assert.equal(found > 0, prefix !== 'BRAK.**');
+        });
+    }
+
+    it('--prefix: zbiory spod roznych HLQ liczone razem, poczatek w masce doslownie', () => {
+        const line = (dsn: string, usekb: number) => dline({ dsn, allkb: kbForTrk(315), usekb });
+        write('H.CSV', csv(['ABC1', 'ABC2', 'ABCX'].flatMap(h => [line(`${h}.LOG.A`, 40), line(`${h}.LOG.B`, 40), line(`${h}.DATA.A`, kbForTrk(200))])
+            .concat(line('ABCD1.LOG.A', kbForTrk(200)), line('XYZ1.LOG.A', 40))));
+        for (const p of ['ABC%.**', 'abc%']) {
+            const r = auto(['H.CSV', '--prefix', p, '--min-count', '4', '--out', 'm.csv']);
+            assert.equal(r.code, 0, r.err);
+            assert.deepEqual(rowsOf('m.csv').map(x => x.slice(0, 3)), [['ABC%.LOG.**', '6', '0']]);
+            assert.match(r.out, /poczatek masek: ABC% /);
+            assert.match(r.out, /w zakresie: 9, malych: 6/);
+        }
+    });
 
     const masksOf = (small: string[], large: string[], minCount: number) => {
         const line = (dsn: string, usekb: number) => dline({ dsn, allkb: kbForTrk(315), usekb });

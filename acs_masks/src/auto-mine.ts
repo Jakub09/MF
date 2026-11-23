@@ -9,6 +9,8 @@
  * Rodzaje kandydatow (prefiks = wezel drzewa kwalifikatorow, 0 = pusty):
  *   P prefiks.**   E pelna nazwa   L prefiks.**.LLQ (pusty prefiks: *.**.LLQ)
  *   PD prefiks.wzorzec.**   ED prefiks.wzorzec   LD prefiks.**.wzorzec
+ * Narzucony poczatek masek (head): wezel 0 to ten poczatek, a z nazw brane sa tylko dalsze kwalifikatory;
+ * dochodza wtedy kandydaci P (head.**) i E (sam head) wezla 0.
  */
 import { grow, Interner, IntList, PairMap, Tick } from './auto-util';
 
@@ -16,6 +18,8 @@ export interface MineOptions {
     minPurity: number;
     minCount: number;
     maxMasks: number;
+    /** kwalifikatory, od ktorych zaczyna sie kazda maska (bez '**'); wszystkie nazwy musza do nich pasowac */
+    head?: string[];
 }
 
 export interface MaskRow {
@@ -68,6 +72,20 @@ export function mine(input: MineInput, opt: MineOptions, stages: Stages): MineRe
     const { pool } = names;
     const min = opt.minCount;
     const np = pos.length;
+    const headText = (opt.head ?? []).join('.');
+    const skip = opt.head?.length ?? 0;
+    /** ile kwalifikatorow (za head) musi miec nazwa dla masek prefiks.**.LLQ; bez head: *.**.LLQ, czyli dwa */
+    const minL = skip ? 1 : 2;
+    /** poczatek kwalifikatorow za head; nazwa bez dalszych kwalifikatorow: koniec nazwy + 1 */
+    const rest = (row: number): number => {
+        let p = names.start[row];
+        const e = p + names.len[row];
+        for (let k = 0; k < skip; k++) {
+            while (p < e && pool[p] !== DOT) p++;
+            p++;
+        }
+        return p;
+    };
 
     // ---- kwalifikatory malych zbiorow
     const quals = new Interner();
@@ -75,8 +93,8 @@ export function mine(input: MineInput, opt: MineOptions, stages: Stages): MineRe
     const qList = new IntList();
     let maxQ = 0;
     for (let i = 0; i < np; i++) {
-        const s = names.start[pos[i]];
-        const e = s + names.len[pos[i]];
+        const s = rest(pos[i]);
+        const e = names.start[pos[i]] + names.len[pos[i]];
         let b = s;
         for (let p = s; p <= e; p++) {
             if (p < e && pool[p] !== DOT) continue;
@@ -126,6 +144,13 @@ export function mine(input: MineInput, opt: MineOptions, stages: Stages): MineRe
     const level = (i: number, n: number) => stages.candidates(0.3 + 0.7 * ((levelNo + i / Math.max(1, n)) / levels));
     const nextLevel = () => void levelNo++;
 
+    if (skip) {
+        let exact = 0;
+        for (let i = 0; i < np; i++) if (off[i] === off[i + 1]) exact++;
+        if (np >= min) addCand(P, 0, 0, np);
+        if (exact >= min) addCand(E, 0, 0, exact);
+    }
+
     // P i E: prefiksy poziomami
     {
         let alive = new Int32Array(np);
@@ -174,7 +199,7 @@ export function mine(input: MineInput, opt: MineOptions, stages: Stages): MineRe
     {
         let alive = new Int32Array(np);
         let n = 0;
-        for (let i = 0; i < np; i++) if (off[i + 1] - off[i] >= 2) alive[n++] = i;
+        for (let i = 0; i < np; i++) if (off[i + 1] - off[i] >= minL) alive[n++] = i;
         for (let k = 0; k < maxQ && n > 0; k++, nextLevel()) {
             const tmp = new PairMap();
             let cnt = new Int32Array(1 << 10);
@@ -254,7 +279,7 @@ export function mine(input: MineInput, opt: MineOptions, stages: Stages): MineRe
         let ai = new IntList();
         let ap = new IntList();
         for (let i = 0; i < np; i++) {
-            if (off[i + 1] - off[i] < 2) continue;
+            if (off[i + 1] - off[i] < minL) continue;
             const l = q[off[i + 1] - 1];
             for (let y = patOff[l]; y < patOff[l + 1]; y++) {
                 ai.push(i);
@@ -265,7 +290,7 @@ export function mine(input: MineInput, opt: MineOptions, stages: Stages): MineRe
             const n = ai.n;
             registered((reg, count) => {
                 for (let i = 0; i < np; i++) {
-                    if (off[i + 1] - off[i] < 2 || k > off[i + 1] - off[i] - 1) continue;
+                    if (off[i + 1] - off[i] < minL || k > off[i + 1] - off[i] - 1) continue;
                     const g = gen[q[off[i + 1] - 1]];
                     if (g >= 0 && headAt(i, k) >= 0) reg.index(headAt(i, k), g);
                 }
@@ -317,8 +342,8 @@ export function mine(input: MineInput, opt: MineOptions, stages: Stages): MineRe
     };
     const matching = (row: number): void => {
         outN = 0;
-        const s = names.start[row];
-        const e = s + names.len[row];
+        const s = rest(row);
+        const e = names.start[row] + names.len[row];
         let n = 0;
         let b = s;
         for (let p = s; p <= e; p++) {
@@ -326,6 +351,11 @@ export function mine(input: MineInput, opt: MineOptions, stages: Stages): MineRe
             qs[n] = b;
             qe[n++] = p;
             b = p + 1;
+        }
+        emit(candP[0]);
+        if (n === 0) {
+            emit(candE[0]);
+            return;
         }
         const llq = quals.find(pool, qs[n - 1], qe[n - 1]);
         let llqReady = false;
@@ -337,7 +367,7 @@ export function mine(input: MineInput, opt: MineOptions, stages: Stages): MineRe
         for (let j = 0; j < n; j++) {
             const h = has[head];
             const last = j === n - 1;
-            if (n >= 2) {
+            if (n >= minL) {
                 if (h & HAS_L && llq >= 0) emit(mapL.get(head, llq));
                 if (h & HAS_LD) {
                     llqPatterns();
@@ -402,6 +432,7 @@ export function mine(input: MineInput, opt: MineOptions, stages: Stages): MineRe
     const path = (node: number): string => {
         const parts: string[] = [];
         for (let x = node; x > 0; x = parent.a[x]) parts.push(quals.text(nodeQual.a[x]));
+        if (skip) parts.push(headText);
         return parts.reverse().join('.');
     };
     const texts: (string | undefined)[] = new Array(good.length);
