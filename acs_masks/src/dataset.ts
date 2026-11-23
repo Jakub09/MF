@@ -395,6 +395,25 @@ export function buildDataSets(p: ParsedCsv, opt: BuildOptions): DataSet[] {
     return out;
 }
 
+const GDS_LLQ = /^G\d{4}V\d{2}$/;
+
+/**
+ * Nazwy generacji GDG takie, jakie widzi ACS w &DSN: bez ostatniego kwalifikatora GnnnnVnn (zmienia elementy listy;
+ * nazwa z DCOLLECT zostaje w recDsn). Generacje jednej bazy maja potem te sama nazwe. Zwraca liczbe zmienionych.
+ */
+export function stripGds(list: DataSet[]): number {
+    let changed = 0;
+    for (const ds of list) {
+        if (!ds.gds || ds.nqual < 2 || !GDS_LLQ.test(ds.llq)) continue;
+        ds.quals = ds.quals.slice(0, -1);
+        ds.dsn = ds.quals.join('.');
+        ds.llq = ds.quals[ds.quals.length - 1];
+        ds.nqual = ds.quals.length;
+        changed++;
+    }
+    return changed;
+}
+
 export interface ReadOptions extends Partial<BuildOptions> {
     encoding?: BufferEncoding;
     /** wielkosc porcji czytanej z pliku (domyslnie 1 MB) */

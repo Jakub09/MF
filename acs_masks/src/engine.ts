@@ -78,27 +78,34 @@ function runRule(scoped: DataSet[], cfg: Config, rule: Rule, override: Partial<T
     for (const s of chosen) for (const i of s.cand.pos) covered[i] = 1;
     let uncovered = pos.filter((_, i) => !covered[i]);
     if (tuning.literals) {
-        for (const ds of uncovered) {
-            masks.push({ text: ds.dsn, pos: 1, neg: 0, purity: 1, gain: 1, literal: true });
+        // nazwa moze sie powtarzac (generacje GDG pod nazwa bazy): pelna nazwa raz, z prawdziwa czystoscia
+        const posCnt = countNames(uncovered);
+        const negCnt = countNames(neg.filter(ds => posCnt.has(ds.dsn)));
+        for (const [dsn, p] of posCnt) {
+            const ng = negCnt.get(dsn) ?? 0;
+            if (p / (p + ng) < tuning.minPurity) posCnt.delete(dsn);
+            else masks.push({ text: dsn, pos: p, neg: ng, purity: p / (p + ng), gain: p, literal: true });
         }
-        uncovered = [];
+        uncovered = uncovered.filter(ds => !posCnt.has(ds.dsn));
     }
 
     // nadmiarowe: negatywne objete wybranymi maskami (indeks tylko z wybranych)
     const sel = new MaskIndex(tuning.digitMasks);
     const selTexts = new Set(chosen.map(s => s.cand.text));
     for (const ds of pos) sel.addFrom(ds.quals);
-    const fp = neg.filter(ds => sel.matching(ds.quals).some(c => selTexts.has(c.text)));
+    const literalSet = new Set(masks.filter(m => m.literal).map(m => m.text));
+    const fp = neg.filter(ds => literalSet.has(ds.dsn) || sel.matching(ds.quals).some(c => selTexts.has(c.text)));
 
     const excludes = [...userExcl.map(m => m.text)];
     let falsePositives = fp;
     const fpSet = new Set<string>();
     if (tuning.excludeFalsePositives && fp.length) {
-        excludes.push(...fp.map(ds => ds.dsn));
-        for (const ds of fp) fpSet.add(ds.dsn);
-        falsePositives = [];
+        // nazwa wspolna ze zbiorem spelniajacym kryterium (inna generacja GDG) zostaje - EXCLUDE wylaczylby oba
+        const posNames = new Set(pos.map(ds => ds.dsn));
+        for (const ds of fp) if (!posNames.has(ds.dsn)) fpSet.add(ds.dsn);
+        excludes.push(...fpSet);
+        falsePositives = fp.filter(ds => posNames.has(ds.dsn));
     }
-    const literalSet = new Set(masks.filter(m => m.literal).map(m => m.text));
     const hits = (ds: DataSet): boolean =>
         (literalSet.has(ds.dsn) || sel.matching(ds.quals).some(c => selTexts.has(c.text)))
         && !fpSet.has(ds.dsn) && !userExcl.some(m => matches(m, ds.dsn));
@@ -121,6 +128,12 @@ function runRule(scoped: DataSet[], cfg: Config, rule: Rule, override: Partial<T
 /** Pelne listy FILTLIST reguly (do ACS i do joba ACMREPR). */
 export function ruleLists(r: RuleResult): { include: Mask[]; exclude: Mask[] } {
     return { include: r.masks.map(m => parseMask(m.text)), exclude: r.excludes.map(parseMask) };
+}
+
+function countNames(list: DataSet[]): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const ds of list) out.set(ds.dsn, (out.get(ds.dsn) ?? 0) + 1);
+    return out;
 }
 
 function findOverlaps(scoped: DataSet[], rules: RuleResult[]): { dsn: string; rules: string[] }[] {

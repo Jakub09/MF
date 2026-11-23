@@ -20,6 +20,8 @@
  *   --no-digit-masks   bez kandydatow z % w miejsce cyfr
  *   --vsam MODE        cluster (domyslnie, gdy w CSV sa rekordy A) - komponenty VSAM pod nazwa klastra;
  *                      component - komponenty jako osobne zbiory
+ *   --gds MODE         strip (domyslnie) - generacje GDG pod nazwa bez GnnnnVnn, jak w &DSN rutyny ACS; keep - nazwa
+ *                      z DCOLLECT
  *   --today RRRR-MM-DD data odniesienia dla ageDays / unrefDays (domyslnie dzis)
  *   --top N            ile zbiorow pokazac w raporcie na liste (domyslnie 20; pelne listy w CSV)
  *   --encoding ENC     kodowanie pliku CSV (domyslnie utf-8; plik przeslany z z/OS jako tekst)
@@ -38,7 +40,7 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { generateRoutines } from './acs';
 import { ACS_COMMANDS, AcsCommand, mainAcs } from './cli-acs';
-import { CsvError, readDataSets } from './dataset';
+import { CsvError, readDataSets, stripGds } from './dataset';
 import { CardError, generateCards, generateList, generateSymbols, vectorMasks } from './dfsort';
 import { runRules } from './engine';
 import { dataSetsCsv, masksCsv, textReport } from './report';
@@ -55,7 +57,7 @@ const STDIO: Io = { out: t => process.stdout.write(t), err: t => process.stderr.
 
 const USAGE = 'Uzycie: acs-masks <plik.csv> --config reguly.json [--out katalog] [--min-purity X] [--min-count N]\n'
     + '        [--max-masks N] [--literals] [--exclude-fp] [--no-digit-masks] [--vsam cluster|component]\n'
-    + '        [--today RRRR-MM-DD] [--top N] [--encoding utf-8] [--dry-run]\n'
+    + '        [--gds strip|keep] [--today RRRR-MM-DD] [--top N] [--encoding utf-8] [--dry-run]\n'
     + '        wynik domyslnie w out/maski/<data_godzina>/ katalogu projektu (--out: wskazany katalog)\n'
     + '        acs-masks check|repr|sim ... - polecenia na zrodlach rutyn ACS (acs-masks repr --help)\n';
 
@@ -95,6 +97,7 @@ export async function main(argv: string[], io: Io = STDIO): Promise<number> {
                 'exclude-fp': { type: 'boolean' },
                 'no-digit-masks': { type: 'boolean' },
                 vsam: { type: 'string' },
+                gds: { type: 'string', default: 'strip' },
                 today: { type: 'string' },
                 top: { type: 'string', default: '20' },
                 encoding: { type: 'string', default: 'utf-8' },
@@ -128,6 +131,7 @@ export async function main(argv: string[], io: Io = STDIO): Promise<number> {
         if (o.vsam && o.vsam !== 'cluster' && o.vsam !== 'component') {
             throw new ConfigError('--vsam: cluster albo component');
         }
+        if (o.gds !== 'strip' && o.gds !== 'keep') throw new ConfigError('--gds: strip albo keep');
         if (o.today && !/^\d{4}-\d{2}-\d{2}$/.test(o.today)) throw new ConfigError('--today: RRRR-MM-DD');
         const top = num(o.top, 'top', 0, 1e6, true)!;
         const cfg = loadConfig(o.config);
@@ -140,6 +144,8 @@ export async function main(argv: string[], io: Io = STDIO): Promise<number> {
         });
         for (const w of warnings) io.err(`Uwaga: ${w}\n`);
         io.err(`CSV: ${dRecords} rekordow D, ${assoc} rekordow A -> ${dataSets.length} zbiorow\n`);
+        const gds = o.gds === 'strip' ? stripGds(dataSets) : 0;
+        if (gds) io.err(`GDG: ${gds} generacji pod nazwa bez GnnnnVnn (--gds keep: nazwa z DCOLLECT)\n`);
 
         const res = runRules(dataSets, cfg, override);
         const report = textReport(res, { csv: csvFile, config: o.config, stamp, top });
