@@ -13,7 +13,6 @@
   "include": [
     "src/**/*.ts",
     "test/**/*.ts",
-    "tools/**/*.ts",
-    "vscode/src/**/*.ts"
+    "tools/**/*.ts"
   ]
 }

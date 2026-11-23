@@ -13,7 +13,7 @@
  *  - &RECORG: z flag rekordu A (bez FS - zFS)
  */
 import type { DataSet } from '../dataset';
-import { VARS } from './vars';
+import { VARS } from 'acs-routines/lang/vars';
 
 export type Value = string | number | string[];
 

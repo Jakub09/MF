@@ -10,11 +10,11 @@
  * FILTLIST jest rozpoznawana po zawartosci, nie po nazwie: ta sama nazwa ze zmieniona lista (stara i nowa
  * wersja rutyny) daje dwa atomy, wiec zbiory objete zmiana trafiaja do osobnej grupy.
  */
-import { allCmps, CmpOp, Operand, VarRef } from './ast';
+import { allCmps, CmpOp, Operand, VarRef } from 'acs-routines/lang/ast';
 import type { Env } from './env';
 import { evalNorm, Lists, normalize } from './eval';
 import type { Loaded } from './load';
-import { VARS } from './vars';
+import { VARS } from 'acs-routines/lang/vars';
 
 export interface Atom {
     key: string;

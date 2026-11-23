@@ -16,7 +16,7 @@
  * Sciezka wykonania (path): zapis decyzji IF / SELECT - zbiory z ta sama sciezka sa dla rutyn
  * nierozroznialne.
  */
-import type { Routine, Stmt } from './ast';
+import type { Routine, Stmt } from 'acs-routines/lang/ast';
 import { Env, getVar } from './env';
 import { evalExpr } from './eval';
 import { Loaded, ORDER, RoutineSet, SHORT } from './load';

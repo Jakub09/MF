@@ -1,11 +1,11 @@
 /** Wczytanie rutyn ACS z plikow: parsowanie, kontrola, przypisanie do typu (PROC). */
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Program, Routine } from './ast';
-import { check, filtlistMap } from './check';
+import type { Program, Routine } from 'acs-routines/lang/ast';
+import { check, filtlistMap } from 'acs-routines/lang/check';
 import type { Lists } from './eval';
-import type { Diagnostic } from './lexer';
-import { parse } from './parser';
+import type { Diagnostic } from 'acs-routines/lang/lexer';
+import { parse } from 'acs-routines/lang/parser';
 
 export class AcsError extends Error {}
 

@@ -8,10 +8,10 @@
  *  - liczby porownywane liczbowo (&SIZE / &MAXSIZE w KB: 1 MB = 1024 KB), znaki w porzadku EBCDIC
  *  - AND / OR: drzewo z parsera jest lewostronne (ACS liczy od lewej do prawej)
  */
-import type { Cmp, CmpOp, Expr, FiltEntry, Filtlist, Operand, VarRef } from './ast';
+import type { Cmp, CmpOp, Expr, FiltEntry, Filtlist, Operand, VarRef } from 'acs-routines/lang/ast';
 import { Env, getVar, Value } from './env';
-import { compareChar, dsnMatch, simpleMatch } from './match';
-import { VARS } from './vars';
+import { compareChar, dsnMatch, simpleMatch } from 'acs-routines/lang/match';
+import { VARS } from 'acs-routines/lang/vars';
 
 export type Lists = Map<string, Filtlist>;
 
