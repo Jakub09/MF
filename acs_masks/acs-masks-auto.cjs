@@ -258,6 +258,504 @@ class Progress {
 exports.Progress = Progress;
 };
 
+// ==================== src/mask.ts
+MODULES["./mask"] = function (exports, require, module) {
+"use strict";
+/**
+ * Maski nazw zbiorow jak w FILTLIST rutyn ACS:
+ *   %   - dokladnie jeden znak w kwalifikatorze
+ *   *   - zero lub wiecej znakow w kwalifikatorze; samo "*" = dokladnie jeden kwalifikator
+ *   **  - zero lub wiecej kwalifikatorow (tylko jako caly kwalifikator)
+ * Np. PROD.TMP.**, *.**.LOAD, PROD.D%%%%%%.LIST, SYS1.LINKLIB (literal).
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MaskError = void 0;
+exports.parseMask = parseMask;
+exports.qualMatches = qualMatches;
+exports.matchQuals = matchQuals;
+exports.matches = matches;
+exports.digitMask = digitMask;
+const QUAL_CHARS = /^[A-Z0-9#@$*%{-]{1,8}$/;
+class MaskError extends Error {
+}
+exports.MaskError = MaskError;
+/** Sprawdza i rozbija maske; rzuca MaskError z opisem bledu. */
+function parseMask(text) {
+    const t = text.trim().toUpperCase();
+    if (t.length === 0 || t.length > 44)
+        throw new MaskError(`maska "${text}": dlugosc 1-44 znaki`);
+    const quals = t.split('.');
+    for (const q of quals) {
+        if (q === '**')
+            continue;
+        if (!QUAL_CHARS.test(q))
+            throw new MaskError(`maska "${text}": niepoprawny kwalifikator "${q}"`);
+        if (q.includes('**'))
+            throw new MaskError(`maska "${text}": "**" tylko jako caly kwalifikator`);
+    }
+    return { text: t, quals, generic: /[*%]/.test(t) };
+}
+const qualRegexCache = new Map();
+function qualRegex(q) {
+    let re = qualRegexCache.get(q);
+    if (!re) {
+        const body = q === '*' ? '.+' : q.replace(/[$#@{-]/g, c => '\\' + c).replace(/\*/g, '.*').replace(/%/g, '.');
+        re = new RegExp('^' + body + '$');
+        qualRegexCache.set(q, re);
+    }
+    return re;
+}
+/** Czy kwalifikator nazwy pasuje do kwalifikatora maski (bez '**'). */
+function qualMatches(maskQual, qual) {
+    if (!/[*%]/.test(maskQual))
+        return maskQual === qual;
+    return qualRegex(maskQual).test(qual);
+}
+/** Czy nazwa (rozbita na kwalifikatory) pasuje do maski. */
+function matchQuals(mask, dsn, mi = 0, di = 0) {
+    while (mi < mask.length) {
+        const m = mask[mi];
+        if (m === '**') {
+            // '**' = zero lub wiecej kwalifikatorow
+            for (let k = di; k <= dsn.length; k++) {
+                if (matchQuals(mask, dsn, mi + 1, k))
+                    return true;
+            }
+            return false;
+        }
+        if (di >= dsn.length || !qualMatches(m, dsn[di]))
+            return false;
+        mi++;
+        di++;
+    }
+    return di === dsn.length;
+}
+function matches(mask, dsn) {
+    return matchQuals(mask.quals, dsn.split('.'));
+}
+/** Cyfry kwalifikatora -> '%' (np. D241113 -> D%%%%%%); null, gdy brak cyfr. */
+function digitMask(qual) {
+    return /[0-9]/.test(qual) ? qual.replace(/[0-9]/g, '%') : null;
+}
+};
+
+// ==================== src/auto-check.ts
+MODULES["./auto-check"] = function (exports, require, module) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MaskTree = exports.MaskListError = void 0;
+exports.parseMaskList = parseMaskList;
+exports.within = within;
+exports.checkMasks = checkMasks;
+const auto_util_1 = require("./auto-util");
+const mask_1 = require("./mask");
+const DOT = 46;
+const PCT = 37;
+const STAR = 42;
+/** krawedz '**' w drzewie masek (wzorce kwalifikatorow maja numery od 1) */
+const ANY_QUALS = 0;
+/** ile masek wymienia powod zbednosci */
+const MAX_NOTE = 4;
+class MaskListError extends Error {
+}
+exports.MaskListError = MaskListError;
+/**
+ * Lista masek z pliku: po jednej w linii albo po przecinku (wnetrze INCLUDE), w CSV pierwsza kolumna (plik z --out).
+ * Pelna nazwa moze byc w apostrofach; komentarze jak w ACS. Powtorzone maski sa pomijane z ostrzezeniem.
+ */
+function parseMaskList(text, file) {
+    const masks = [];
+    const warnings = [];
+    const seen = new Set();
+    // komentarz zamieniony na same konce linii, zeby zgadzaly sie numery wierszy
+    const clean = text.replace(/^﻿/, '').replace(/\/\*[\s\S]*?\*\//g, c => c.replace(/[^\n]/g, ' '));
+    clean.split(/\r?\n/).forEach((line, i) => {
+        const fail = (msg) => new MaskListError(`${file}, wiersz ${i + 1}: ${msg}`);
+        const csv = line.includes(';');
+        if (/^T;DSN;/i.test(line))
+            throw fail('to CSV z DCOLLECT, a nie lista masek');
+        const items = csv ? [line.split(';')[0]] : line.split(/[\s,]+/);
+        for (const item of items.map(x => x.trim()).filter(Boolean)) {
+            if (csv && item.toLowerCase() === 'maska')
+                continue;
+            const quoted = /^'(.*)'$/.exec(item);
+            if (quoted && /[*%]/.test(quoted[1]))
+                throw fail(`${item} - w apostrofach to pelna nazwa; maske podaj bez apostrofow`);
+            let mask;
+            try {
+                mask = (0, mask_1.parseMask)(quoted ? quoted[1] : item).text;
+            }
+            catch (e) {
+                throw fail(e.message);
+            }
+            if (/^[0-9]/.test(mask))
+                throw fail(`"${mask}" - nazwa zbioru nie zaczyna sie cyfra`);
+            if (seen.has(mask))
+                warnings.push(`${file}, wiersz ${i + 1}: maska ${mask} powtorzona`);
+            else
+                masks.push(mask);
+            seen.add(mask);
+        }
+    });
+    if (masks.length === 0)
+        throw new MaskListError(`${file}: brak masek`);
+    return { masks, warnings };
+}
+/** Lista masek jako drzewo kwalifikatorow; kwalifikatory z * i % - drzewo znakow. */
+class MaskTree {
+    /** (wezel znakow, bajt) -> wezel; na koncu wzorca jego numer */
+    chars = new auto_util_1.PairMap();
+    charLeaf = new auto_util_1.IntList();
+    /** (wezel masek, wzorzec) -> wezel; na koncu maski ich numery */
+    child = new auto_util_1.PairMap();
+    ends = [[]];
+    stamp;
+    round = 0;
+    pats = new auto_util_1.IntList();
+    qs = new Int32Array(256);
+    qe = new Int32Array(256);
+    from = new Int32Array(256);
+    to = new Int32Array(256);
+    out = [];
+    constructor(masks) {
+        this.charLeaf.push(0);
+        this.stamp = new Int32Array(masks.length);
+        const ids = new Map([['**', ANY_QUALS]]);
+        masks.forEach((quals, m) => {
+            let node = 0;
+            quals.forEach((q, i) => {
+                // ** po ** nic nie zmienia
+                if (q === '**' && quals[i - 1] === '**')
+                    return;
+                let id = ids.get(q);
+                if (id === undefined) {
+                    ids.set(q, id = ids.size);
+                    this.addPattern(q, id);
+                }
+                let x = this.child.get(node, id);
+                if (x < 0) {
+                    x = this.ends.length;
+                    this.ends.push([]);
+                    this.child.set(node, id, x);
+                }
+                node = x;
+            });
+            this.ends[node].push(m);
+        });
+    }
+    addPattern(q, id) {
+        let node = 0;
+        for (let i = 0; i < q.length; i++) {
+            let x = this.chars.get(node, q.charCodeAt(i));
+            if (x < 0) {
+                x = this.charLeaf.n;
+                this.charLeaf.push(0);
+                this.chars.set(node, q.charCodeAt(i), x);
+            }
+            node = x;
+        }
+        this.charLeaf.a[node] = id;
+    }
+    /** Wzorce pasujace do kwalifikatora buf[p..e). */
+    patterns(buf, p, e, node) {
+        const star = this.chars.get(node, STAR);
+        if (star >= 0)
+            for (let k = p; k <= e; k++)
+                this.patterns(buf, k, e, star);
+        if (p === e) {
+            if (this.charLeaf.a[node])
+                this.pats.push(this.charLeaf.a[node]);
+            return;
+        }
+        const any = this.chars.get(node, PCT);
+        if (any >= 0)
+            this.patterns(buf, p + 1, e, any);
+        const same = this.chars.get(node, buf[p]);
+        if (same >= 0)
+            this.patterns(buf, p + 1, e, same);
+    }
+    walk(buf, node, i, n) {
+        const more = this.child.get(node, ANY_QUALS);
+        if (more >= 0)
+            for (let k = i; k <= n; k++)
+                this.walk(buf, more, k, n);
+        if (i === n) {
+            for (const m of this.ends[node]) {
+                if (this.stamp[m] === this.round)
+                    continue;
+                this.stamp[m] = this.round;
+                this.out.push(m);
+            }
+            return;
+        }
+        if (this.from[i] < 0) {
+            this.from[i] = this.pats.n;
+            if (this.qs[i] < this.qe[i])
+                this.patterns(buf, this.qs[i], this.qe[i], 0);
+            this.to[i] = this.pats.n;
+        }
+        for (let y = this.from[i]; y < this.to[i]; y++) {
+            const x = this.child.get(node, this.pats.a[y]);
+            if (x >= 0)
+                this.walk(buf, x, i + 1, n);
+        }
+    }
+    /** Numery masek pasujacych do nazwy buf[s..e), rosnaco; tablica wazna do nastepnego wywolania. */
+    match(buf, s, e) {
+        this.round++;
+        this.pats.n = 0;
+        this.out = [];
+        let n = 0;
+        let b = s;
+        for (let p = s; p <= e; p++) {
+            if (p < e && buf[p] !== DOT)
+                continue;
+            this.qs[n] = b;
+            this.qe[n] = p;
+            this.from[n++] = -1;
+            b = p + 1;
+        }
+        this.walk(buf, 0, 0, n);
+        return this.out.length > 1 ? this.out.sort((x, y) => x - y) : this.out;
+    }
+}
+exports.MaskTree = MaskTree;
+/** Maska jako automat na nazwie z kropka po kazdym kwalifikatorze (A.B -> "A.B."). */
+function nfa(quals) {
+    const edges = [];
+    const eps = [];
+    const add = () => {
+        edges.push([]);
+        eps.push([]);
+        return edges.length - 1;
+    };
+    let s = add();
+    const next = (on) => {
+        const t = add();
+        edges[s].push({ on, to: t });
+        s = t;
+    };
+    const loop = () => {
+        const t = add();
+        eps[s].push(t);
+        s = t;
+    };
+    for (const q of quals) {
+        if (q === '**') {
+            loop();
+            const u = add();
+            edges[s].push({ on: null, to: u });
+            edges[u].push({ on: null, to: u }, { on: '.', to: s });
+            loop();
+            continue;
+        }
+        if (q === '*')
+            next(null);
+        for (const c of q) {
+            if (c === '*') {
+                loop();
+                edges[s].push({ on: null, to: s });
+                loop();
+            }
+            else {
+                next(c === '%' ? null : c);
+            }
+        }
+        next('.');
+    }
+    return { edges, eps, end: s };
+}
+function closure(a, states) {
+    const seen = new Set(states);
+    for (const s of seen)
+        for (const t of a.eps[s])
+            seen.add(t);
+    return [...seen].sort((x, y) => x - y);
+}
+/** Czy kazda nazwa pasujaca do maski a pasuje tez do b (bez danych: porownanie samych masek). */
+function within(a, b) {
+    const na = nfa(a);
+    const nb = nfa(b);
+    // znaki, ktore rozroznia b; '\0' = kazdy inny
+    const letters = new Set(['\0']);
+    for (const l of nb.edges)
+        for (const x of l)
+            if (x.on !== null && x.on !== '.')
+                letters.add(x.on);
+    const start = closure(nb, [0]);
+    // stany poczatkowe poza seen: pusta nazwa (** bez kwalifikatorow) sie nie liczy
+    const todo = closure(na, [0]).map(s => ({ s, set: start, empty: true }));
+    const seen = new Set();
+    while (todo.length) {
+        const { s, set, empty } = todo.pop();
+        if (!empty && s === na.end && !set.includes(nb.end))
+            return false;
+        for (const x of na.edges[s]) {
+            for (const c of x.on === null ? letters : [x.on]) {
+                const to = new Set();
+                for (const t of set) {
+                    for (const y of nb.edges[t])
+                        if (y.on === c || (y.on === null && c !== '.'))
+                            to.add(y.to);
+                }
+                const after = closure(nb, to);
+                for (const t of closure(na, [x.to])) {
+                    const key = `${t}|${after}`;
+                    if (seen.has(key))
+                        continue;
+                    seen.add(key);
+                    todo.push({ s: t, set: after, empty: false });
+                }
+            }
+        }
+    }
+    return true;
+}
+const purityOf = (small, large) => (small ? small / (small + large) : 0);
+function sumUp(text, groups) {
+    const r = { text, small: 0, large: 0, purity: 0, smallKb: 0, largeKb: 0 };
+    for (const g of groups) {
+        r.small += g.small;
+        r.large += g.large;
+        r.smallKb += g.smallKb;
+        r.largeKb += g.largeKb;
+    }
+    r.purity = purityOf(r.small, r.large);
+    return r;
+}
+function checkMasks(input, masks, tick) {
+    const { names, allocKb, pos, neg } = input;
+    const quals = masks.map(m => (0, mask_1.parseMask)(m).quals);
+    const tree = new MaskTree(quals);
+    // ---- grupy zbiorow o tym samym zestawie masek
+    const single = [];
+    const multi = new Map();
+    const empty = (ids) => ({ ids, small: 0, large: 0, smallKb: 0, largeKb: 0 });
+    const groupOf = (row) => {
+        const s = names.start[row];
+        const ids = tree.match(names.pool, s, s + names.len[row]);
+        if (ids.length === 0)
+            return null;
+        if (ids.length === 1)
+            return single[ids[0]] ??= empty(ids);
+        const key = ids.join();
+        let g = multi.get(key);
+        if (!g)
+            multi.set(key, g = empty(ids));
+        return g;
+    };
+    const count = pos.length + neg.length;
+    let smallKb = 0;
+    for (let x = 0; x < pos.length; x++) {
+        if ((x & 0x3fff) === 0)
+            tick(x / count);
+        smallKb += allocKb[pos[x]];
+        const g = groupOf(pos[x]);
+        if (!g)
+            continue;
+        g.small++;
+        g.smallKb += allocKb[pos[x]];
+    }
+    for (let x = 0; x < neg.length; x++) {
+        if ((x & 0x3fff) === 0)
+            tick((pos.length + x) / count);
+        const g = groupOf(neg[x]);
+        if (!g)
+            continue;
+        g.large++;
+        g.largeKb += allocKb[neg[x]];
+    }
+    const groups = [...single.filter(g => g !== undefined), ...multi.values()];
+    const of = masks.map(() => []);
+    for (const g of groups)
+        for (const m of g.ids)
+            of[m].push(g);
+    const rows = masks.map((text, m) => ({ ...sumUp(text, of[m]), only: single[m]?.small ?? 0, note: '', state: '' }));
+    // ---- zawieranie: w danych kazdy zbior maski m obejmuje tez b, a potem porownanie samych masek
+    const inside = masks.map((_, m) => {
+        const cand = of[m].length ? of[m].reduce((s, g) => s.filter(b => g.ids.includes(b)), of[m][0].ids) : masks.map((_x, b) => b);
+        return cand.filter(b => b !== m && within(quals[m], quals[b]));
+    });
+    // ---- zbedne: od najnizszej czystosci, przy rownej najpierw zawarte w innej, potem mniej malych, potem dalsze na liscie
+    const left = masks.map(() => true);
+    const cover = new Map(groups.map(g => [g, g.ids.length]));
+    const needed = (m) => of[m].some(g => g.small > 0 && cover.get(g) < 2);
+    const spare = masks.map((_, m) => m).filter(m => !needed(m));
+    spare.sort((a, b) => rows[a].purity - rows[b].purity || Number(inside[b].length > 0) - Number(inside[a].length > 0)
+        || rows[a].small - rows[b].small || b - a);
+    for (const m of spare) {
+        if (needed(m)) {
+            rows[m].state = 'zamiast';
+            continue;
+        }
+        rows[m].state = 'usun';
+        left[m] = false;
+        for (const g of of[m])
+            cover.set(g, cover.get(g) - 1);
+    }
+    for (const m of spare) {
+        // powod usuniecia odwoluje sie do masek, ktore zostaja; "zamiast" - do wszystkich
+        const refers = (b) => left[b] || left[m];
+        const wider = inside[m].filter(refers).sort((a, b) => rows[b].small - rows[a].small || a - b);
+        if (wider.length)
+            rows[m].note = `zawiera sie w ${masks[wider[0]]}`;
+        else if (of[m].length === 0)
+            rows[m].note = 'nie pasuje do zadnego zbioru';
+        else if (rows[m].small === 0)
+            rows[m].note = `nie obejmuje malych zbiorow (duzych: ${rows[m].large})`;
+        else {
+            const by = coveredBy(m, of[m], refers).map(b => masks[b]);
+            const more = by.length > MAX_NOTE ? ` i ${by.length - MAX_NOTE} innych` : '';
+            rows[m].note = `w danych jej male zbiory obejmuja: ${by.slice(0, MAX_NOTE).join(', ')}${more}`;
+        }
+    }
+    // ---- pary ze wspolnymi zbiorami
+    const pairs = new Map();
+    for (const g of groups) {
+        for (let i = 0; i < g.ids.length; i++) {
+            for (let j = i + 1; j < g.ids.length; j++) {
+                const key = g.ids[i] * masks.length + g.ids[j];
+                let o = pairs.get(key);
+                if (!o)
+                    pairs.set(key, o = { a: masks[g.ids[i]], b: masks[g.ids[j]], small: 0, large: 0, partA: 0, partB: 0 });
+                o.small += g.small;
+                o.large += g.large;
+            }
+        }
+    }
+    for (const [key, o] of pairs) {
+        o.partA = o.small / Math.max(1, rows[Math.floor(key / masks.length)].small);
+        o.partB = o.small / Math.max(1, rows[key % masks.length].small);
+    }
+    const overlaps = [...pairs].sort(([ka, a], [kb, b]) => b.small - a.small || b.large - a.large || ka - kb).map(([, o]) => o);
+    return {
+        small: pos.length,
+        large: neg.length,
+        smallKb,
+        rows,
+        total: sumUp('RAZEM', groups),
+        after: sumUp('RAZEM PO USUNIECIU', groups.filter(g => g.ids.some(m => left[m]))),
+        overlaps,
+    };
+}
+/** Maski (poza m), ktore razem obejmuja male zbiory maski m - zachlannie, od obejmujacej najwiecej. */
+function coveredBy(m, groups, allowed) {
+    let open = groups.filter(g => g.small > 0);
+    const out = [];
+    while (open.length) {
+        const sum = new Map();
+        for (const g of open)
+            for (const b of g.ids)
+                if (b !== m && allowed(b))
+                    sum.set(b, (sum.get(b) ?? 0) + g.small);
+        const best = [...sum].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0][0];
+        out.push(best);
+        open = open.filter(g => !g.ids.includes(best));
+    }
+    return out;
+}
+};
+
 // ==================== src/auto-mine.ts
 MODULES["./auto-mine"] = function (exports, require, module) {
 "use strict";
@@ -1836,87 +2334,6 @@ function readStore(file, fields, tick = () => { }, today = new Date(), chunk = C
 }
 };
 
-// ==================== src/mask.ts
-MODULES["./mask"] = function (exports, require, module) {
-"use strict";
-/**
- * Maski nazw zbiorow jak w FILTLIST rutyn ACS:
- *   %   - dokladnie jeden znak w kwalifikatorze
- *   *   - zero lub wiecej znakow w kwalifikatorze; samo "*" = dokladnie jeden kwalifikator
- *   **  - zero lub wiecej kwalifikatorow (tylko jako caly kwalifikator)
- * Np. PROD.TMP.**, *.**.LOAD, PROD.D%%%%%%.LIST, SYS1.LINKLIB (literal).
- */
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.MaskError = void 0;
-exports.parseMask = parseMask;
-exports.qualMatches = qualMatches;
-exports.matchQuals = matchQuals;
-exports.matches = matches;
-exports.digitMask = digitMask;
-const QUAL_CHARS = /^[A-Z0-9#@$*%{-]{1,8}$/;
-class MaskError extends Error {
-}
-exports.MaskError = MaskError;
-/** Sprawdza i rozbija maske; rzuca MaskError z opisem bledu. */
-function parseMask(text) {
-    const t = text.trim().toUpperCase();
-    if (t.length === 0 || t.length > 44)
-        throw new MaskError(`maska "${text}": dlugosc 1-44 znaki`);
-    const quals = t.split('.');
-    for (const q of quals) {
-        if (q === '**')
-            continue;
-        if (!QUAL_CHARS.test(q))
-            throw new MaskError(`maska "${text}": niepoprawny kwalifikator "${q}"`);
-        if (q.includes('**'))
-            throw new MaskError(`maska "${text}": "**" tylko jako caly kwalifikator`);
-    }
-    return { text: t, quals, generic: /[*%]/.test(t) };
-}
-const qualRegexCache = new Map();
-function qualRegex(q) {
-    let re = qualRegexCache.get(q);
-    if (!re) {
-        const body = q === '*' ? '.+' : q.replace(/[$#@{-]/g, c => '\\' + c).replace(/\*/g, '.*').replace(/%/g, '.');
-        re = new RegExp('^' + body + '$');
-        qualRegexCache.set(q, re);
-    }
-    return re;
-}
-/** Czy kwalifikator nazwy pasuje do kwalifikatora maski (bez '**'). */
-function qualMatches(maskQual, qual) {
-    if (!/[*%]/.test(maskQual))
-        return maskQual === qual;
-    return qualRegex(maskQual).test(qual);
-}
-/** Czy nazwa (rozbita na kwalifikatory) pasuje do maski. */
-function matchQuals(mask, dsn, mi = 0, di = 0) {
-    while (mi < mask.length) {
-        const m = mask[mi];
-        if (m === '**') {
-            // '**' = zero lub wiecej kwalifikatorow
-            for (let k = di; k <= dsn.length; k++) {
-                if (matchQuals(mask, dsn, mi + 1, k))
-                    return true;
-            }
-            return false;
-        }
-        if (di >= dsn.length || !qualMatches(m, dsn[di]))
-            return false;
-        mi++;
-        di++;
-    }
-    return di === dsn.length;
-}
-function matches(mask, dsn) {
-    return matchQuals(mask.quals, dsn.split('.'));
-}
-/** Cyfry kwalifikatora -> '%' (np. D241113 -> D%%%%%%); null, gdy brak cyfr. */
-function digitMask(qual) {
-    return /[0-9]/.test(qual) ? qual.replace(/[0-9]/g, '%') : null;
-}
-};
-
 // ==================== src/auto.ts
 MODULES["./auto"] = function (exports, require, module) {
 "use strict";
@@ -1927,11 +2344,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseConds = parseConds;
 exports.parseHead = parseHead;
 exports.search = search;
+exports.check = check;
 exports.report = report;
 exports.toCsv = toCsv;
+exports.checkReport = checkReport;
+exports.checkCsv = checkCsv;
 exports.main = main;
 /**
- * Szukanie masek DSN wg kryteriow z CSV DCOLLECT (job ACMCSV). Wersja jednoplikowa: acs-masks-auto.cjs (bez npm).
+ * Szukanie masek DSN wg kryteriow z CSV DCOLLECT (job ACMCSV) i sprawdzanie gotowej listy masek. Wersja jednoplikowa: acs-masks-auto.cjs (bez npm).
  *
  *   node acs-masks-auto.cjs DCOLLECT.CSV [opcje]
  *
@@ -1942,7 +2362,12 @@ exports.main = main;
  *   --min-purity X     najmniejsza czystosc maski 0-1: male / (male + duze)      (domyslnie 0.95)
  *   --min-count N      ile malych, nieobjetych wczesniejszymi maskami, ma dodac maska (domyslnie 10)
  *   --max-masks N      najwiecej masek                                            (domyslnie 100)
+ *   --unit MB|GB|TB    jednostka sumy alokacji                                   (domyslnie GB)
  *   --out PLIK         maski takze do pliku CSV (separator ;)
+ *
+ *   --masks PLIK       zamiast szukac: sprawdza maski z pliku (po jednej w linii albo po przecinku; CSV z --out tez):
+ *                      liczby dla kazdej maski, pokrycie wszystkich razem, maski zbedne, pary nakladajace sie.
+ *                      Opcje --min-... i --max-masks nie maja wtedy znaczenia; --prefix zaweza zakres zbiorow.
  *
  * WARUNKI: pole, operator (= != < <= > >=), wartosc; kilka warunkow po spacji = wszystkie naraz (AND).
  *   Wartosc tekstowa po = / != moze byc maska: dsn=PROD.**  sg=SGEAV*
@@ -1951,10 +2376,11 @@ exports.main = main;
  *
  * Postep: pasek na stderr (przekierowane do pliku: jedna linia na etap).
  * Generacje GDG maja nazwe bez GnnnnVnn - tak widzi ja ACS w &DSN. Zbior wielowolumenowy liczony raz.
- * MB = suma alokacji. Kod wyjscia: 0 - OK, 1 - blad.
+ * Malych / Duzych GB = suma alokacji (1 GB = 1024 MB). Kod wyjscia: 0 - OK, 1 - blad.
  */
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_util_1 = require("node:util");
+const auto_check_1 = require("./auto-check");
 const auto_mine_1 = require("./auto-mine");
 const auto_read_1 = require("./auto-read");
 const auto_util_1 = require("./auto-util");
@@ -1963,7 +2389,8 @@ const mask_1 = require("./mask");
 const STDIO = { out: t => process.stdout.write(t), err: t => process.stderr.write(t), tty: process.stderr.isTTY };
 const USAGE = 'Uzycie: node acs-masks-auto.cjs DCOLLECT.CSV [--scope "sms=true dsorg=PS"]\n'
     + '        [--when "allocTrk=315 usedTrk<=3"] [--prefix "ABC%.**"] [--min-purity 0.95]\n'
-    + '        [--min-count 10] [--max-masks 100] [--out maski.csv]\n'
+    + '        [--min-count 10] [--max-masks 100] [--unit GB] [--out maski.csv]\n'
+    + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --masks maski.txt [--scope ...] [--when ...] [--unit GB] [--out wynik.csv]\n'
     + `Pola liczbowe: ${auto_read_1.NUM.join(' ')}\n     tekstowe: ${auto_read_1.STR.join(' ')}\n     true / false: ${auto_read_1.BOOL.join(' ')}\n`
     + 'Operatory: = != < <= > >=; kilka warunkow po spacji = wszystkie naraz\n';
 class ArgError extends Error {
@@ -2103,20 +2530,50 @@ function num(v, name, min, max, int) {
     return x;
 }
 function search(file, scope, when, opt, bar, warn = () => { }) {
+    const st = load(file, scope, when, bar, warn);
+    const tick = bar.stage('Kryteria i maski');
+    const { pos, neg } = classify(st, scope, when, opt.head, part => tick(0.1 * part));
+    const res = (0, auto_mine_1.mine)({ names: st.names, allocKb: st.allocKb, pos, neg }, opt, {
+        candidates: part => tick(0.1 + 0.9 * part, `malych: ${(0, auto_util_1.thousands)(pos.length)}`),
+        negatives: candidates => {
+            bar.done(`malych: ${(0, auto_util_1.thousands)(pos.length)}, masek do sprawdzenia: ${(0, auto_util_1.thousands)(candidates)}`);
+            return bar.stage('Zbiory duze');
+        },
+        select: () => {
+            bar.done(`duzych: ${(0, auto_util_1.thousands)(neg.length)}`);
+            return bar.stage('Wybor masek');
+        },
+    });
+    bar.done(`wybrano: ${res.masks.length}`);
+    return { inScope: pos.length + neg.length, small: pos.length, masks: res.masks, total: res.total };
+}
+/** Sprawdzenie gotowej listy masek. */
+function check(file, scope, when, masks, head, bar, warn = () => { }) {
+    const st = load(file, scope, when, bar, warn);
+    const tick = bar.stage('Sprawdzanie masek');
+    const { pos, neg } = classify(st, scope, when, head, part => tick(0.2 * part));
+    const res = (0, auto_check_1.checkMasks)({ names: st.names, allocKb: st.allocKb, pos, neg }, masks, part => tick(0.2 + 0.8 * part));
+    bar.done(`masek: ${masks.length}, malych: ${(0, auto_util_1.thousands)(pos.length)}, duzych: ${(0, auto_util_1.thousands)(neg.length)}`);
+    return res;
+}
+function load(file, scope, when, bar, warn) {
     const st = (0, auto_read_1.readStore)(file, new Set([...scope.fields, ...when.fields]), bar.stage('Czytanie CSV'));
     bar.done(`${(0, auto_util_1.thousands)(st.records)} rekordow, ${(0, auto_util_1.thousands)(st.sets)} zbiorow`);
     for (const w of st.warnings)
         warn(`Uwaga: ${w}\n`);
-    const tick = bar.stage('Kryteria i maski');
+    return st;
+}
+/** Wiersze zbiorow w zakresie: male (kryterium) i duze. */
+function classify(st, scope, when, head, tick) {
     const inScope = scope.compile(st);
     const small = when.compile(st);
-    const inHead = opt.head?.length ? headTest(st.names, opt.head) : () => true;
+    const inHead = head?.length ? headTest(st.names, head) : () => true;
     const kind = new Uint8Array(st.rows);
     let np = 0;
     let nn = 0;
     for (let r = 0; r < st.rows; r++) {
         if ((r & 0xffff) === 0)
-            tick(0.1 * (r / st.rows));
+            tick(r / st.rows);
         if (st.dead[r] || !inHead(r) || !inScope(r))
             continue;
         if (small(r)) {
@@ -2136,29 +2593,21 @@ function search(file, scope, when, opt, bar, warn = () => { }) {
         else if (kind[r] === 2)
             neg[n++] = r;
     }
-    const res = (0, auto_mine_1.mine)({ names: st.names, allocKb: st.allocKb, pos, neg }, opt, {
-        candidates: part => tick(0.1 + 0.9 * part, `malych: ${(0, auto_util_1.thousands)(np)}`),
-        negatives: candidates => {
-            bar.done(`malych: ${(0, auto_util_1.thousands)(np)}, masek do sprawdzenia: ${(0, auto_util_1.thousands)(candidates)}`);
-            return bar.stage('Zbiory duze');
-        },
-        select: () => {
-            bar.done(`duzych: ${(0, auto_util_1.thousands)(nn)}`);
-            return bar.stage('Wybor masek');
-        },
-    });
-    bar.done(`wybrano: ${res.masks.length}`);
-    return { inScope: np + nn, small: np, masks: res.masks, total: res.total };
+    return { pos, neg };
 }
 const pct = (x) => `${(Math.floor(x * 1000) / 10).toFixed(1).replace('.', ',')}%`;
-const mb = (x) => String(Math.round(x / 1024));
-function report(r) {
-    const line = (c) => c[0].padEnd(44) + c[1].padStart(9) + c[2].padStart(9) + c[3].padStart(9)
-        + c[4].padStart(12) + c[5].padStart(12);
-    const row = (m) => line([m.text, String(m.small), String(m.large), pct(m.purity), mb(m.smallKb), mb(m.largeKb)]);
+/** Jednostka sumy alokacji: dzielnik KB i liczba miejsc po przecinku. */
+const UNITS = { MB: [1024, 0], GB: [1024 ** 2, 2], TB: [1024 ** 3, 3] };
+const inUnit = (kb, u) => (kb / UNITS[u][0]).toFixed(UNITS[u][1]).replace('.', ',');
+const line = (c) => c[0].padEnd(44) + c[1].padStart(9) + c[2].padStart(9) + c[3].padStart(9)
+    + c.slice(4).map(x => x.padStart(12)).join('');
+const cells = (m, u) => [m.text, String(m.small), String(m.large), pct(m.purity), inUnit(m.smallKb, u), inUnit(m.largeKb, u)];
+const heads = (u) => ['Maska', 'Malych', 'Duzych', 'Purity', `Malych ${u}`, `Duzych ${u}`];
+function report(r, u = 'GB') {
+    const row = (m) => line(cells(m, u));
     const out = [`Zbiorow w zakresie: ${r.inScope}, malych: ${r.small}, duzych: ${r.inScope - r.small}`, ''];
     if (r.masks.length) {
-        out.push(line(['Maska', 'Malych', 'Duzych', 'Purity', 'Malych MB', 'Duzych MB']), ...r.masks.map(row), row(r.total), '');
+        out.push(line(heads(u)), ...r.masks.map(row), row(r.total), '');
         out.push(`Masek: ${r.masks.length}; obejmuja ${pct(r.total.small / r.small)} malych (${r.total.small} z ${r.small})`);
     }
     else {
@@ -2166,11 +2615,50 @@ function report(r) {
     }
     return out.join('\n') + '\n';
 }
-function toCsv(r) {
-    return ['maska;malych;duzych;purity;malych_mb;duzych_mb', ...r.masks.map(m => [m.text, m.small, m.large, pct(m.purity).slice(0, -1), mb(m.smallKb), mb(m.largeKb)].join(';'))].join('\n') + '\n';
+const csvHead = (u) => `maska;malych;duzych;purity;malych_${u};duzych_${u}`.toLowerCase();
+const csvCells = (m, u) => [m.text, m.small, m.large, pct(m.purity).slice(0, -1), inUnit(m.smallKb, u), inUnit(m.largeKb, u)];
+function toCsv(r, u = 'GB') {
+    return [csvHead(u), ...r.masks.map(m => csvCells(m, u).join(';'))].join('\n') + '\n';
+}
+const MAX_PAIRS = 50;
+const part = (a, b) => pct(b ? a / b : 0);
+function checkReport(r, u = 'GB') {
+    const out = [`Zbiorow w zakresie: ${r.small + r.large}, malych: ${r.small}, duzych: ${r.large}`, '',
+        line([...heads(u), 'Tylko ta'])];
+    for (const m of r.rows)
+        out.push(line([...cells(m, u), String(m.only)]) + (m.state ? `   ${m.state}` : ''));
+    out.push(line(cells(r.total, u)), '');
+    out.push(`Masek: ${r.rows.length}; obejmuja ${part(r.total.small, r.small)} malych (${r.total.small} z ${r.small}), `
+        + `${part(r.total.smallKb, r.smallKb)} ich alokacji (${inUnit(r.total.smallKb, u)} z ${inUnit(r.smallKb, u)} ${u})`, '');
+    const drop = r.rows.filter(m => m.state === 'usun');
+    const instead = r.rows.filter(m => m.state === 'zamiast');
+    const why = (m) => `  ${m.text.padEnd(44)}${m.note}`;
+    out.push(`Maski zbedne: ${drop.length + instead.length}`);
+    if (drop.length) {
+        out.push('', 'usun - mozna usunac wszystkie naraz, pokrycie malych sie nie zmieni:', ...drop.map(why), `  Po usunieciu: masek ${r.rows.length - drop.length}, malych ${r.after.small}, duzych ${r.total.large} -> ${r.after.large}, `
+            + `purity ${pct(r.total.purity)} -> ${pct(r.after.purity)}`);
+    }
+    if (instead.length)
+        out.push('', 'zamiast - zbedne teraz, ale potrzebne po usunieciu powyzszych:', ...instead.map(why));
+    out.push('', `Pary masek ze wspolnymi zbiorami: ${r.overlaps.length}`);
+    if (r.overlaps.length) {
+        out.push('', 'Maska 1'.padEnd(44) + ' ' + 'Maska 2'.padEnd(44) + 'Malych'.padStart(9) + 'Duzych'.padStart(9)
+            + '% mal. 1'.padStart(10) + '% mal. 2'.padStart(10));
+        for (const o of r.overlaps.slice(0, MAX_PAIRS)) {
+            out.push(o.a.padEnd(44) + ' ' + o.b.padEnd(44) + String(o.small).padStart(9) + String(o.large).padStart(9)
+                + pct(o.partA).padStart(10) + pct(o.partB).padStart(10));
+        }
+        if (r.overlaps.length > MAX_PAIRS)
+            out.push(`... i jeszcze ${r.overlaps.length - MAX_PAIRS} par (mniej wspolnych zbiorow)`);
+    }
+    return out.join('\n') + '\n';
+}
+function checkCsv(r, u = 'GB') {
+    return [`${csvHead(u)};tylko_ta;stan;uwagi`, ...r.rows.map(m => [...csvCells(m, u), m.only, m.state, m.note].join(';'))].join('\n') + '\n';
 }
 function main(argv, io = STDIO) {
-    const bar = new auto_util_1.Progress(4, io.err, io.tty ?? false, () => process.stderr.columns || 80);
+    let bar = null;
+    const progress = (stages) => bar = new auto_util_1.Progress(stages, io.err, io.tty ?? false, () => process.stderr.columns || 80);
     try {
         const { values: o, positionals } = (0, node_util_1.parseArgs)({
             args: argv,
@@ -2182,6 +2670,8 @@ function main(argv, io = STDIO) {
                 'min-purity': { type: 'string', default: '0.95' },
                 'min-count': { type: 'string', default: '10' },
                 'max-masks': { type: 'string', default: '100' },
+                masks: { type: 'string' },
+                unit: { type: 'string', default: 'GB' },
                 out: { type: 'string', short: 'o' },
                 help: { type: 'boolean', short: 'h', default: false },
             },
@@ -2202,20 +2692,36 @@ function main(argv, io = STDIO) {
             maxMasks: num(o['max-masks'], 'max-masks', 1, 1e6, true),
             head: o.prefix === undefined ? [] : parseHead(o.prefix),
         };
-        const r = search(positionals[0], scope, when, opt, bar, io.err);
+        const unit = o.unit.toUpperCase();
+        if (!Object.hasOwn(UNITS, unit))
+            throw new ArgError(`--unit: "${o.unit}" - dozwolone: ${Object.keys(UNITS).join(' ')}`);
+        const save = (text) => {
+            if (!o.out)
+                return;
+            node_fs_1.default.writeFileSync(o.out, text);
+            io.err(`Zapisano: ${o.out}\n`);
+        };
+        if (o.masks !== undefined) {
+            const list = (0, auto_check_1.parseMaskList)(node_fs_1.default.readFileSync(o.masks, 'latin1').replace(/^\xef\xbb\xbf/, ''), o.masks);
+            for (const w of list.warnings)
+                io.err(`Uwaga: ${w}\n`);
+            const c = check(positionals[0], scope, when, list.masks, opt.head, progress(2), io.err);
+            io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek nazw: ${opt.head.join('.')}` : ''}   maski: ${o.masks}\n`);
+            io.out(checkReport(c, unit));
+            save(checkCsv(c, unit));
+            return 0;
+        }
+        const r = search(positionals[0], scope, when, opt, progress(4), io.err);
         const start = opt.head.length ? `   poczatek masek: ${opt.head.join('.')}` : '';
         io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${start}   min. purity: ${pct(opt.minPurity)}, min. zbiorow: ${opt.minCount}\n`);
-        io.out(report(r));
-        if (o.out) {
-            node_fs_1.default.writeFileSync(o.out, toCsv(r));
-            io.err(`Zapisano: ${o.out}\n`);
-        }
+        io.out(report(r, unit));
+        save(toCsv(r, unit));
         return 0;
     }
     catch (err) {
-        bar.abort();
+        bar?.abort();
         const e = err;
-        if (e instanceof ArgError || e instanceof dataset_1.CsvError || e instanceof mask_1.MaskError) {
+        if (e instanceof ArgError || e instanceof dataset_1.CsvError || e instanceof mask_1.MaskError || e instanceof auto_check_1.MaskListError) {
             io.err(`Blad: ${e.message}\n`);
         }
         else if (e.code?.startsWith('ERR_PARSE_ARGS')) {
