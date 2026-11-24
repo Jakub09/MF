@@ -13,9 +13,10 @@
  *   --unit MB|GB|TB    jednostka sumy alokacji                                   (domyslnie GB)
  *   --out PLIK         maski takze do pliku CSV (separator ;)
  *
- *   --masks PLIK       zamiast szukac: sprawdza maski z pliku (po jednej w linii albo po przecinku; CSV z --out tez):
- *                      liczby dla kazdej maski, pokrycie wszystkich razem, maski zbedne, pary nakladajace sie.
- *                      Opcje --min-... i --max-masks nie maja wtedy znaczenia; --prefix zaweza zakres zbiorow.
+ *   --masks PLIK       sprawdza maski z pliku (po jednej w linii albo po przecinku; CSV z --out tez): liczby dla kazdej
+ *                      maski, pokrycie wszystkich razem, maski zbedne, pary nakladajace sie; potem szuka nowych masek
+ *                      dla malych zbiorow, ktorych lista nie obejmuje (zbiory objete lista, male i duze, sa pominiete).
+ *                      --prefix: poczatek nowych masek, zaweza tez zbiory, na ktorych sprawdzana jest lista.
  *
  * WARUNKI: pole, operator (= != < <= > >=), wartosc; kilka warunkow po spacji = wszystkie naraz (AND).
  *   Wartosc tekstowa po = / != moze byc maska: dsn=PROD.**  sg=SGEAV*
@@ -47,7 +48,8 @@ const STDIO: Io = { out: t => process.stdout.write(t), err: t => process.stderr.
 const USAGE = 'Uzycie: node acs-masks-auto.cjs DCOLLECT.CSV [--scope "sms=true dsorg=PS"]\n'
     + '        [--when "allocTrk=315 usedTrk<=3"] [--prefix "ABC%.**"] [--min-purity 0.95]\n'
     + '        [--min-count 10] [--max-masks 100] [--unit GB] [--out maski.csv]\n'
-    + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --masks maski.txt [--scope ...] [--when ...] [--unit GB] [--out wynik.csv]\n'
+    + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --masks maski.txt [opcje jak wyzej]\n'
+    + '         (sprawdza liste i szuka masek dla zbiorow, ktorych ona nie obejmuje)\n'
     + `Pola liczbowe: ${NUM.join(' ')}\n     tekstowe: ${STR.join(' ')}\n     true / false: ${BOOL.join(' ')}\n`
     + 'Operatory: = != < <= > >=; kilka warunkow po spacji = wszystkie naraz\n';
 
@@ -200,8 +202,12 @@ export function search(file: string, scope: Conds, when: Conds, opt: MineOptions
     const st = load(file, scope, when, bar, warn);
     const tick = bar.stage('Kryteria i maski');
     const { pos, neg } = classify(st, scope, when, opt.head, part => tick(0.1 * part));
+    return mineRows(st, pos, neg, opt, bar, (part, info) => tick(0.1 + 0.9 * part, info));
+}
+
+function mineRows(st: Store, pos: Int32Array, neg: Int32Array, opt: MineOptions, bar: Progress, tick: Tick): SearchResult {
     const res = mine({ names: st.names, allocKb: st.allocKb, pos, neg }, opt, {
-        candidates: part => tick(0.1 + 0.9 * part, `malych: ${thousands(pos.length)}`),
+        candidates: part => tick(part, `malych: ${thousands(pos.length)}`),
         negatives: candidates => {
             bar.done(`malych: ${thousands(pos.length)}, masek do sprawdzenia: ${thousands(candidates)}`);
             return bar.stage('Zbiory duze');
@@ -215,15 +221,16 @@ export function search(file: string, scope: Conds, when: Conds, opt: MineOptions
     return { inScope: pos.length + neg.length, small: pos.length, masks: res.masks, total: res.total };
 }
 
-/** Sprawdzenie gotowej listy masek. */
-export function check(file: string, scope: Conds, when: Conds, masks: string[], head: string[], bar: Progress,
-    warn: (t: string) => void = () => {}): CheckResult {
+/** Sprawdzenie gotowej listy masek, a potem szukanie masek dla zbiorow, ktorych lista nie obejmuje. */
+export function check(file: string, scope: Conds, when: Conds, masks: string[], opt: MineOptions, bar: Progress,
+    warn: (t: string) => void = () => {}): { list: CheckResult; fresh: SearchResult } {
     const st = load(file, scope, when, bar, warn);
     const tick = bar.stage('Sprawdzanie masek');
-    const { pos, neg } = classify(st, scope, when, head, part => tick(0.2 * part));
-    const res = checkMasks({ names: st.names, allocKb: st.allocKb, pos, neg }, masks, part => tick(0.2 + 0.8 * part));
+    const { pos, neg } = classify(st, scope, when, opt.head, part => tick(0.2 * part));
+    const list = checkMasks({ names: st.names, allocKb: st.allocKb, pos, neg }, masks, part => tick(0.2 + 0.8 * part));
     bar.done(`masek: ${masks.length}, malych: ${thousands(pos.length)}, duzych: ${thousands(neg.length)}`);
-    return res;
+    const fresh = mineRows(st, list.rest.pos, list.rest.neg, opt, bar, bar.stage('Nowe maski'));
+    return { list, fresh };
 }
 
 function load(file: string, scope: Conds, when: Conds, bar: Progress, warn: (t: string) => void): Store {
@@ -274,13 +281,34 @@ const cells = (m: MaskRow, u: Unit) => [m.text, String(m.small), String(m.large)
 const heads = (u: Unit) => ['Maska', 'Malych', 'Duzych', 'Purity', `Malych ${u}`, `Duzych ${u}`];
 
 export function report(r: SearchResult, u: Unit = 'GB'): string {
+    const out = [`Zbiorow w zakresie: ${r.inScope}, malych: ${r.small}, duzych: ${r.inScope - r.small}`, '', ...found(r, u)];
+    return out.join('\n') + '\n';
+}
+
+function found(r: SearchResult, u: Unit): string[] {
     const row = (m: MaskRow) => line(cells(m, u));
-    const out = [`Zbiorow w zakresie: ${r.inScope}, malych: ${r.small}, duzych: ${r.inScope - r.small}`, ''];
+    const out: string[] = [];
     if (r.masks.length) {
         out.push(line(heads(u)), ...r.masks.map(row), row(r.total), '');
         out.push(`Masek: ${r.masks.length}; obejmuja ${pct(r.total.small / r.small)} malych (${r.total.small} z ${r.small})`);
     } else {
         out.push('Brak masek dla tych progow (--min-purity, --min-count).');
+    }
+    return out;
+}
+
+/** Nowe maski, dla zbiorow nieobjetych lista. */
+export function freshReport(list: CheckResult, r: SearchResult, u: Unit = 'GB'): string {
+    const out = ['', `Nowe maski - tylko dla zbiorow, ktorych nie obejmuje zadna maska z listy (malych: ${r.small}, duzych: ${r.inScope - r.small})`, ''];
+    if (r.small === 0) out.push('Lista obejmuje wszystkie male zbiory.');
+    else out.push(...found(r, u));
+    if (r.masks.length) {
+        // zbiory objete lista i nowymi maskami sa rozlaczne
+        const small = list.total.small + r.total.small;
+        const large = list.total.large + r.total.large;
+        const kb = list.total.smallKb + r.total.smallKb;
+        out.push(`Lista i nowe maski razem: ${part(small, list.small)} malych (${small} z ${list.small}), `
+            + `${part(kb, list.smallKb)} ich alokacji, duzych ${large}, purity ${part(small, small + large)}`);
     }
     return out.join('\n') + '\n';
 }
@@ -327,8 +355,11 @@ export function checkReport(r: CheckResult, u: Unit = 'GB'): string {
     return out.join('\n') + '\n';
 }
 
-export function checkCsv(r: CheckResult, u: Unit = 'GB'): string {
-    return [`${csvHead(u)};tylko_ta;stan;uwagi`, ...r.rows.map(m => [...csvCells(m, u), m.only, m.state, m.note].join(';'))].join('\n') + '\n';
+/** Maski z listy i nowe (stan "nowa"); pierwsza kolumna nadaje sie na nastepna liste. */
+export function checkCsv(list: CheckResult, fresh: SearchResult, u: Unit = 'GB'): string {
+    return [`${csvHead(u)};tylko_ta;stan;uwagi`,
+        ...list.rows.map(m => [...csvCells(m, u), m.only, m.state, m.note].join(';')),
+        ...fresh.masks.map(m => [...csvCells(m, u), '', 'nowa', ''].join(';'))].join('\n') + '\n';
 }
 
 export function main(argv: string[], io: Io = STDIO): number {
@@ -377,10 +408,11 @@ export function main(argv: string[], io: Io = STDIO): number {
         if (o.masks !== undefined) {
             const list = parseMaskList(fs.readFileSync(o.masks, 'latin1').replace(/^\xef\xbb\xbf/, ''), o.masks);
             for (const w of list.warnings) io.err(`Uwaga: ${w}\n`);
-            const c = check(positionals[0], scope, when, list.masks, opt.head, progress(2), io.err);
-            io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek nazw: ${opt.head.join('.')}` : ''}   maski: ${o.masks}\n`);
-            io.out(checkReport(c, unit));
-            save(checkCsv(c, unit));
+            const c = check(positionals[0], scope, when, list.masks, opt, progress(5), io.err);
+            io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek masek: ${opt.head.join('.')}` : ''}   maski: ${o.masks}   min. purity: ${pct(opt.minPurity)}, min. zbiorow: ${opt.minCount}\n`);
+            io.out(checkReport(c.list, unit));
+            io.out(freshReport(c.list, c.fresh, unit));
+            save(checkCsv(c.list, c.fresh, unit));
             return 0;
         }
         const r = search(positionals[0], scope, when, opt, progress(4), io.err);

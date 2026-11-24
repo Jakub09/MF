@@ -304,6 +304,8 @@ export interface CheckResult {
     after: MaskRow;
     /** pary masek ze wspolnymi zbiorami, od najwiekszej liczby malych */
     overlaps: Overlap[];
+    /** wiersze zbiorow, ktorych nie obejmuje zadna maska */
+    rest: { pos: Int32Array; neg: Int32Array };
 }
 
 export interface CheckInput {
@@ -348,18 +350,26 @@ export function checkMasks(input: CheckInput, masks: string[], tick: Tick): Chec
     };
     const count = pos.length + neg.length;
     let smallKb = 0;
+    const restPos = new IntList();
+    const restNeg = new IntList();
     for (let x = 0; x < pos.length; x++) {
         if ((x & 0x3fff) === 0) tick(x / count);
         smallKb += allocKb[pos[x]];
         const g = groupOf(pos[x]);
-        if (!g) continue;
+        if (!g) {
+            restPos.push(pos[x]);
+            continue;
+        }
         g.small++;
         g.smallKb += allocKb[pos[x]];
     }
     for (let x = 0; x < neg.length; x++) {
         if ((x & 0x3fff) === 0) tick((pos.length + x) / count);
         const g = groupOf(neg[x]);
-        if (!g) continue;
+        if (!g) {
+            restNeg.push(neg[x]);
+            continue;
+        }
         g.large++;
         g.largeKb += allocKb[neg[x]];
     }
@@ -432,6 +442,7 @@ export function checkMasks(input: CheckInput, masks: string[], tick: Tick): Chec
         total: sumUp('RAZEM', groups),
         after: sumUp('RAZEM PO USUNIECIU', groups.filter(g => g.ids.some(m => left[m]))),
         overlaps,
+        rest: { pos: restPos.a.slice(0, restPos.n), neg: restNeg.a.slice(0, restNeg.n) },
     };
 }
 

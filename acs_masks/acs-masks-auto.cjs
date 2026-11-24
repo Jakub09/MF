@@ -646,13 +646,17 @@ function checkMasks(input, masks, tick) {
     };
     const count = pos.length + neg.length;
     let smallKb = 0;
+    const restPos = new auto_util_1.IntList();
+    const restNeg = new auto_util_1.IntList();
     for (let x = 0; x < pos.length; x++) {
         if ((x & 0x3fff) === 0)
             tick(x / count);
         smallKb += allocKb[pos[x]];
         const g = groupOf(pos[x]);
-        if (!g)
+        if (!g) {
+            restPos.push(pos[x]);
             continue;
+        }
         g.small++;
         g.smallKb += allocKb[pos[x]];
     }
@@ -660,8 +664,10 @@ function checkMasks(input, masks, tick) {
         if ((x & 0x3fff) === 0)
             tick((pos.length + x) / count);
         const g = groupOf(neg[x]);
-        if (!g)
+        if (!g) {
+            restNeg.push(neg[x]);
             continue;
+        }
         g.large++;
         g.largeKb += allocKb[neg[x]];
     }
@@ -736,6 +742,7 @@ function checkMasks(input, masks, tick) {
         total: sumUp('RAZEM', groups),
         after: sumUp('RAZEM PO USUNIECIU', groups.filter(g => g.ids.some(m => left[m]))),
         overlaps,
+        rest: { pos: restPos.a.slice(0, restPos.n), neg: restNeg.a.slice(0, restNeg.n) },
     };
 }
 /** Maski (poza m), ktore razem obejmuja male zbiory maski m - zachlannie, od obejmujacej najwiecej. */
@@ -2346,6 +2353,7 @@ exports.parseHead = parseHead;
 exports.search = search;
 exports.check = check;
 exports.report = report;
+exports.freshReport = freshReport;
 exports.toCsv = toCsv;
 exports.checkReport = checkReport;
 exports.checkCsv = checkCsv;
@@ -2365,9 +2373,10 @@ exports.main = main;
  *   --unit MB|GB|TB    jednostka sumy alokacji                                   (domyslnie GB)
  *   --out PLIK         maski takze do pliku CSV (separator ;)
  *
- *   --masks PLIK       zamiast szukac: sprawdza maski z pliku (po jednej w linii albo po przecinku; CSV z --out tez):
- *                      liczby dla kazdej maski, pokrycie wszystkich razem, maski zbedne, pary nakladajace sie.
- *                      Opcje --min-... i --max-masks nie maja wtedy znaczenia; --prefix zaweza zakres zbiorow.
+ *   --masks PLIK       sprawdza maski z pliku (po jednej w linii albo po przecinku; CSV z --out tez): liczby dla kazdej
+ *                      maski, pokrycie wszystkich razem, maski zbedne, pary nakladajace sie; potem szuka nowych masek
+ *                      dla malych zbiorow, ktorych lista nie obejmuje (zbiory objete lista, male i duze, sa pominiete).
+ *                      --prefix: poczatek nowych masek, zaweza tez zbiory, na ktorych sprawdzana jest lista.
  *
  * WARUNKI: pole, operator (= != < <= > >=), wartosc; kilka warunkow po spacji = wszystkie naraz (AND).
  *   Wartosc tekstowa po = / != moze byc maska: dsn=PROD.**  sg=SGEAV*
@@ -2390,7 +2399,8 @@ const STDIO = { out: t => process.stdout.write(t), err: t => process.stderr.writ
 const USAGE = 'Uzycie: node acs-masks-auto.cjs DCOLLECT.CSV [--scope "sms=true dsorg=PS"]\n'
     + '        [--when "allocTrk=315 usedTrk<=3"] [--prefix "ABC%.**"] [--min-purity 0.95]\n'
     + '        [--min-count 10] [--max-masks 100] [--unit GB] [--out maski.csv]\n'
-    + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --masks maski.txt [--scope ...] [--when ...] [--unit GB] [--out wynik.csv]\n'
+    + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --masks maski.txt [opcje jak wyzej]\n'
+    + '         (sprawdza liste i szuka masek dla zbiorow, ktorych ona nie obejmuje)\n'
     + `Pola liczbowe: ${auto_read_1.NUM.join(' ')}\n     tekstowe: ${auto_read_1.STR.join(' ')}\n     true / false: ${auto_read_1.BOOL.join(' ')}\n`
     + 'Operatory: = != < <= > >=; kilka warunkow po spacji = wszystkie naraz\n';
 class ArgError extends Error {
@@ -2533,8 +2543,11 @@ function search(file, scope, when, opt, bar, warn = () => { }) {
     const st = load(file, scope, when, bar, warn);
     const tick = bar.stage('Kryteria i maski');
     const { pos, neg } = classify(st, scope, when, opt.head, part => tick(0.1 * part));
+    return mineRows(st, pos, neg, opt, bar, (part, info) => tick(0.1 + 0.9 * part, info));
+}
+function mineRows(st, pos, neg, opt, bar, tick) {
     const res = (0, auto_mine_1.mine)({ names: st.names, allocKb: st.allocKb, pos, neg }, opt, {
-        candidates: part => tick(0.1 + 0.9 * part, `malych: ${(0, auto_util_1.thousands)(pos.length)}`),
+        candidates: part => tick(part, `malych: ${(0, auto_util_1.thousands)(pos.length)}`),
         negatives: candidates => {
             bar.done(`malych: ${(0, auto_util_1.thousands)(pos.length)}, masek do sprawdzenia: ${(0, auto_util_1.thousands)(candidates)}`);
             return bar.stage('Zbiory duze');
@@ -2547,14 +2560,15 @@ function search(file, scope, when, opt, bar, warn = () => { }) {
     bar.done(`wybrano: ${res.masks.length}`);
     return { inScope: pos.length + neg.length, small: pos.length, masks: res.masks, total: res.total };
 }
-/** Sprawdzenie gotowej listy masek. */
-function check(file, scope, when, masks, head, bar, warn = () => { }) {
+/** Sprawdzenie gotowej listy masek, a potem szukanie masek dla zbiorow, ktorych lista nie obejmuje. */
+function check(file, scope, when, masks, opt, bar, warn = () => { }) {
     const st = load(file, scope, when, bar, warn);
     const tick = bar.stage('Sprawdzanie masek');
-    const { pos, neg } = classify(st, scope, when, head, part => tick(0.2 * part));
-    const res = (0, auto_check_1.checkMasks)({ names: st.names, allocKb: st.allocKb, pos, neg }, masks, part => tick(0.2 + 0.8 * part));
+    const { pos, neg } = classify(st, scope, when, opt.head, part => tick(0.2 * part));
+    const list = (0, auto_check_1.checkMasks)({ names: st.names, allocKb: st.allocKb, pos, neg }, masks, part => tick(0.2 + 0.8 * part));
     bar.done(`masek: ${masks.length}, malych: ${(0, auto_util_1.thousands)(pos.length)}, duzych: ${(0, auto_util_1.thousands)(neg.length)}`);
-    return res;
+    const fresh = mineRows(st, list.rest.pos, list.rest.neg, opt, bar, bar.stage('Nowe maski'));
+    return { list, fresh };
 }
 function load(file, scope, when, bar, warn) {
     const st = (0, auto_read_1.readStore)(file, new Set([...scope.fields, ...when.fields]), bar.stage('Czytanie CSV'));
@@ -2604,14 +2618,35 @@ const line = (c) => c[0].padEnd(44) + c[1].padStart(9) + c[2].padStart(9) + c[3]
 const cells = (m, u) => [m.text, String(m.small), String(m.large), pct(m.purity), inUnit(m.smallKb, u), inUnit(m.largeKb, u)];
 const heads = (u) => ['Maska', 'Malych', 'Duzych', 'Purity', `Malych ${u}`, `Duzych ${u}`];
 function report(r, u = 'GB') {
+    const out = [`Zbiorow w zakresie: ${r.inScope}, malych: ${r.small}, duzych: ${r.inScope - r.small}`, '', ...found(r, u)];
+    return out.join('\n') + '\n';
+}
+function found(r, u) {
     const row = (m) => line(cells(m, u));
-    const out = [`Zbiorow w zakresie: ${r.inScope}, malych: ${r.small}, duzych: ${r.inScope - r.small}`, ''];
+    const out = [];
     if (r.masks.length) {
         out.push(line(heads(u)), ...r.masks.map(row), row(r.total), '');
         out.push(`Masek: ${r.masks.length}; obejmuja ${pct(r.total.small / r.small)} malych (${r.total.small} z ${r.small})`);
     }
     else {
         out.push('Brak masek dla tych progow (--min-purity, --min-count).');
+    }
+    return out;
+}
+/** Nowe maski, dla zbiorow nieobjetych lista. */
+function freshReport(list, r, u = 'GB') {
+    const out = ['', `Nowe maski - tylko dla zbiorow, ktorych nie obejmuje zadna maska z listy (malych: ${r.small}, duzych: ${r.inScope - r.small})`, ''];
+    if (r.small === 0)
+        out.push('Lista obejmuje wszystkie male zbiory.');
+    else
+        out.push(...found(r, u));
+    if (r.masks.length) {
+        // zbiory objete lista i nowymi maskami sa rozlaczne
+        const small = list.total.small + r.total.small;
+        const large = list.total.large + r.total.large;
+        const kb = list.total.smallKb + r.total.smallKb;
+        out.push(`Lista i nowe maski razem: ${part(small, list.small)} malych (${small} z ${list.small}), `
+            + `${part(kb, list.smallKb)} ich alokacji, duzych ${large}, purity ${part(small, small + large)}`);
     }
     return out.join('\n') + '\n';
 }
@@ -2653,8 +2688,11 @@ function checkReport(r, u = 'GB') {
     }
     return out.join('\n') + '\n';
 }
-function checkCsv(r, u = 'GB') {
-    return [`${csvHead(u)};tylko_ta;stan;uwagi`, ...r.rows.map(m => [...csvCells(m, u), m.only, m.state, m.note].join(';'))].join('\n') + '\n';
+/** Maski z listy i nowe (stan "nowa"); pierwsza kolumna nadaje sie na nastepna liste. */
+function checkCsv(list, fresh, u = 'GB') {
+    return [`${csvHead(u)};tylko_ta;stan;uwagi`,
+        ...list.rows.map(m => [...csvCells(m, u), m.only, m.state, m.note].join(';')),
+        ...fresh.masks.map(m => [...csvCells(m, u), '', 'nowa', ''].join(';'))].join('\n') + '\n';
 }
 function main(argv, io = STDIO) {
     let bar = null;
@@ -2705,10 +2743,11 @@ function main(argv, io = STDIO) {
             const list = (0, auto_check_1.parseMaskList)(node_fs_1.default.readFileSync(o.masks, 'latin1').replace(/^\xef\xbb\xbf/, ''), o.masks);
             for (const w of list.warnings)
                 io.err(`Uwaga: ${w}\n`);
-            const c = check(positionals[0], scope, when, list.masks, opt.head, progress(2), io.err);
-            io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek nazw: ${opt.head.join('.')}` : ''}   maski: ${o.masks}\n`);
-            io.out(checkReport(c, unit));
-            save(checkCsv(c, unit));
+            const c = check(positionals[0], scope, when, list.masks, opt, progress(5), io.err);
+            io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek masek: ${opt.head.join('.')}` : ''}   maski: ${o.masks}   min. purity: ${pct(opt.minPurity)}, min. zbiorow: ${opt.minCount}\n`);
+            io.out(checkReport(c.list, unit));
+            io.out(freshReport(c.list, c.fresh, unit));
+            save(checkCsv(c.list, c.fresh, unit));
             return 0;
         }
         const r = search(positionals[0], scope, when, opt, progress(4), io.err);

@@ -407,7 +407,8 @@ describe('sprawdzanie listy masek', () => {
             const texts = [...new Set(Array.from({ length: 4 + seed * 2 }, () => randomMask(r,
                 ['**', '**', 'A', 'B', 'PROD', 'LIST', 'A%', 'A*', 'AB*', 'D%%', 'A{', '*', '%%%', 'AX2', 'NIC'], 4)))];
             const masks = texts.map(t => parseMask(t));
-            const res = check(file, parseConds('sms=true dsorg=PS', 's'), parseConds('allocTrk=315 usedTrk<=3', 'w'), texts, [], silent());
+            const o = { minPurity: pickOf(r)([0, 0.5, 0.9]), minCount: 1 + seed % 3, maxMasks: 50 };
+            const { list: res, fresh } = check(file, parseConds('sms=true dsorg=PS', 's'), parseConds('allocTrk=315 usedTrk<=3', 'w'), texts, o, silent());
             const small = u.filter(isSmall);
             const large = u.filter(x => !isSmall(x));
             const kb = (l: DataSet[]) => l.reduce((t, x) => t + x.allocKb, 0);
@@ -447,6 +448,16 @@ describe('sprawdzanie listy masek', () => {
             same(res.after, left);
             assert.equal(res.after.small, res.total.small);
             for (const m of left) assert.ok(alone(left, m) > 0, m.text);
+            // nowe maski: te same co szukanie wsrod zbiorow nieobjetych lista
+            const free = (l: DataSet[]) => l.filter(x => !masks.some(m => matches(m, x.dsn)));
+            const [fs1, fl1] = [free(small), free(large)];
+            assert.deepEqual([fresh.inScope, fresh.small], [fs1.length + fl1.length, fs1.length]);
+            const idx = buildCandidates(fs1.map(x => x.quals), fl1.map(x => x.quals), true);
+            assert.deepEqual(fresh.masks.map(m => [m.text, m.small, m.large]),
+                selectMasks(idx, fs1.length, { ...o, digitMasks: true }).map(x => [x.cand.text, x.cand.pos.length, x.cand.neg]));
+            const add = fresh.masks.map(m => parseMask(m.text));
+            assert.deepEqual([res.total.small + fresh.total.small, res.total.large + fresh.total.large],
+                [hit(small, [...masks, ...add]).length, hit(large, [...masks, ...add]).length]);
             // pary
             const want: string[] = [];
             masks.forEach((a, i) => masks.slice(i + 1).forEach(b => {
@@ -462,8 +473,8 @@ describe('sprawdzanie listy masek', () => {
     it('kolejnosc usuwania i powody', () => {
         const line = (dsn: string, usekb: number) => dline({ dsn, allkb: kbForTrk(315), usekb });
         write('K.CSV', csv([line('A.X.A', 40), line('A.X.B', 40), line('A.Y.A', 40), line('A.Z.DUZY', kbForTrk(200)), line('Q.R.S', 40)]));
-        const run = (...masks: string[]) => check(path.join(dir, 'K.CSV'), parseConds('', 's'), parseConds('usedTrk<=3', 'w'), masks, [], silent())
-            .rows.map(x => [x.text, x.state, x.note]);
+        const run = (...masks: string[]) => check(path.join(dir, 'K.CSV'), parseConds('', 's'), parseConds('usedTrk<=3', 'w'), masks, { minPurity: 1, minCount: 1, maxMasks: 9 }, silent())
+            .list.rows.map(x => [x.text, x.state, x.note]);
         // najpierw maska o nizszej czystosci, chociaz szersza; po niej pozostale sa potrzebne
         assert.deepEqual(run('A.X.**', 'A.Y.**', 'A.**'), [['A.X.**', 'zamiast', 'zawiera sie w A.**'], ['A.Y.**', 'zamiast', 'zawiera sie w A.**'],
             ['A.**', 'usun', 'w danych jej male zbiory obejmuja: A.X.**, A.Y.**']]);
@@ -520,8 +531,24 @@ describe('sprawdzanie listy masek', () => {
         assert.equal(auto(['P.CSV', '--out', 'm.csv']).code, 0);
         const again = auto(['P.CSV', '--masks', 'm.csv', '--out', 'w.csv']);
         assert.match(again.out, /Maski zbedne: 0\n/);
-        assert.deepEqual(rowsOf('w.csv').map(x => x.slice(0, 6)), rowsOf('m.csv'));
-        assert.equal(again.err.split('\n').filter(l => /^\[\d\/2\]/.test(l)).length, 2);
+        assert.deepEqual(rowsOf('w.csv').filter(x => x[7] !== 'nowa').map(x => x.slice(0, 6)), rowsOf('m.csv'));
+        assert.equal(again.err.split('\n').filter(l => /^\[\d\/5\]/.test(l)).length, 5);
+        // nowe maski tylko dla zbiorow spoza listy; wynik jako nastepna lista
+        write('n.txt', 'ABC.X.**\n');
+        const n = auto(['H.CSV', '--masks', 'n.txt', '--min-count', '1', '--min-purity', '1', '--out', 'n.csv']);
+        assert.equal(n.code, 0, n.err);
+        assert.deepEqual(rowsOf('n.csv').map(x => [x[0], x[1], x[2], x[6], x[7]]), [['ABC.X.**', '8', '0', '8', ''],
+            ['*.**.A', '2', '0', '', 'nowa']]);
+        assert.match(n.out, /nie obejmuje zadna maska z listy \(malych: 2, duzych: 1\)/);
+        assert.match(n.out, /Lista i nowe maski razem: 100,0% malych \(10 z 10\), 100,0% ich alokacji, duzych 0, purity 100,0%/);
+        const all = auto(['H.CSV', '--masks', 'n.csv', '--min-count', '1', '--min-purity', '1']);
+        assert.match(all.out, /Maski zbedne: 0\n/);
+        assert.match(all.out, /Lista obejmuje wszystkie male zbiory\.\n$/);
+        assert.match(auto(['H.CSV', '--masks', 'n.txt']).out, /Brak masek dla tych progow/);
+        // --prefix: poczatek nowych masek
+        assert.equal(auto(['H.CSV', '--masks', 'n.txt', '--min-count', '1', '--prefix', 'INN%', '--out', 'n.csv']).code, 0);
+        assert.deepEqual(rowsOf('n.csv').map(x => [x[0], x[1], x[7]]), [['ABC.X.**', '0', 'usun'], ['INN%.A', '1', 'nowa']]);
+
         for (const a of [['P.CSV', '--masks', 'BRAK'], ['P.CSV', '--unit', 'KG'], ['P.CSV', '--masks', 'P.CSV'], ['P.CSV', '--unit', 'toString']]) {
             const x = auto(a);
             assert.equal(x.code, 1, a.join(' '));
