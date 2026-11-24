@@ -15,7 +15,7 @@
  *   zos/ACMTEST    - wejscie IEBUPDTE (./ ADD NAME=... + linie membera), ladowane jobem ACMTLOAD do TESTBED
  *   zos/testy/*    - te same membery jako osobne pliki (alternatywa: FTP mput do PDS)
  */
-import { zosText } from './acs';
+import { zosText } from './zos';
 
 export class TestCaseError extends Error {}
 

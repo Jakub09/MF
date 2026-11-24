@@ -10,11 +10,9 @@
  * Tekst: FB 80, kolumny 1-71, wielkie litery, znaki bezpieczne dla EBCDIC.
  */
 import type { RuleResult } from './engine';
+import { ACS_MAX_COL, chunks, filtlist, MAX_LIST } from './filtlist';
 import { Routine, ROUTINES } from './rules';
-import { ZosTextError } from './zos';
-
-export const ACS_MAX_COL = 71;
-const MAX_LIST = 255;
+import { zosText, ZosTextError } from './zos';
 
 /** Nazwy memberow (na z/OS) dla rutyn. */
 export const ROUTINE_MEMBER: Record<Routine, string> = {
@@ -30,42 +28,6 @@ const ROUTINE_VAR: Record<Routine, string> = {
     MGMTCLAS: '&MGMTCLAS',
     STORGRP: '&STORGRP',
 };
-
-function chunks<T>(a: T[], n: number): T[][] {
-    const out: T[][] = [];
-    for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n));
-    return out;
-}
-
-/** Pozycja listy FILTLIST: maska bez apostrofow; nazwa z '-' / '{' w apostrofach. */
-function entry(text: string): string {
-    return /[-{]/.test(text) && !/[*%]/.test(text) ? `'${text}'` : text;
-}
-
-/** Najdluzsza pozycja FILTLIST: nazwa 44 znaki w apostrofach + przecinek. */
-const MAX_ENTRY = 47;
-
-/**
- * FILTLIST z zawijaniem do ACS_MAX_COL; kazda linia poza ostatnia konczy sie przecinkiem (albo nawiasem
- * otwierajacym, gdy pierwsza pozycja nie miesci sie za naglowkiem). Wciecie kontynuacji pod nawiasem,
- * a gdy przy dlugiej nazwie listy pelna nazwa zbioru by sie nie zmiescila - 4 spacje.
- */
-export function filtlist(name: string, items: string[]): string[] {
-    const head = `  FILTLIST ${name} INCLUDE(`;
-    const indent = ' '.repeat(head.length + MAX_ENTRY <= ACS_MAX_COL ? head.length : 4);
-    const lines: string[] = [];
-    let cur = head;
-    items.forEach((it, i) => {
-        const piece = entry(it) + (i < items.length - 1 ? ',' : ')');
-        if (cur.length + piece.length > ACS_MAX_COL && cur !== indent) {
-            lines.push(cur);
-            cur = indent;
-        }
-        cur += piece;
-    });
-    lines.push(cur);
-    return lines;
-}
 
 /** Lista wartosci SET ('A','B',...) zawinieta po przecinkach do ACS_MAX_COL. */
 function setLines(v: string, values: string[], indent: number): string[] {
@@ -83,15 +45,6 @@ function setLines(v: string, values: string[], indent: number): string[] {
     });
     lines.push(cur);
     return lines;
-}
-
-/**
- * Tekst do pliku z/OS: bez polskich znakow, wielkie litery, tylko znaki bezpieczne dla IBM-1047
- * (bez [ ] \ ! ^ ~ ` i znakow spoza ASCII).
- */
-export function zosText(s: string): string {
-    return s.replace(/[łŁ]/g, 'L').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
-        .replace(/[^\x20-\x7e]|[[\]\\!^~`]/g, '?');
 }
 
 /** Komentarz ACS zawiniety do kolumny 71. */

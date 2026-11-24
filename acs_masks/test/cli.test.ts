@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { filtlist } from '../src/acs';
+import { filtlist } from '../src/filtlist';
 import { DEFAULT_OUT, main } from '../src/cli';
 import { runDir, runStamp } from '../src/outdir';
 import { sampleCsv } from '../tools/gen-sample';

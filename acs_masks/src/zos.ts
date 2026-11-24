@@ -11,3 +11,12 @@ export function checkZosLines(member: string, lines: string[], maxCol = 71): voi
         }
     });
 }
+
+/**
+ * Tekst do pliku z/OS: bez polskich znakow, wielkie litery, tylko znaki bezpieczne dla IBM-1047
+ * (bez [ ] \ ! ^ ~ ` i znakow spoza ASCII).
+ */
+export function zosText(s: string): string {
+    return s.replace(/[łŁ]/g, 'L').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
+        .replace(/[^\x20-\x7e]|[[\]\\!^~`]/g, '?');
+}

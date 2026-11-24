@@ -5,14 +5,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { check, main as autoMain, parseConds, parseHead, search } from '../src/auto';
-import { MaskTree, parseMaskList, within } from '../src/auto-check';
+import { check, main as autoMain, parseConds, parseHead, search, SearchResult } from '../src/auto';
+import { acsProblem, filtlistText, findExcludes, maskTests } from '../src/auto-acs';
+import { parseMaskList } from '../src/auto-check';
+import { MaskRow } from '../src/auto-mine';
+import { MaskTree, within } from '../src/auto-tree';
 import { BOOL, Field, NUM, readStore, STR } from '../src/auto-read';
 import { Interner, PairMap, Progress } from '../src/auto-util';
 import { main } from '../src/cli';
 import { DataSet, readDataSets, stripGds } from '../src/dataset';
-import { matches, parseMask } from '../src/mask';
-import { buildCandidates, Candidate, MaskIndex, purity, selectMasks } from '../src/mine';
+import { digitMask, matches, parseMask } from '../src/mask';
 import { sampleCsv } from '../tools/gen-sample';
 import { csv, dline, kbForTrk, rng } from './helpers';
 
@@ -63,18 +65,6 @@ describe('szukanie masek - jeden plik', () => {
         const specs = [...text.matchAll(/require\("([^"]+)"\)/g)].map(m => m[1]);
         assert.ok(specs.every(s => s.startsWith('node:') || s.startsWith('./')), specs.join(' '));
     });
-
-    for (const p of ['0.95', '0.6', '1']) {
-        it(`te same maski i liczby co acs-masks --config (domyslne kryterium, min-purity ${p})`, async () => {
-            const a = auto(['P.CSV', '--min-purity', p, '--out', 'm.csv']);
-            assert.equal(a.code, 0, a.err);
-            const r = await full([path.join(dir, 'P.CSV'), '-c', config, '--min-purity', p, '--out', path.join(dir, 'f')]);
-            assert.equal(r.code, 0, r.err);
-            const want = rowsOf('f/maski.csv').map(x => [x[2], x[3], x[4]]);
-            assert.ok(want.length > 0);
-            assert.deepEqual(rowsOf('m.csv').map(x => x.slice(0, 3)), want);
-        });
-    }
 
     it('GDG pod nazwa bazy', () => {
         write('G.CSV', csv(Array.from({ length: 12 }, (_, i) => dline({
@@ -200,6 +190,132 @@ function randomCsv(seed: number, count: number, eol = '\n', pad = 0): string {
 }
 
 const silent = () => new Progress(4, () => {}, false);
+const WHEN = parseConds('allocTrk=315 usedTrk<=3', 'w');
+const isSmall = (x: DataSet) => x.allocTrk === 315 && x.usedTrk <= 3;
+
+async function small2(seed: number, count: number) {
+    const file = write('R.CSV', randomCsv(seed, count));
+    const { dataSets } = await readDataSets(file);
+    stripGds(dataSets);
+    return { file, u: dataSets.filter(x => x.sms && x.dsorg === 'PS') };
+}
+
+/** Elementy masek z definicji (src/auto-mine.ts): wzorce z %, poczatek*. */
+function elements(names: string[][]): (q: string, first: boolean) => { text: string; cost: number }[] {
+    const all = [...new Set(names.flat())];
+    const pats = new Set(all.map(digitMask).filter(x => x !== null));
+    const heads = new Set<string>();
+    for (const a of all) {
+        for (const b of all) {
+            if (a === b) continue;
+            let n = 0;
+            while (n < a.length && n < b.length && a[n] === b[n]) n++;
+            const p = a.slice(0, n).replace(/[0-9]+$/, '');
+            if (p.length < 8 && p.length >= (p.length < n ? 2 : 3)) heads.add(p);
+        }
+    }
+    const rx = [...pats].map(p => ({ p, m: parseMask(p!) }));
+    const memo = new Map<string, { text: string; cost: number }[]>();
+    return (q, first) => {
+        const key = `${first}${q}`;
+        let l = memo.get(key);
+        if (!l) {
+            l = [...(!first && /^[A-Z#@$]{1,3}\d{5,7}$/.test(q) ? [] : [{ text: q, cost: 0 }]),
+                ...rx.filter(x => matches(x.m, q)).map(x => ({ text: x.p!, cost: 0 })),
+                ...[...heads].filter(h => q.startsWith(h)).map(h => ({ text: `${h}*`, cost: 1 }))];
+            memo.set(key, l);
+        }
+        return l;
+    };
+}
+
+interface BruteOpt { minPurity: number; minCount: number; maxMasks: number; maxWild: number; head?: string[] }
+
+/** Wszystkie maski, ktore moze dac silnik, z objetymi malymi (numery) i liczba duzych. */
+function family(pos: DataSet[], neg: DataSet[], o: BruteOpt) {
+    const head = o.head ?? [];
+    const names = [...new Set(pos.map(x => x.quals.slice(head.length).join('.')))].map(x => (x ? x.split('.') : []));
+    const el = elements(names);
+    const found = new Map<string, number>();
+    const seen = new Set<string>();
+    const gen = (q: string[], i: number, path: string[], w: number) => {
+        const emit = (p: string[]) => {
+            const text = p.join('.');
+            if (!text || text.length > 44 || (head.length === 0 && !/[^*%.]/.test(text))) return;
+            found.set(text, Math.min(w, found.get(text) ?? 99));
+        };
+        if (i === q.length) emit(path);
+        if (path.length) emit([...path, '**']);
+        const key = `${q.slice(i).join('.')}|${path.join('.')}|${w}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        for (let j = i; j < q.length; j++) {
+            for (const t of el(q[j], j === 0 && head.length === 0)) {
+                if (j === i && w + t.cost <= o.maxWild) gen(q, j + 1, [...path, t.text], w + t.cost);
+                if (w + 1 + t.cost <= o.maxWild) gen(q, j + 1, [...path, '**', t.text], w + 1 + t.cost);
+            }
+        }
+        if (i < q.length && w < o.maxWild) gen(q, i + 1, [...path, '*'], w + 1);
+    };
+    for (const q of names) gen(q, 0, head, 0);
+    const texts = [...found.keys()];
+    const tree = new MaskTree(texts.map(t => t.split('.')));
+    const fam = texts.map(text => ({ text, wild: found.get(text)!, pos: [] as number[], neg: 0 }));
+    const hits = (dsn: string) => {
+        const b = Buffer.from(dsn);
+        return tree.match(b, 0, b.length);
+    };
+    pos.forEach((x, i) => hits(x.dsn).forEach(m => fam[m].pos.push(i)));
+    neg.forEach(x => hits(x.dsn).forEach(m => { fam[m].neg++; }));
+    return fam;
+}
+
+/** Wynik szukania: kazdy wybor najlepszy z mozliwych, potem uscislenie i liczby (kazda maska z kazda nazwa). */
+function verify(r: SearchResult, pos: DataSet[], neg: DataSet[], o: BruteOpt) {
+    const all = family(pos, neg, o);
+    const byText = new Map(all.map(f => [f.text, f]));
+    const pur = (f: { pos: number[]; neg: number }) => f.pos.length / (f.pos.length + f.neg);
+    const good = all.filter(f => f.pos.length >= o.minCount * Math.max(1, f.wild) && pur(f) >= o.minPurity);
+    const covered = new Set<number>();
+    const gain = (f: { pos: number[] }) => f.pos.reduce((n, i) => n + Number(!covered.has(i)), 0);
+    const best = () => good.reduce((m, f) => Math.max(m, gain(f)), 0);
+    for (const s of r.steps) {
+        const f = byText.get(s.text)!;
+        assert.ok(f && good.includes(f), s.text);
+        assert.deepEqual([gain(f), best()], [s.gain, s.gain], s.text);
+        f.pos.forEach(i => covered.add(i));
+    }
+    if (r.steps.length < o.maxMasks) assert.ok(best() < o.minCount);
+
+    const lit = (t: string) => t.replace(/[*%.]/g, '').length;
+    const stars = (t: string) => t.split('*').length - 1;
+    const union = new Set<number>();
+    for (const m of r.masks) {
+        const f = byText.get(m.text)!;
+        assert.ok(f, m.text);
+        f.pos.forEach(i => union.add(i));
+        const same = all.filter(x => x.pos.length === f.pos.length && x.pos.every((i, k) => i === f.pos[k]));
+        const from = r.steps.find(s => same.some(x => x.text === s.text) && within(m.text.split('.'), s.text.split('.')))!;
+        assert.ok(from, m.text);
+        for (const x of same) {
+            if (!within(x.text.split('.'), from.text.split('.'))) continue;
+            const d = x.neg - f.neg || lit(m.text) - lit(x.text) || stars(x.text) - stars(m.text) || x.text.length - m.text.length;
+            assert.ok(d > 0 || (d === 0 && m.text <= x.text), `${x.text} zamiast ${m.text}`);
+        }
+        assert.ok(f.pos.some(i => !r.masks.some(x => x !== m && byText.get(x.text)!.pos.includes(i))), `zbedna ${m.text}`);
+    }
+    assert.deepEqual([...union].sort(), [...covered].sort());
+
+    const kb = (l: DataSet[]) => l.reduce((t, x) => t + x.allocKb, 0);
+    const check1 = (row: MaskRow, texts: string[]) => {
+        const p = texts.map(t => parseMask(t));
+        const [s, l] = [pos, neg].map(d => d.filter(x => p.some(m => matches(m, x.dsn))));
+        assert.deepEqual([row.small, row.large, row.smallKb, row.largeKb, row.purity],
+            [s.length, l.length, kb(s), kb(l), s.length ? s.length / (s.length + l.length) : 0], row.text);
+    };
+    r.masks.forEach(m => check1(m, [m.text]));
+    check1(r.total, r.masks.map(m => m.text));
+}
 
 describe('nowy silnik = wzorzec (dataset.ts, mine.ts, mask.ts)', () => {
     const today = new Date('2026-11-16T00:00:00Z');
@@ -231,75 +347,34 @@ describe('nowy silnik = wzorzec (dataset.ts, mine.ts, mask.ts)', () => {
     }
 
     const opts = [
-        { minPurity: 0.95, minCount: 3, maxMasks: 1000 }, { minPurity: 0.5, minCount: 2, maxMasks: 1000 },
-        { minPurity: 0, minCount: 1, maxMasks: 1000 }, { minPurity: 1, minCount: 1, maxMasks: 7 },
-        { minPurity: 0.6, minCount: 10, maxMasks: 1000 },
+        { minPurity: 0.95, minCount: 3, maxMasks: 1000, maxWild: 2 }, { minPurity: 0.5, minCount: 2, maxMasks: 1000, maxWild: 1 },
+        { minPurity: 0, minCount: 1, maxMasks: 1000, maxWild: 0 }, { minPurity: 1, minCount: 1, maxMasks: 7, maxWild: 2 },
+        { minPurity: 0.7, minCount: 2, maxMasks: 1000, maxWild: 3 },
     ];
-    for (let seed = 1; seed <= 25; seed++) {
-        it(`maski i liczby, ziarno ${seed}`, async () => {
-            const file = write('R.CSV', randomCsv(seed + 100, 100 + seed * 40));
-            const { dataSets } = await readDataSets(file);
-            stripGds(dataSets);
-            const u = dataSets.filter(x => x.sms && x.dsorg === 'PS');
-            const small = (x: DataSet) => x.allocTrk === 315 && x.usedTrk <= 3;
-            const pos = u.filter(small);
-            const neg = u.filter(x => !small(x));
-            const idx = buildCandidates(pos.map(x => x.quals), neg.map(x => x.quals), true);
-            for (const o of opts) {
-                const want = selectMasks(idx, pos.length, { ...o, digitMasks: true }).map(x => [x.cand.text, x.cand.pos.length, x.cand.neg, purity(x.cand)]);
-                const r = search(file, parseConds('sms=true dsorg=PS', 's'), parseConds('allocTrk=315 usedTrk<=3', 'w'), o, silent());
-                assert.deepEqual(r.masks.map(m => [m.text, m.small, m.large, m.purity]), want);
-                // MB i RAZEM: porownanie kazdej maski z kazda nazwa
-                const sum = (l: DataSet[]) => l.reduce((t, x) => t + x.allocKb, 0);
-                const masks = r.masks.map(m => parseMask(m.text));
-                const check = (row: typeof r.total, hit: DataSet[]) => {
-                    const s = hit.filter(small);
-                    const l = hit.filter(x => !small(x));
-                    assert.deepEqual([row.small, row.large, row.smallKb, row.largeKb], [s.length, l.length, sum(s), sum(l)], row.text);
-                };
-                r.masks.forEach((m, k) => check(m, u.filter(x => matches(masks[k], x.dsn))));
-                check(r.total, u.filter(x => masks.some(m => matches(m, x.dsn))));
-            }
+    for (let seed = 1; seed <= 12; seed++) {
+        it(`maski i liczby = przeglad wszystkich masek, ziarno ${seed}`, async () => {
+            const { file, u } = await small2(seed + 100, 40 + seed * 5);
+            opts.forEach(o => {
+                const r = search(file, parseConds('sms=true dsorg=PS', 's'), WHEN, o, silent());
+                verify(r, u.filter(isSmall), u.filter(x => !isSmall(x)), o);
+            });
         });
     }
 
-    // --prefix: kandydaci z nazw z podmienionym poczatkiem, kazdy porownany z kazda nazwa
     for (const prefix of ['A%.**', 'A%', 'PROD.**', 'A*.%*', '*.**', '*.A%%.**', 'A{.*', 'A*.*1*.*%', '%%.%%%.**', 'A*.*.*.**', '*1*.**', 'BRAK.**', '**']) {
         it(`--prefix ${prefix}`, async () => {
             const head = parseHead(prefix);
             assert.throws(() => parseHead(`X.**.${prefix}`), /tylko na koncu/);
             const starts = parseMask([...head, '**'].join('.'));
             let found = 0;
-            for (let seed = 1; seed <= 6; seed++) {
-                const file = write('R.CSV', randomCsv(seed + 300, 300));
-                const { dataSets } = await readDataSets(file);
-                stripGds(dataSets);
-                const u = dataSets.filter(x => x.sms && x.dsorg === 'PS' && matches(starts, x.dsn));
-                const small = (x: DataSet) => x.allocTrk === 315 && x.usedTrk <= 3;
-                const pos = u.filter(small);
-                const neg = u.filter(x => !small(x));
-                const texts = new MaskIndex(true);
-                for (const x of pos) texts.addFrom([...head, ...x.quals.slice(head.length)]);
-                const byText = new Map<string, Candidate>();
-                for (const text of texts.byText.keys()) {
-                    if (head.length && text !== head.join('.') && !text.startsWith(`${head.join('.')}.`)) continue;
-                    const m = parseMask(text);
-                    byText.set(text, {
-                        id: byText.size, text, neg: neg.filter(x => matches(m, x.dsn)).length,
-                        pos: [...pos.keys()].filter(i => matches(m, pos[i].dsn)),
-                    });
-                }
-                for (const o of opts) {
-                    const want = selectMasks({ byText } as MaskIndex, pos.length, { ...o, digitMasks: true })
-                        .map(x => [x.cand.text, x.cand.pos.length, x.cand.neg, purity(x.cand)]);
-                    const r = search(file, parseConds('sms=true dsorg=PS', 's'), parseConds('allocTrk=315 usedTrk<=3', 'w'), { ...o, head }, silent());
-                    assert.deepEqual([r.inScope, r.small], [u.length, pos.length]);
-                    assert.deepEqual(r.masks.map(m => [m.text, m.small, m.large, m.purity]), want);
-                    const masks = r.masks.map(m => parseMask(m.text));
-                    const hit = u.filter(x => masks.some(m => matches(m, x.dsn)));
-                    assert.deepEqual([r.total.small, r.total.large], [hit.filter(small).length, hit.filter(x => !small(x)).length]);
-                    found += want.length;
-                }
+            for (let seed = 1; seed <= 4; seed++) {
+                const { file, u: all } = await small2(seed + 300, 250);
+                const u = all.filter(x => matches(starts, x.dsn)).slice(0, 1e9);
+                const o = { ...opts[seed % 2 ? 0 : 4], maxWild: 1, minCount: 1, head };
+                const r = search(file, parseConds('sms=true dsorg=PS', 's'), WHEN, o, silent());
+                assert.deepEqual([r.inScope, r.small], [u.length, u.filter(isSmall).length]);
+                verify(r, u.filter(isSmall), u.filter(x => !isSmall(x)), o);
+                found += r.masks.length;
             }
             assert.equal(found > 0, prefix !== 'BRAK.**');
         });
@@ -312,7 +387,7 @@ describe('nowy silnik = wzorzec (dataset.ts, mine.ts, mask.ts)', () => {
         for (const p of ['ABC%.**', 'abc%']) {
             const r = auto(['H.CSV', '--prefix', p, '--min-count', '4', '--out', 'm.csv']);
             assert.equal(r.code, 0, r.err);
-            assert.deepEqual(rowsOf('m.csv').map(x => x.slice(0, 3)), [['ABC%.LOG.**', '6', '0']]);
+            assert.deepEqual(rowsOf('m.csv').map(x => x.slice(0, 3)), [['ABC%.LOG.*', '6', '0']]);
             assert.match(r.out, /poczatek masek: ABC% /);
             assert.match(r.out, /w zakresie: 9, malych: 6/);
         }
@@ -321,12 +396,30 @@ describe('nowy silnik = wzorzec (dataset.ts, mine.ts, mask.ts)', () => {
     const masksOf = (small: string[], large: string[], minCount: number) => {
         const line = (dsn: string, usekb: number) => dline({ dsn, allkb: kbForTrk(315), usekb });
         const file = write('R.CSV', csv([...small.map(x => line(x, 40)), ...large.map(x => line(x, kbForTrk(200)))]));
-        return search(file, parseConds('', 's'), parseConds('usedTrk<=3', 'w'), { minPurity: 1, minCount, maxMasks: 99 }, silent())
+        return search(file, parseConds('', 's'), parseConds('usedTrk<=3', 'w'), { minPurity: 1, minCount, maxMasks: 99, maxWild: 1 }, silent())
             .masks.map(m => m.text).sort();
     };
     it('wzorzec, do ktorego pasuje dokladnie min-count zbiorow', () => {
         assert.deepEqual(masksOf(['A.D1', 'A.D2', 'A.D3'], ['A.X'], 3), ['A.D%']);
         assert.deepEqual(masksOf(['A.D1', 'A.D2', 'A.D3'], ['A.X'], 4), []);
+    });
+    it('* i ** w srodku maski', () => {
+        // ta sama nazwa kwalifikatora w dwoch miejscach; P.**.X objeloby P.Q.X
+        assert.deepEqual(masksOf(['P.P.X', 'P.X'], ['P.Q.X', 'P.Y', 'P.P.Y'], 2), ['**.P.X']);
+        assert.deepEqual(masksOf(['A.B.K.LOG', 'A.C.K.LOG'], ['A.K.LOG', 'A.B.C.K.LOG', 'A.B.Q.LOG'], 2), ['A.*.K.LOG']);
+        assert.deepEqual(masksOf(['A.B.C.K.LOG', 'A.K.LOG'], ['A.K.LIST', 'B.K.LOG', 'A.Q.LOG'], 2), ['A.**.K.LOG']);
+        assert.deepEqual(masksOf(['PRDA.K.X', 'PRDB.K.Y'], ['PRXA.K.X', 'PRDA.L.X'], 2), ['PRD*.K.**']);
+    });
+    it('data w srodku nazwy zawsze jako %, w pierwszym kwalifikatorze zostaje', () => {
+        assert.deepEqual(masksOf(['A.JOB12345.LA', 'A.JOB12345.BB'], ['A.X.LC'], 2), ['A.JOB%%%%%.*']);
+        assert.deepEqual(masksOf(['A.D241113.LA', 'A.D241113.BB'], ['A.X.LC'], 2), ['A.D%%%%%%.*']);
+        assert.deepEqual(masksOf(['U241113.A.X', 'U241113.B.Y'], ['U241114.A.X'], 2), ['U241113.**']);
+    });
+    it('maska najwyzej 44 znaki', () => {
+        const base = 'AAAAAAAA.BBBBBBBB.CCCCCCCC.DDDDDDDD.EEEEE';
+        const got = masksOf([`${base}.X`, `${base}.Y`], [`${base.slice(0, 30)}Q`], 2);
+        assert.equal(got.length, 1);
+        assert.ok(got[0].length <= 44, got[0]);
     });
     it('maska zbedna (jej zbiory obejmuja pozniejsze) jest usuwana', () => {
         const names = ['A', 'B'].flatMap(h => ['P', 'Q', 'R'].map(m => `${h}.${m}.Z`));
@@ -335,7 +428,7 @@ describe('nowy silnik = wzorzec (dataset.ts, mine.ts, mask.ts)', () => {
 
     it('bez zbiorow w zakresie, bez malych, same male', () => {
         const file = write('R.CSV', randomCsv(5, 100));
-        const run = (s: string, w: string) => search(file, parseConds(s, 's'), parseConds(w, 'w'), { minPurity: 0.9, minCount: 1, maxMasks: 9 }, silent());
+        const run = (s: string, w: string) => search(file, parseConds(s, 's'), parseConds(w, 'w'), { minPurity: 0.9, minCount: 1, maxMasks: 9, maxWild: 2 }, silent());
         assert.deepEqual([run('dsn=BRAK', '').inScope, run('', 'allocTrk<0').masks.length], [0, 0]);
         const all = run('', '');
         assert.equal(all.small, all.inScope);
@@ -407,8 +500,8 @@ describe('sprawdzanie listy masek', () => {
             const texts = [...new Set(Array.from({ length: 4 + seed * 2 }, () => randomMask(r,
                 ['**', '**', 'A', 'B', 'PROD', 'LIST', 'A%', 'A*', 'AB*', 'D%%', 'A{', '*', '%%%', 'AX2', 'NIC'], 4)))];
             const masks = texts.map(t => parseMask(t));
-            const o = { minPurity: pickOf(r)([0, 0.5, 0.9]), minCount: 1 + seed % 3, maxMasks: 50 };
-            const { list: res, fresh } = check(file, parseConds('sms=true dsorg=PS', 's'), parseConds('allocTrk=315 usedTrk<=3', 'w'), texts, o, silent());
+            const o = { minPurity: pickOf(r)([0, 0.5, 0.9]), minCount: 1 + seed % 3, maxMasks: 50, maxWild: 1 };
+            const { list: res, fresh } = check(file, parseConds('sms=true dsorg=PS', 's'), parseConds('allocTrk=315 usedTrk<=3', 'w'), texts, [], o, silent());
             const small = u.filter(isSmall);
             const large = u.filter(x => !isSmall(x));
             const kb = (l: DataSet[]) => l.reduce((t, x) => t + x.allocKb, 0);
@@ -452,9 +545,7 @@ describe('sprawdzanie listy masek', () => {
             const free = (l: DataSet[]) => l.filter(x => !masks.some(m => matches(m, x.dsn)));
             const [fs1, fl1] = [free(small), free(large)];
             assert.deepEqual([fresh.inScope, fresh.small], [fs1.length + fl1.length, fs1.length]);
-            const idx = buildCandidates(fs1.map(x => x.quals), fl1.map(x => x.quals), true);
-            assert.deepEqual(fresh.masks.map(m => [m.text, m.small, m.large]),
-                selectMasks(idx, fs1.length, { ...o, digitMasks: true }).map(x => [x.cand.text, x.cand.pos.length, x.cand.neg]));
+            verify(fresh, fs1, fl1, o);
             const add = fresh.masks.map(m => parseMask(m.text));
             assert.deepEqual([res.total.small + fresh.total.small, res.total.large + fresh.total.large],
                 [hit(small, [...masks, ...add]).length, hit(large, [...masks, ...add]).length]);
@@ -473,7 +564,7 @@ describe('sprawdzanie listy masek', () => {
     it('kolejnosc usuwania i powody', () => {
         const line = (dsn: string, usekb: number) => dline({ dsn, allkb: kbForTrk(315), usekb });
         write('K.CSV', csv([line('A.X.A', 40), line('A.X.B', 40), line('A.Y.A', 40), line('A.Z.DUZY', kbForTrk(200)), line('Q.R.S', 40)]));
-        const run = (...masks: string[]) => check(path.join(dir, 'K.CSV'), parseConds('', 's'), parseConds('usedTrk<=3', 'w'), masks, { minPurity: 1, minCount: 1, maxMasks: 9 }, silent())
+        const run = (...masks: string[]) => check(path.join(dir, 'K.CSV'), parseConds('', 's'), parseConds('usedTrk<=3', 'w'), masks, [], { minPurity: 1, minCount: 1, maxMasks: 9, maxWild: 1 }, silent())
             .list.rows.map(x => [x.text, x.state, x.note]);
         // najpierw maska o nizszej czystosci, chociaz szersza; po niej pozostale sa potrzebne
         assert.deepEqual(run('A.X.**', 'A.Y.**', 'A.**'), [['A.X.**', 'zamiast', 'zawiera sie w A.**'], ['A.Y.**', 'zamiast', 'zawiera sie w A.**'],
@@ -496,7 +587,7 @@ describe('sprawdzanie listy masek', () => {
         const p = (t: string) => parseMaskList(t, 'm').masks;
         assert.deepEqual(p('﻿A.**\r\nb.%*, C.** D\n\n /* E.**\nF.** */ \'G.H\',\n'), ['A.**', 'B.%*', 'C.**', 'D', 'G.H']);
         assert.deepEqual(p('maska;malych\nA.**;12;0\n;\nB.C;1;2\n'), ['A.**', 'B.C']);
-        assert.deepEqual(parseMaskList('A.**\n/* x\n */a.**\n', 'm'), { masks: ['A.**'], warnings: ['m, wiersz 3: maska A.** powtorzona'] });
+        assert.deepEqual(parseMaskList('A.**\n/* x\n */a.**\n', 'm'), { masks: ['A.**'], excludes: [], warnings: ['m, wiersz 3: maska A.** powtorzona'] });
         for (const [t, msg] of [['A.**\nA**.B', /m, wiersz 2: .*caly kwalifikator/], ["/*\n*/'A.**'", /wiersz 2: .*bez apostrofow/], ['A.** 12', /cyfra/],
             ['', /brak masek/], ['maska;x\n', /brak masek/], ['ZADLUGIQUAL.**', /niepoprawny kwalifikator/]] as [string, RegExp][]) {
             assert.throws(() => parseMaskList(t, 'm'), msg, t);
@@ -538,7 +629,7 @@ describe('sprawdzanie listy masek', () => {
         const n = auto(['H.CSV', '--masks', 'n.txt', '--min-count', '1', '--min-purity', '1', '--out', 'n.csv']);
         assert.equal(n.code, 0, n.err);
         assert.deepEqual(rowsOf('n.csv').map(x => [x[0], x[1], x[2], x[6], x[7]]), [['ABC.X.**', '8', '0', '8', ''],
-            ['*.**.A', '2', '0', '', 'nowa']]);
+            ['**.A', '2', '0', '', 'nowa']]);
         assert.match(n.out, /nie obejmuje zadna maska z listy \(malych: 2, duzych: 1\)/);
         assert.match(n.out, /Lista i nowe maski razem: 100,0% malych \(10 z 10\), 100,0% ich alokacji, duzych 0, purity 100,0%/);
         const all = auto(['H.CSV', '--masks', 'n.csv', '--min-count', '1', '--min-purity', '1']);
@@ -551,6 +642,198 @@ describe('sprawdzanie listy masek', () => {
 
         for (const a of [['P.CSV', '--masks', 'BRAK'], ['P.CSV', '--unit', 'KG'], ['P.CSV', '--masks', 'P.CSV'], ['P.CSV', '--unit', 'toString']]) {
             const x = auto(a);
+            assert.equal(x.code, 1, a.join(' '));
+            assert.doesNotMatch(x.err, /^\s+at /m);
+        }
+    });
+});
+
+describe('EXCLUDE, FILTLIST i testy', () => {
+    const scope = parseConds('sms=true dsorg=PS', 's');
+    const when = parseConds('allocTrk=315 usedTrk<=3', 'w');
+    const isSmall = (x: DataSet) => x.allocTrk === 315 && x.usedTrk <= 3;
+    const hits = (list: string[]) => {
+        const p = list.map(m => parseMask(m));
+        return (x: { dsn: string }) => p.some(m => matches(m, x.dsn));
+    };
+    const load = async (seed: number) => {
+        const file = write('R.CSV', randomCsv(seed, 400));
+        const { dataSets } = await readDataSets(file);
+        stripGds(dataSets);
+        return { file, u: dataSets.filter(x => x.sms && x.dsorg === 'PS') };
+    };
+    const kb = (l: DataSet[]) => l.reduce((t, x) => t + x.allocKb, 0);
+
+    for (let seed = 1; seed <= 12; seed++) {
+        it(`EXCLUDE i lista z EXCLUDE = wzorzec, ziarno ${seed}`, async () => {
+            const { file, u } = await load(seed + 700);
+            const r = search(file, scope, when, { minPurity: 0.4, minCount: 2, maxMasks: 12, maxWild: 2 }, silent());
+            const include = r.masks.map(m => m.text);
+            const old = seed % 3 === 0 ? ['*.**.A%', 'PROD.**'] : [];
+            const isInc = hits(include);
+            const isOld = hits(old);
+            const cov = u.filter(x => isInc(x) && !isOld(x));
+            const [small, large] = [cov.filter(isSmall), cov.filter(x => !isSmall(x))];
+            for (const minCount of [1, 2, 5]) {
+                const e = findExcludes(r.input, include, old, { minCount, maxWild: 1 }, () => {});
+                // najwieksza mozliwa maska bez malych; zadna dodatkowa nie wylaczy juz minCount duzych
+                const pure = family(large, small, { minPurity: 1, minCount, maxMasks: 255, maxWild: 1 }).filter(f => f.neg === 0 && f.pos.length >= minCount);
+                const most = pure.reduce((n, f) => Math.max(n, f.pos.length), 0);
+                assert.equal(e.masks.reduce((n, m) => Math.max(n, m.large), 0), most);
+                assert.ok(e.masks.every(m => m.small === 0 && m.large >= minCount && pure.some(f => f.text === m.text && f.pos.length === m.large)));
+                const gone = hits(e.masks.map(m => m.text));
+                for (const f of pure) assert.ok(f.pos.filter(i => !gone(large[i])).length < minCount, f.text);
+                const isNew = hits(e.masks.map(m => m.text));
+                const left = cov.filter(x => !isNew(x));
+                const row = (l: DataSet[]) => {
+                    const [s, g] = [l.filter(isSmall), l.filter(x => !isSmall(x))];
+                    return [s.length, g.length, kb(s), kb(g), s.length ? s.length / l.length : 0];
+                };
+                const got = (m: typeof e.before) => [m.small, m.large, m.smallKb, m.largeKb, m.purity];
+                assert.deepEqual(got(e.before), row(cov));
+                assert.deepEqual(got(e.after), row(left));
+                assert.equal(left.filter(isSmall).length, small.length);
+
+                // ta sama lista przez --masks
+                const ex = [...old, ...e.masks.map(m => m.text)];
+                const isEx = hits(ex);
+                const c = check(file, scope, when, include, ex, { minPurity: 0.9, minCount: 1, maxMasks: 50, maxWild: 1 }, silent());
+                assert.deepEqual([c.list.total.small, c.list.total.large, c.list.small], [e.after.small, e.after.large, u.filter(isSmall).length]);
+                assert.deepEqual(c.list.excludes.map(m => [m.text, m.small, m.large]), ex.map(t => {
+                    const one = u.filter(x => isInc(x) && hits([t])(x));
+                    return [t, one.filter(isSmall).length, one.filter(x => !isSmall(x)).length];
+                }));
+                c.list.rows.forEach(m => {
+                    const own = u.filter(x => hits([m.text])(x) && !isEx(x));
+                    assert.deepEqual([m.small, m.large], [own.filter(isSmall).length, own.filter(x => !isSmall(x)).length]);
+                });
+                const rest = u.filter(x => !isInc(x) && !isEx(x));
+                assert.deepEqual([c.fresh.inScope, c.fresh.small], [rest.length, rest.filter(isSmall).length]);
+            }
+            // --prefix: EXCLUDE tez od niego sie zaczyna i nie wyklucza malych
+            const head = parseHead('A%.**');
+            const p = search(file, scope, when, { minPurity: 0, minCount: 1, maxMasks: 2, maxWild: 1, head }, silent());
+            const pe = findExcludes(p.input, p.masks.map(m => m.text), [], { minCount: 1, maxWild: 1, head }, () => {});
+            assert.ok(pe.masks.every(m => /^A%(\.|$)/.test(m.text)));
+            assert.equal(u.filter(x => isSmall(x) && hits(pe.masks.map(m => m.text))(x)).length, 0);
+        });
+
+        it(`testy do masek = wzorzec, ziarno ${seed}`, async () => {
+            const { file, u } = await load(seed + 800);
+            const r = search(file, scope, when, { minPurity: 0.3, minCount: 2, maxMasks: 8, maxWild: 2 }, silent());
+            const include = r.masks.map(m => m.text);
+            // maska tylko z duzymi zbiorami
+            include.push(u.find(x => !isSmall(x) && !hits(include)(x) && !u.some(y => isSmall(y) && y.dsn === x.dsn))!.dsn);
+            const exclude = findExcludes(r.input, include, [], { minCount: 1, maxWild: 1 }, () => {}).masks.slice(0, 5).map(m => m.text).concat(seed % 2 ? ['*.**.A%'] : []);
+            for (const per of [1, 3, 20]) {
+                const tests = maskTests(r.input, include, exclude, per, 'ACM', () => {});
+                const want = new Map<string, string>();
+                const of = (list: string[], x: { dsn: string }) => list.filter(m => hits([m])(x));
+                const reps = (list: string[], m: string, pool: DataSet[]) => [...new Set(pool.filter(x => hits([m])(x)).sort((a, b) =>
+                    of(list, a).length - of(list, b).length || (a.dsn < b.dsn ? -1 : Number(a.dsn > b.dsn))).map(x => x.dsn))].slice(0, per);
+                const isInc = hits(include);
+                const isEx = hits(exclude);
+                for (const m of include) {
+                    const own = u.filter(x => hits([m])(x) && !isEx(x));
+                    const pool = own.some(isSmall) ? own.filter(isSmall) : own;
+                    const nq = pool.map(x => x.quals.length);
+                    for (const n of [Math.min(...nq), ...(m.split('.').includes('**') ? [Math.max(...nq)] : [])]) {
+                        for (const d of reps(include, m, pool.filter(x => x.quals.length === n))) want.set(d, of(include, { dsn: d }).join(' '));
+                    }
+                }
+                for (const m of exclude) for (const d of reps(exclude, m, u.filter(x => isInc(x) && isEx(x)))) want.set(d, `EXCLUDE ${of(exclude, { dsn: d }).join(' ')}`);
+                const wide = include.filter(m => m.split('.').includes('*'));
+                const loose = wide.map(m => m.split('.').map(x => (x === '*' ? '**' : x)).join('.'));
+                wide.forEach((_, k) => {
+                    for (const d of reps(loose, loose[k], u.filter(x => !isInc(x)))) want.set(d, `BEZ MASKI - ${wide.filter((_m, i) => hits([loose[i]])({ dsn: d })).join(' ')}`);
+                });
+                assert.deepEqual(tests.map(t => [t.dsn, t.lines[1]]).sort(), [...want].map(([d, x]) => [d, x.slice(0, 72).trimEnd()]).sort());
+                assert.equal(tests[0].member, 'ACM00001');
+                assert.deepEqual(tests[0].lines.slice(2), [`DSN: ${tests[0].dsn}`, 'ACSENVIR: ALLOC']);
+            }
+        });
+    }
+
+    it('FILTLIST: zawijanie, EXCLUDE, ponad 255 masek, maski nie do przyjecia', () => {
+        const many = Array.from({ length: 300 }, (_, i) => `PROD.APP${i}.**`);
+        const l = filtlistText('MALE', many, ['*.**.LOG', 'PROD.X-1.A']);
+        assert.ok(l.every(x => x.length <= 71));
+        const p = parseMaskList(l.join('\n'), 'm');
+        assert.deepEqual([p.masks, p.excludes, p.warnings], [many, ['*.**.LOG', 'PROD.X-1.A'], []]);
+        assert.deepEqual(l.filter(x => /FILTLIST/.test(x)).map(x => x.trim().split(' ')[1]), ['MALE_1', 'MALE_2']);
+        assert.deepEqual(filtlistText('MALE', ['A.**'], []), ['  FILTLIST MALE INCLUDE(A.**)']);
+        assert.deepEqual(filtlistText('MALE', ['A.**'], ['A.B']), ['  FILTLIST MALE INCLUDE(A.**)', '                EXCLUDE(A.B)']);
+        assert.throws(() => filtlistText('MALE', ['A.**'], Array.from({ length: 256 }, (_, i) => `A.B${i}`)), /256 masek/);
+        assert.deepEqual(['A.**', 'A-B.C', 'A-B.**', 'A.LONGQUAL9'].map(m => acsProblem(m) === null), [true, true, false, false]);
+        // translator (parser ACS projektu) przyjmuje
+        const f = write('ROUT', ['PROC STORGRP', ...l, '  IF &DSN = &MALE_1 OR &DSN = &MALE_2 THEN', "    SET &STORGRP = 'SG1'", 'END', ''].join('\n'));
+        return full(['check', f]).then(r => {
+            assert.equal(r.code, 0, r.out + r.err);
+            assert.match(r.out, /FILTLIST: 2, porownan: 2/);
+        });
+    });
+
+    it('lista z FILTLIST i CSV ze stanem exclude', () => {
+        const p = (t: string) => {
+            const x = parseMaskList(t, 'm');
+            return [x.masks, x.excludes];
+        };
+        assert.deepEqual(p("/* x */ FILTLIST MALE\n INCLUDE(A.**, 'B.C' +\n ,D.%)\n EXCLUDE (A.X.**)"), [['A.**', 'B.C', 'D.%'], ['A.X.**']]);
+        assert.deepEqual(p('include(A.**,B.**)'), [['A.**', 'B.**'], []]);
+        assert.deepEqual(p('FILTLIST X INCLUDE(A.**) EXCLUDE(Q.**,Z.**) FILTLIST Y EXCLUDE(Z.**,Q.**) INCLUDE(B.**)'), [['A.**', 'B.**'], ['Q.**', 'Z.**']]);
+        assert.deepEqual(p('maska;malych;stan\nA.**;1;\nA.X.**;0;exclude\nB.**;1;usun\n'), [['A.**', 'B.**'], ['A.X.**']]);
+        for (const [t, msg] of [['FILTLIST X INCLUDE(A.**', /brak "\)"/], ['FILTLIST X INCLUDE(A.** FILTLIST Y INCLUDE(', /wiersz 1: brak "\)" przed|niepoprawny/],
+            ['FILTLIST X INCLUDE(A.**)\nFILTLIST Y INCLUDE(B.**) EXCLUDE(C.**)', /wiersz 2: .*rozne EXCLUDE/],
+            ['FILTLIST X INCLUDE(A.**) EXCLUDE(Q.**)\nFILTLIST Y INCLUDE(B.**) EXCLUDE(C.**)', /rozne EXCLUDE/],
+            ['FILTLIST X INCLUDE(A.**) EXCLUDE(Q.**,Z.**)\nFILTLIST Y INCLUDE(B.**) EXCLUDE(Q.**)', /rozne EXCLUDE/],
+            ['PROC STORGRP\nFILTLIST X INCLUDE(A.**)', /wiersz 1: "PROC"/], ['FILTLIST X INCLUDE(A.**)\nINCLUDE A', /wiersz 2: oczekiwano "\("/],
+            ["FILTLIST X INCLUDE(\n'A.*')", /wiersz 2: .*bez apostrofow/], ['FILTLIST X EXCLUDE(A.**)', /brak masek/]] as [string, RegExp][]) {
+            assert.throws(() => parseMaskList(t, 'm'), msg, t);
+        }
+    });
+
+    it('wywolanie: pliki i raport; FILTLIST i CSV jako nastepna lista', () => {
+        const line = (dsn: string, trk: number, usekb: number) => dline({ dsn, allkb: kbForTrk(trk), usekb });
+        write('X.CSV', csv([...Array.from({ length: 20 }, (_, i) => line(`ABC.N${i}.DAT`, 315, 40)),
+            ...Array.from({ length: 4 }, (_, i) => line(`ABC.N${i}.LOG`, 900, kbForTrk(800))), line('ABC.SAM.DUZY', 900, kbForTrk(800))]));
+        write('abc.txt', 'ABC.**\n');
+        const files = ['--filtlist', 'fl.txt', '--tests', 'ACMTEST', '--out', 'e.csv'];
+        const r = auto(['X.CSV', '--masks', 'abc.txt', '--exclude', ...files]);
+        assert.equal(r.code, 0, r.err);
+        assert.match(r.out, /Masek EXCLUDE: 1; wylaczaja 80,0% duzych objetych maskami/);
+        assert.match(r.out, /Po EXCLUDE: malych 20, duzych 5 -> 1, purity 80,0% -> 95,2%/);
+        const read = (n: string) => fs.readFileSync(path.join(dir, n), 'utf-8');
+        assert.equal(read('fl.txt'), '  FILTLIST MALE INCLUDE(ABC.**)\n                EXCLUDE(ABC.N%.LOG)\n');
+        assert.equal(read('ACMTEST'), ['./ ADD NAME=ACM00001', 'DESCRIPTION1:', 'ABC.**', 'DSN: ABC.N0.DAT', 'ACSENVIR: ALLOC',
+            './ ADD NAME=ACM00002', 'DESCRIPTION1:', 'EXCLUDE ABC.N%.LOG', 'DSN: ABC.N0.LOG', 'ACSENVIR: ALLOC', './ ENDUP', ''].join('\n'));
+        assert.deepEqual(rowsOf('e.csv').map(x => [x[0], x[1], x[2], x[7]]), [['ABC.**', '20', '5', ''], ['ABC.N%.LOG', '0', '4', 'exclude']]);
+        assert.equal(r.err.split('\n').filter(l => /^\[\d\/7\]/.test(l)).length, 7);
+
+        const again = ['fl.txt', 'e.csv'].map(f => auto(['X.CSV', '--masks', f, '--exclude', '--out', 'e2.csv']).out.split('\n').slice(1).join('\n'));
+        assert.equal(again[0], again[1]);
+        assert.match(again[0], /ABC\.N%\.LOG +0 +4 /);
+        assert.match(again[0], /Brak masek EXCLUDE/);
+        assert.deepEqual(rowsOf('e2.csv').map(x => [x[0], x[2], x[7]]), [['ABC.**', '1', ''], ['ABC.N%.LOG', '4', 'exclude']]);
+
+        // FILTLIST: maski z listy i nowe, EXCLUDE z listy i nowy
+        write('abx.txt', 'FILTLIST A INCLUDE(ABC.N1*.**) EXCLUDE(ABC.N1.LOG)');
+        assert.equal(auto(['X.CSV', '--masks', 'abx.txt', '--min-count', '3', '--min-purity', '0.5', '--exclude', '--exclude-min', '1', '--filtlist', 'fl2.txt']).code, 0);
+        const two = parseMaskList(read('fl2.txt'), 'm');
+        assert.equal(two.masks[0], 'ABC.N1*.**');
+        assert.ok(two.masks.length > 1);
+        assert.equal(two.excludes[0], 'ABC.N1.LOG');
+
+        // przy szukaniu: kolumna stan tylko z EXCLUDE
+        const s = auto(['X.CSV', '--min-purity', '0.8', '--exclude', '--exclude-min', '1', '--per-mask', '2', '--test-prefix', 'T', ...files]);
+        assert.equal(s.code, 0, s.err);
+        assert.ok(rowsOf('e.csv').every(x => x.length === 6));
+        assert.match(s.out, /EXCLUDE niepotrzebny/);
+        assert.match(read('ACMTEST'), /^\.\/ ADD NAME=T0000001\n[^]*NAME=T0000002\n/);
+        const none = auto(['X.CSV', '--min-count', '99', '--filtlist', 'brak1', '--tests', 'brak2', '--exclude']);
+        assert.equal(none.code, 0, none.err);
+        assert.ok(!fs.existsSync(path.join(dir, 'brak1')) && !fs.existsSync(path.join(dir, 'brak2')));
+        for (const a of [['--test-prefix', 'A1'], ['--exclude-min', '0'], ['--per-mask', 'x'], ['--filtlist', 'brak/x']]) {
+            const x = auto(['X.CSV', '--min-purity', '0.8', ...a]);
             assert.equal(x.code, 1, a.join(' '));
             assert.doesNotMatch(x.err, /^\s+at /m);
         }

@@ -10,14 +10,10 @@
  * Nazwa jest porownywana z cala lista naraz (drzewo masek), wiec czas prawie nie zalezy od liczby masek.
  */
 import { MaskRow } from './auto-mine';
-import { Interner, IntList, PairMap, Tick } from './auto-util';
+import { MaskTree, within } from './auto-tree';
+import { Interner, IntList, Tick } from './auto-util';
 import { parseMask } from './mask';
 
-const DOT = 46;
-const PCT = 37;
-const STAR = 42;
-/** krawedz '**' w drzewie masek (wzorce kwalifikatorow maja numery od 1) */
-const ANY_QUALS = 0;
 /** ile masek wymienia powod zbednosci */
 const MAX_NOTE = 4;
 
@@ -25,244 +21,104 @@ export class MaskListError extends Error {}
 
 export interface MaskList {
     masks: string[];
+    /** maski EXCLUDE: z FILTLIST albo z CSV (stan "exclude") */
+    excludes: string[];
     warnings: string[];
 }
 
 /**
- * Lista masek z pliku: po jednej w linii albo po przecinku (wnetrze INCLUDE), w CSV pierwsza kolumna (plik z --out).
- * Pelna nazwa moze byc w apostrofach; komentarze jak w ACS. Powtorzone maski sa pomijane z ostrzezeniem.
+ * Lista masek z pliku: po jednej w linii albo po przecinku (wnetrze INCLUDE), FILTLIST z INCLUDE i EXCLUDE (plik
+ * z --filtlist), w CSV pierwsza kolumna (plik z --out). Pelna nazwa moze byc w apostrofach; komentarze jak w ACS.
+ * Powtorzone maski sa pomijane z ostrzezeniem.
  */
 export function parseMaskList(text: string, file: string): MaskList {
     const masks: string[] = [];
+    const excludes: string[] = [];
     const warnings: string[] = [];
-    const seen = new Set<string>();
     // komentarz zamieniony na same konce linii, zeby zgadzaly sie numery wierszy
-    const clean = text.replace(/^﻿/, '').replace(/\/\*[\s\S]*?\*\//g, c => c.replace(/[^\n]/g, ' '));
-    clean.split(/\r?\n/).forEach((line, i) => {
-        const fail = (msg: string) => new MaskListError(`${file}, wiersz ${i + 1}: ${msg}`);
-        const csv = line.includes(';');
-        if (/^T;DSN;/i.test(line)) throw fail('to CSV z DCOLLECT, a nie lista masek');
-        const items = csv ? [line.split(';')[0]] : line.split(/[\s,]+/);
-        for (const item of items.map(x => x.trim()).filter(Boolean)) {
-            if (csv && item.toLowerCase() === 'maska') continue;
-            const quoted = /^'(.*)'$/.exec(item);
-            if (quoted && /[*%]/.test(quoted[1])) throw fail(`${item} - w apostrofach to pelna nazwa; maske podaj bez apostrofow`);
-            let mask: string;
-            try {
-                mask = parseMask(quoted ? quoted[1] : item).text;
-            } catch (e) {
-                throw fail((e as Error).message);
-            }
-            if (/^[0-9]/.test(mask)) throw fail(`"${mask}" - nazwa zbioru nie zaczyna sie cyfra`);
-            if (seen.has(mask)) warnings.push(`${file}, wiersz ${i + 1}: maska ${mask} powtorzona`);
-            else masks.push(mask);
-            seen.add(mask);
+    const clean = text.replace(/^\ufeff/, '').replace(/\/\*[\s\S]*?\*\//g, c => c.replace(/[^\n]/g, ' '));
+    const fail = (i: number, msg: string) => new MaskListError(`${file}, wiersz ${i + 1}: ${msg}`);
+    const parse = (item: string, i: number): string => {
+        const quoted = /^'(.*)'$/.exec(item);
+        if (quoted && /[*%]/.test(quoted[1])) throw fail(i, `${item} - w apostrofach to pelna nazwa; maske podaj bez apostrofow`);
+        let mask: string;
+        try {
+            mask = parseMask(quoted ? quoted[1] : item).text;
+        } catch (e) {
+            throw fail(i, (e as Error).message);
         }
-    });
-    if (masks.length === 0) throw new MaskListError(`${file}: brak masek`);
-    return { masks, warnings };
-}
-
-/** Lista masek jako drzewo kwalifikatorow; kwalifikatory z * i % - drzewo znakow. */
-export class MaskTree {
-    /** (wezel znakow, bajt) -> wezel; na koncu wzorca jego numer */
-    private readonly chars = new PairMap();
-    private readonly charLeaf = new IntList();
-    /** (wezel masek, wzorzec) -> wezel; na koncu maski ich numery */
-    private readonly child = new PairMap();
-    private readonly ends: number[][] = [[]];
-    private readonly stamp: Int32Array;
-    private round = 0;
-    private readonly pats = new IntList();
-    private readonly qs = new Int32Array(256);
-    private readonly qe = new Int32Array(256);
-    private readonly from = new Int32Array(256);
-    private readonly to = new Int32Array(256);
-    private out: number[] = [];
-
-    constructor(masks: string[][]) {
-        this.charLeaf.push(0);
-        this.stamp = new Int32Array(masks.length);
-        const ids = new Map<string, number>([['**', ANY_QUALS]]);
-        masks.forEach((quals, m) => {
-            let node = 0;
-            quals.forEach((q, i) => {
-                // ** po ** nic nie zmienia
-                if (q === '**' && quals[i - 1] === '**') return;
-                let id = ids.get(q);
-                if (id === undefined) {
-                    ids.set(q, id = ids.size);
-                    this.addPattern(q, id);
-                }
-                let x = this.child.get(node, id);
-                if (x < 0) {
-                    x = this.ends.length;
-                    this.ends.push([]);
-                    this.child.set(node, id, x);
-                }
-                node = x;
-            });
-            this.ends[node].push(m);
+        if (/^[0-9]/.test(mask)) throw fail(i, `"${mask}" - nazwa zbioru nie zaczyna sie cyfra`);
+        return mask;
+    };
+    const add = (into: string[], mask: string, i: number) => {
+        if (into.includes(mask)) warnings.push(`${file}, wiersz ${i + 1}: maska ${mask} powtorzona`);
+        else into.push(mask);
+    };
+    const lines = clean.split(/\r?\n/);
+    if (/(^|\s)(INCLUDE|EXCLUDE)\s*\(/i.test(clean)) {
+        parseFiltlists(lines, fail).forEach((list, k) => {
+            list.include.forEach(x => add(masks, parse(x.item, x.line), x.line));
+            // EXCLUDE dziala tylko w swojej liscie; wspolne dla calego pliku jest tylko takie samo w kazdej
+            const own: string[] = [];
+            list.exclude.forEach(x => add(own, parse(x.item, x.line), x.line));
+            if (k === 0) excludes.push(...own);
+            else if (own.length !== excludes.length || own.some(x => !excludes.includes(x))) throw fail(list.line, 'FILTLIST maja rozne EXCLUDE - sprawdz kazda osobno');
+        });
+    } else {
+        let state = -1;
+        lines.forEach((line, i) => {
+            if (/^T;DSN;/i.test(line)) throw fail(i, 'to CSV z DCOLLECT, a nie lista masek');
+            if (!line.includes(';')) {
+                line.split(/[\s,]+/).filter(Boolean).forEach(item => add(masks, parse(item, i), i));
+                return;
+            }
+            const cols = line.split(';').map(x => x.trim());
+            if (cols[0].toLowerCase() === 'maska') state = cols.indexOf('stan');
+            else if (cols[0]) add(state >= 0 && cols[state] === 'exclude' ? excludes : masks, parse(cols[0], i), i);
         });
     }
-
-    private addPattern(q: string, id: number): void {
-        let node = 0;
-        for (let i = 0; i < q.length; i++) {
-            let x = this.chars.get(node, q.charCodeAt(i));
-            if (x < 0) {
-                x = this.charLeaf.n;
-                this.charLeaf.push(0);
-                this.chars.set(node, q.charCodeAt(i), x);
-            }
-            node = x;
-        }
-        this.charLeaf.a[node] = id;
-    }
-
-    /** Wzorce pasujace do kwalifikatora buf[p..e). */
-    private patterns(buf: Uint8Array, p: number, e: number, node: number): void {
-        const star = this.chars.get(node, STAR);
-        if (star >= 0) for (let k = p; k <= e; k++) this.patterns(buf, k, e, star);
-        if (p === e) {
-            if (this.charLeaf.a[node]) this.pats.push(this.charLeaf.a[node]);
-            return;
-        }
-        const any = this.chars.get(node, PCT);
-        if (any >= 0) this.patterns(buf, p + 1, e, any);
-        const same = this.chars.get(node, buf[p]);
-        if (same >= 0) this.patterns(buf, p + 1, e, same);
-    }
-
-    private walk(buf: Uint8Array, node: number, i: number, n: number): void {
-        const more = this.child.get(node, ANY_QUALS);
-        if (more >= 0) for (let k = i; k <= n; k++) this.walk(buf, more, k, n);
-        if (i === n) {
-            for (const m of this.ends[node]) {
-                if (this.stamp[m] === this.round) continue;
-                this.stamp[m] = this.round;
-                this.out.push(m);
-            }
-            return;
-        }
-        if (this.from[i] < 0) {
-            this.from[i] = this.pats.n;
-            if (this.qs[i] < this.qe[i]) this.patterns(buf, this.qs[i], this.qe[i], 0);
-            this.to[i] = this.pats.n;
-        }
-        for (let y = this.from[i]; y < this.to[i]; y++) {
-            const x = this.child.get(node, this.pats.a[y]);
-            if (x >= 0) this.walk(buf, x, i + 1, n);
-        }
-    }
-
-    /** Numery masek pasujacych do nazwy buf[s..e), rosnaco; tablica wazna do nastepnego wywolania. */
-    match(buf: Uint8Array, s: number, e: number): number[] {
-        this.round++;
-        this.pats.n = 0;
-        this.out = [];
-        let n = 0;
-        let b = s;
-        for (let p = s; p <= e; p++) {
-            if (p < e && buf[p] !== DOT) continue;
-            this.qs[n] = b;
-            this.qe[n] = p;
-            this.from[n++] = -1;
-            b = p + 1;
-        }
-        this.walk(buf, 0, 0, n);
-        return this.out.length > 1 ? this.out.sort((x, y) => x - y) : this.out;
-    }
+    if (masks.length === 0) throw new MaskListError(`${file}: brak masek`);
+    return { masks, excludes, warnings };
 }
 
-interface Nfa {
-    /** przejscia: znak, '.' albo null = dowolny znak kwalifikatora */
-    edges: { on: string | null; to: number }[][];
-    eps: number[][];
-    end: number;
+interface Entry {
+    item: string;
+    line: number;
 }
 
-/** Maska jako automat na nazwie z kropka po kazdym kwalifikatorze (A.B -> "A.B."). */
-function nfa(quals: string[]): Nfa {
-    const edges: Nfa['edges'] = [];
-    const eps: number[][] = [];
-    const add = (): number => {
-        edges.push([]);
-        eps.push([]);
-        return edges.length - 1;
-    };
-    let s = add();
-    const next = (on: string | null) => {
-        const t = add();
-        edges[s].push({ on, to: t });
-        s = t;
-    };
-    const loop = () => {
-        const t = add();
-        eps[s].push(t);
-        s = t;
-    };
-    for (const q of quals) {
-        if (q === '**') {
-            loop();
-            const u = add();
-            edges[s].push({ on: null, to: u });
-            edges[u].push({ on: null, to: u }, { on: '.', to: s });
-            loop();
-            continue;
-        }
-        if (q === '*') next(null);
-        for (const c of q) {
-            if (c === '*') {
-                loop();
-                edges[s].push({ on: null, to: s });
-                loop();
+/** FILTLIST nazwa INCLUDE(...) EXCLUDE(...), dowolnie wiele; bez innych instrukcji rutyny. */
+function parseFiltlists(lines: string[], fail: (line: number, msg: string) => Error): { line: number; include: Entry[]; exclude: Entry[] }[] {
+    const lists: { line: number; include: Entry[]; exclude: Entry[] }[] = [];
+    let section: Entry[] | null = null;
+    let expect: 'name' | '(' | null = null;
+    lines.forEach((text, line) => {
+        // + i - na koncu linii: kontynuacja
+        for (const tok of text.replace(/\s[+-]\s*$/, '').match(/[(),]|'[^']*'|[^\s(),]+/g) ?? []) {
+            const word = tok.toUpperCase();
+            if (expect === 'name') {
+                expect = null;
+            } else if (expect === '(') {
+                if (tok !== '(') throw fail(line, `oczekiwano "(", jest "${tok}"`);
+                expect = null;
+            } else if (section) {
+                if (tok === ')') section = null;
+                else if (tok === '(') throw fail(line, 'brak ")" przed "("');
+                else if (tok !== ',') section.push({ item: tok, line });
+            } else if (word === 'FILTLIST') {
+                lists.push({ line, include: [], exclude: [] });
+                expect = 'name';
+            } else if (word === 'INCLUDE' || word === 'EXCLUDE') {
+                // sam INCLUDE(...) bez FILTLIST
+                if (lists.length === 0) lists.push({ line, include: [], exclude: [] });
+                section = lists[lists.length - 1][word === 'INCLUDE' ? 'include' : 'exclude'];
+                expect = '(';
             } else {
-                next(c === '%' ? null : c);
+                throw fail(line, `"${tok}" - plik moze zawierac tylko FILTLIST`);
             }
         }
-        next('.');
-    }
-    return { edges, eps, end: s };
-}
-
-function closure(a: Nfa, states: Iterable<number>): number[] {
-    const seen = new Set<number>(states);
-    for (const s of seen) for (const t of a.eps[s]) seen.add(t);
-    return [...seen].sort((x, y) => x - y);
-}
-
-/** Czy kazda nazwa pasujaca do maski a pasuje tez do b (bez danych: porownanie samych masek). */
-export function within(a: string[], b: string[]): boolean {
-    const na = nfa(a);
-    const nb = nfa(b);
-    // znaki, ktore rozroznia b; '\0' = kazdy inny
-    const letters = new Set(['\0']);
-    for (const l of nb.edges) for (const x of l) if (x.on !== null && x.on !== '.') letters.add(x.on);
-    const start = closure(nb, [0]);
-    // stany poczatkowe poza seen: pusta nazwa (** bez kwalifikatorow) sie nie liczy
-    const todo = closure(na, [0]).map(s => ({ s, set: start, empty: true }));
-    const seen = new Set<string>();
-    while (todo.length) {
-        const { s, set, empty } = todo.pop()!;
-        if (!empty && s === na.end && !set.includes(nb.end)) return false;
-        for (const x of na.edges[s]) {
-            for (const c of x.on === null ? letters : [x.on]) {
-                const to = new Set<number>();
-                for (const t of set) {
-                    for (const y of nb.edges[t]) if (y.on === c || (y.on === null && c !== '.')) to.add(y.to);
-                }
-                const after = closure(nb, to);
-                for (const t of closure(na, [x.to])) {
-                    const key = `${t}|${after}`;
-                    if (seen.has(key)) continue;
-                    seen.add(key);
-                    todo.push({ s: t, set: after, empty: false });
-                }
-            }
-        }
-    }
-    return true;
+    });
+    if (section) throw fail(lines.length - 1, 'brak ")"');
+    return lists;
 }
 
 /** Zbiory objete dokladnie tymi samymi maskami. */
@@ -304,8 +160,10 @@ export interface CheckResult {
     after: MaskRow;
     /** pary masek ze wspolnymi zbiorami, od najwiekszej liczby malych */
     overlaps: Overlap[];
-    /** wiersze zbiorow, ktorych nie obejmuje zadna maska */
+    /** wiersze zbiorow, ktorych nie obejmuje zadna maska (bez wylaczonych przez EXCLUDE) */
     rest: { pos: Int32Array; neg: Int32Array };
+    /** maski EXCLUDE: zbiory, ktore odbieraja maskom INCLUDE (poza tym raportem) */
+    excludes: MaskRow[];
 }
 
 export interface CheckInput {
@@ -329,18 +187,28 @@ function sumUp(text: string, groups: Group[]): MaskRow {
     return r;
 }
 
-export function checkMasks(input: CheckInput, masks: string[], tick: Tick): CheckResult {
+export function checkMasks(input: CheckInput, masks: string[], excludes: string[], tick: Tick): CheckResult {
     const { names, allocKb, pos, neg } = input;
     const quals = masks.map(m => parseMask(m).quals);
     const tree = new MaskTree(quals);
+    const exTree = excludes.length ? new MaskTree(excludes.map(m => m.split('.'))) : null;
+    const exRows = excludes.map((text): MaskRow => ({ text, small: 0, large: 0, purity: 0, smallKb: 0, largeKb: 0 }));
 
     // ---- grupy zbiorow o tym samym zestawie masek
     const single: (Group | undefined)[] = [];
     const multi = new Map<string, Group>();
     const empty = (ids: number[]): Group => ({ ids, small: 0, large: 0, smallKb: 0, largeKb: 0 });
-    const groupOf = (row: number): Group | null => {
+    const groupOf = (row: number, isSmall: boolean): Group | null | 'excluded' => {
         const s = names.start[row];
         const ids = tree.match(names.pool, s, s + names.len[row]);
+        const out = exTree?.match(names.pool, s, s + names.len[row]) ?? [];
+        if (out.length) {
+            for (const x of ids.length ? out : []) {
+                exRows[x][isSmall ? 'small' : 'large']++;
+                exRows[x][isSmall ? 'smallKb' : 'largeKb'] += allocKb[row];
+            }
+            return 'excluded';
+        }
         if (ids.length === 0) return null;
         if (ids.length === 1) return single[ids[0]] ??= empty(ids);
         const key = ids.join();
@@ -355,7 +223,8 @@ export function checkMasks(input: CheckInput, masks: string[], tick: Tick): Chec
     for (let x = 0; x < pos.length; x++) {
         if ((x & 0x3fff) === 0) tick(x / count);
         smallKb += allocKb[pos[x]];
-        const g = groupOf(pos[x]);
+        const g = groupOf(pos[x], true);
+        if (g === 'excluded') continue;
         if (!g) {
             restPos.push(pos[x]);
             continue;
@@ -365,7 +234,8 @@ export function checkMasks(input: CheckInput, masks: string[], tick: Tick): Chec
     }
     for (let x = 0; x < neg.length; x++) {
         if ((x & 0x3fff) === 0) tick((pos.length + x) / count);
-        const g = groupOf(neg[x]);
+        const g = groupOf(neg[x], false);
+        if (g === 'excluded') continue;
         if (!g) {
             restNeg.push(neg[x]);
             continue;
@@ -443,6 +313,7 @@ export function checkMasks(input: CheckInput, masks: string[], tick: Tick): Chec
         after: sumUp('RAZEM PO USUNIECIU', groups.filter(g => g.ids.some(m => left[m]))),
         overlaps,
         rest: { pos: restPos.a.slice(0, restPos.n), neg: restNeg.a.slice(0, restNeg.n) },
+        excludes: exRows,
     };
 }
 
