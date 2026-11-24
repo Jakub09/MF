@@ -68,16 +68,16 @@ export interface Stages {
 
 const DOT = 46;
 const PCT = 37;
-const MAX_LEN = 44;
+export const MAX_LEN = 44;
 /** pozycje w nazwie sa bitami liczby 32-bitowej (nazwa z/OS ma najwyzej 22 kwalifikatory) */
 const MAX_QUALS = 30;
-const DATED = /^[A-Z#@$]{1,3}[0-9]{5,7}$/;
+export const DATED = /^[A-Z#@$]{1,3}[0-9]{5,7}$/;
 
-const isDigit = (b: number) => b >= 48 && b <= 57;
+export const isDigit = (b: number) => b >= 48 && b <= 57;
 const bitPos = (m: number) => 31 - Math.clz32(m & -m);
-const purityOf = (small: number, large: number) => (small ? small / (small + large) : 0);
-const literalChars = (t: string) => t.replace(/[*%.]/g, '').length;
-const starChars = (t: string) => t.replace(/[^*]/g, '').length;
+export const purityOf = (small: number, large: number) => (small ? small / (small + large) : 0);
+export const literalChars = (t: string) => t.replace(/[*%.]/g, '').length;
+export const starChars = (t: string) => t.replace(/[^*]/g, '').length;
 
 /** Elementy masek (bez *). */
 interface Tokens {
@@ -777,7 +777,7 @@ function buildHeads(quals: Interner, occ: Int32Array, min: number): Heads {
     return { texts: kept, match: (buf, s, e, into) => walk(buf, s, e, t => into.push(t)) };
 }
 
-interface Patterns {
+export interface Patterns {
     texts: string[];
     /** kwalifikator -> wzorzec z niego powstaly (cyfry -> %) albo -1 (bez cyfr, wzorzec za rzadki) */
     gen: Int32Array;
@@ -793,7 +793,7 @@ interface Patterns {
  * Rozwijane znak po znaku: set = kwalifikatory pasujace do poczatku wzorca, own = te, ktorych wlasny wzorzec
  * tak sie zaczyna; galaz konczy sie, gdy own jest puste albo set ma mniej niz min wystapien.
  */
-function buildPatterns(quals: Interner, occ: Int32Array, min: number, tick: Tick): Patterns {
+export function buildPatterns(quals: Interner, occ: Int32Array, min: number, tick: Tick): Patterns {
     const { pool, start, len } = quals;
     const texts: string[] = [];
     const gen = new Int32Array(quals.size).fill(-1);

@@ -9,6 +9,7 @@ import { check, main as autoMain, parseConds, parseHead, search, SearchResult } 
 import { acsProblem, filtlistText, findExcludes, maskTests } from '../src/auto-acs';
 import { parseMaskList } from '../src/auto-check';
 import { MaskRow } from '../src/auto-mine';
+import { findCombos, narrower, parseTries, QualOptions, shorten, tryCombos } from '../src/auto-quals';
 import { MaskTree, within } from '../src/auto-tree';
 import { BOOL, Field, NUM, readStore, STR } from '../src/auto-read';
 import { Interner, PairMap, Progress } from '../src/auto-util';
@@ -897,5 +898,222 @@ describe('struktury i pasek postepu', () => {
         assert.match(bad(csv([one.replace(';01;', ';1X;')])), /wiersz 2: VOLSQ "1X" nie jest liczba/);
         assert.match(bad(csv([one.replace('D;A.B', 'D;')])), /wiersz 2: pusta nazwa/);
         assert.match(bad(csv([one.replace(';01;', ';\x00\x01;')])), /binarnym VOLSQ/);
+    });
+});
+
+describe('kombinacje kwalifikatorow', () => {
+    const input = (small: string[], large: string[]) => {
+        const names = new Interner();
+        for (const n of [...small, ...large]) names.add(Buffer.from(n), 0, n.length);
+        const allocKb = Float64Array.from({ length: names.size }, (_, i) => 1000 + i);
+        return { names, allocKb, pos: Int32Array.from(small, (_, i) => i), neg: Int32Array.from(large, (_, i) => small.length + i) };
+    };
+    const base: QualOptions = { maxQuals: 3, top: 100000, minCount: 4, minPurity: 0, partial: 2, seconds: 600, minGain: 0 };
+    const hit = (mask: string, list: string[]) => {
+        const m = parseMask(mask.length > 44 ? 'X' : mask);
+        assert.ok(mask.length <= 44, mask);
+        return list.filter(n => matches(m, n));
+    };
+    const wide = (quals: string[], head: string[] = []) => [...head, '**', ...quals.flatMap(q => [q, '**'])].join('.');
+
+    /** male i duze nazwy o krotkich kwalifikatorach z powtarzajacymi sie czesciami */
+    function data(seed: number) {
+        const r = rng(seed);
+        const pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
+        const qual = () => pick(['AB', 'ABC', 'ABD', 'XAB', 'XABY', 'LOG', 'LOG1', 'LOG2', 'ALOG', 'T1', 'T2', 'TMP', `Q${pick(['A', 'B', 'C', 'D'])}Z`]);
+        const set = new Set<string>();
+        while (set.size < 60) set.add(Array.from({ length: 1 + Math.floor(r() * 4) }, qual).join('.'));
+        const all = [...set];
+        return { small: all.slice(0, 30), large: all.slice(30) };
+    }
+    /** wszystkie kombinacje: maska **.A.**.B.** -> male zbiory */
+    function brute(small: string[], k: number, partial: number) {
+        const forms = (q: string) => {
+            const out = new Set([q]);
+            for (let n = partial; n < q.length; n++) {
+                for (let i = 0; i + n <= q.length; i++) {
+                    const p = q.slice(i, i + n);
+                    if (/^[0-9]+$/.test(p)) continue;
+                    if (i === 0) out.add(`${p}*`);
+                    if (i + n === q.length) out.add(`*${p}`);
+                    out.add(`*${p}*`);
+                }
+            }
+            const d = digitMask(q);
+            if (d && /[A-Z]/.test(d) && partial) out.add(d);
+            return [...out];
+        };
+        const masks = new Set<string>();
+        const walk = (quals: string[], from: number, left: number, acc: string[]): void => {
+            if (left === 0) {
+                masks.add(wide(acc));
+                return;
+            }
+            for (let i = from; i + left <= quals.length; i++) for (const f of forms(quals[i])) walk(quals, i + 1, left - 1, [...acc, f]);
+        };
+        for (const n of small) walk(n.split('.'), 0, k, []);
+        return [...masks];
+    }
+
+    it('tabele maja wszystkie rozne zestawy malych zbiorow (pelny przeglad), liczby zgodne z maskami', () => {
+        for (let seed = 1; seed <= 12; seed++) {
+            const { small, large } = data(seed);
+            for (const partial of [0, 2, 3]) {
+                const inp = input(small, large);
+                const r = findCombos(inp, { ...base, partial, maxQuals: 3, minCount: 4 }, () => {});
+                assert.equal(r.floor, null);
+                for (let k = 1; k <= 3; k++) {
+                    const want = new Map<string, number>();
+                    for (const m of brute(small, k, partial || 99)) {
+                        const c = hit(m, small);
+                        if (c.length >= 4 && (partial || !/[%*][A-Z0-9]|[A-Z0-9][%*]/.test(m))) want.set(c.join(), c.length);
+                    }
+                    const got = r.tables[k - 1].map(c => hit(wide(c.quals), small).join());
+                    assert.deepEqual([...got].sort(), [...want.keys()].sort(), `seed ${seed} partial ${partial} k ${k}`);
+                    const counts = r.tables[k - 1].map(c => c.small);
+                    assert.deepEqual(counts, [...counts].sort((a, b) => b - a));
+                    for (const c of r.tables[k - 1]) {
+                        const [s, l] = [hit(wide(c.quals), small), hit(wide(c.quals), large)];
+                        assert.deepEqual([c.small, c.large], [s.length, l.length], wide(c.quals));
+                        const kb = (list: string[], all: string[], from: number) => list.reduce((x, n) => x + 1000 + from + all.indexOf(n), 0);
+                        assert.deepEqual([c.smallKb, c.largeKb], [kb(s, small, 0), kb(l, large, small.length)]);
+                        for (const a of c.also) assert.deepEqual(hit(wide(a), small), s, `${c.quals} / ${a}`);
+                        assert.ok(c.mask);
+                        assert.deepEqual(hit(c.mask.text, small), s, c.mask.text);
+                        const ml = hit(c.mask.text, large);
+                        assert.equal(c.mask.large, ml.length, c.mask.text);
+                        assert.ok(ml.every(n => l.includes(n)));
+                        assert.deepEqual([c.mask.small, c.mask.smallKb, c.mask.largeKb], [c.small, c.smallKb, kb(ml, large, small.length)]);
+                    }
+                }
+            }
+        }
+    });
+
+    it('top: pierwsze wiersze pelnej tabeli', () => {
+        for (let seed = 1; seed <= 12; seed++) {
+            const { small, large } = data(seed);
+            const all = findCombos(input(small, large), { ...base, minCount: 2 }, () => {});
+            const top = findCombos(input(small, large), { ...base, minCount: 2, top: 7 }, () => {});
+            for (let k = 0; k < 3; k++) assert.deepEqual(top.tables[k].map(c => c.small), all.tables[k].slice(0, 7).map(c => c.small));
+        }
+    });
+
+    it('--min-purity: same czyste, kazda czysta kombinacja zawarta w ktoryms wierszu', () => {
+        for (let seed = 1; seed <= 12; seed++) {
+            const { small, large } = data(seed);
+            const r = findCombos(input(small, large), { ...base, minPurity: 0.8 }, () => {});
+            const rows = r.tables.flat();
+            assert.ok(rows.every(c => c.purity >= 0.8));
+            const covers = rows.map(c => new Set(hit(wide(c.quals), small)));
+            for (let k = 1; k <= 3; k++) {
+                for (const m of brute(small, k, 2)) {
+                    const s = hit(m, small);
+                    if (s.length < 4 || s.length / (s.length + hit(m, large).length) < 0.8) continue;
+                    assert.ok(covers.some(c => s.every(n => c.has(n))), `seed ${seed}: ${m}`);
+                }
+            }
+            for (const a of rows) for (const b of rows) if (a !== b) assert.ok(!within(wide(a.quals).split('.'), wide(b.quals).split('.')), `${a.quals} w ${b.quals}`);
+        }
+    });
+
+    it('poczatek nazw, data, niepelny o stalej dlugosci, prawie to samo co szczegolowszy', () => {
+        const small = [...Array.from({ length: 12 }, (_, i) => `ABC1.X${i % 3}.D24110${i % 9}.PAYLOG${i % 4}`), 'ABC1.X0.D241101.PAYLOGS1'];
+        const r = findCombos(input([...new Set(small)], ['ABC1.PAYLOG1']), { ...base, minCount: 3, head: ['ABC%'], minGain: 0.2 }, () => {});
+        const [one] = r.tables;
+        const texts = one.map(c => c.quals[0]);
+        assert.ok(texts.includes('PAYLOG%') || one.some(c => c.also.some(a => a[0] === 'PAYLOG%')), texts.join());
+        assert.ok(!texts.some(t => /^D24/.test(t)) && !one.some(c => c.also.some(a => /^D24/.test(a[0]))));
+        assert.ok(r.tables.flat().every(c => c.mask!.text.startsWith('ABC%.')));
+        // ABC* i wezsze PAYLOG* z prawie tymi samymi malymi: zostaje jedna
+        const full = findCombos(input([...new Set(small)], []), { ...base, minCount: 3, head: ['ABC%'] }, () => {});
+        assert.ok(full.tables[0].length >= one.length);
+        assert.deepEqual(findCombos(input(['A.B'], []), { ...base, minCount: 2 }, () => {}).tables, [[], [], []]);
+    });
+
+    it('miejsca wzorca, prawie rowne konce, data tylko na poczatku, bez szerszych w "te same male"', () => {
+        const one = (list: string[], o: Partial<QualOptions> = {}) =>
+            findCombos(input(list, []), { ...base, partial: 3, maxQuals: 1, minCount: 2, ...o }, () => {}).tables[0];
+        const texts = (list: string[], o: Partial<QualOptions> = {}) => one(list, o).flatMap(c => [c.quals[0], ...c.also.map(a => a[0])]);
+        // ta sama dlugosc, rozne miejsca: *ABC*; ta sama dlugosc i miejsce: %ABC%
+        assert.ok(texts(['P.ABCXY', 'Q.XABCY', 'R.XYABC']).includes('*ABC*'));
+        assert.ok(texts(['P.XABCY', 'Q.ZABCW']).includes('%ABC%'));
+        assert.ok(texts(['P.XABCY', 'Q.ZABCWW']).includes('*ABC*'));
+        // koniec: ZLOG 3 razy, *LOG o jeden wiecej
+        const ends = one(['A.ZLOG', 'B.ZLOG', 'C.ZLOG', 'D.YYLOG', 'E.LOGX']);
+        assert.equal(ends.find(c => c.quals[0] === '*LOG')?.small, 4);
+        assert.equal(ends.find(c => c.quals[0] === 'ZLOG')?.small, 3);
+        // D241101: pelny tylko jako pierwszy kwalifikator, i nie za --prefix
+        assert.ok(texts(['D241101.A', 'D241101.B']).includes('D241101'));
+        assert.ok(!texts(['A.D241101.C', 'B.D241101.D']).includes('D241101'));
+        assert.ok(!texts(['H.D241101.C', 'H.D241101.D'], { head: ['H'] }).includes('D241101'));
+        for (let seed = 1; seed <= 6; seed++) {
+            const { small, large } = data(seed);
+            for (const c of findCombos(input(small, large), { ...base, partial: 2 }, () => {}).tables.flat()) {
+                const all = [c.quals, ...c.also];
+                for (const a of all) for (const b of all) if (a !== b) assert.ok(!a.every((q, i) => narrower(q, b[i])), `${a} / ${b}`);
+            }
+        }
+        assert.ok(findCombos(input(['A.B.C', 'A.B.D', 'A.B.E'], []), { ...base, maxQuals: 2, minCount: 2 }, () => {}).tables[0][0].also.length === 1);
+    });
+
+    it('przerwanie po czasie', () => {
+        const { small, large } = data(3);
+        const r = findCombos(input(small, large), { ...base, seconds: -1 }, () => {});
+        assert.equal(r.floor, small.length + 1);
+    });
+
+    it('narrower = within na pojedynczych kwalifikatorach', () => {
+        const r = rng(9);
+        const word = () => Array.from({ length: 1 + Math.floor(r() * 4) }, () => 'AB%*'[Math.floor(r() * 4)]).join('').replace(/\*+/g, '*');
+        for (let i = 0; i < 4000; i++) {
+            const [a, b] = [word(), word()];
+            if (a === '*' || b === '*') continue;
+            // w druga strone moze nie zauwazyc: * z sasiednim znakiem wobec %
+            if (narrower(a, b)) assert.ok(within([a], [b]), `${a} ${b}`);
+            else if (!/[*]/.test(a) || !/%/.test(b)) assert.ok(!within([a], [b]), `${a} ${b}`);
+        }
+    });
+
+    it('--try: podane kombinacje i skrocenia', () => {
+        assert.deepEqual(parseTries(' prod + sys*, LOG ,'), [['PROD', 'SYS*'], ['LOG']]);
+        for (const bad of ['A+', 'A.B', '**', '*', '%%', 'A+*', 'ABCDEFGHI']) assert.throws(() => parseTries(bad), /MaskError|kwalifikator|stalego/, bad);
+        assert.deepEqual(shorten('AB12', 3), ['AB%%', 'AB1*', '*B12', '*AB12*', '*AB1*', '*B12*']);
+        assert.deepEqual(shorten('AB*', 2), []);
+        assert.deepEqual(shorten('ABCD', 0), []);
+        const { small, large } = data(5);
+        const groups = tryCombos(input(small, large), parseTries('LOG1, LOG*+AB'), 2, [], () => {});
+        assert.deepEqual(groups[0][0].quals, ['LOG1']);
+        assert.ok(groups[0].length > 1);
+        for (const x of groups.flat()) {
+            assert.deepEqual([x.small, x.large], [hit(x.text, small).length, hit(x.text, large).length], x.text);
+            assert.equal(x.text, wide(x.quals));
+        }
+        for (const g of groups) for (const x of g.slice(1)) assert.ok(x.small >= g[0].small && x.large >= g[0].large);
+    });
+
+    it('z wiersza polecen: tabele, CSV na liste --masks, --masks pomija objete, bledy', () => {
+        const r = auto(['P.CSV', '--quals', '4', '--top', '5', '--try', 'PROD+SYSOUT', '--out', 'q.csv']);
+        assert.equal(r.code, 0, r.err);
+        assert.match(r.out, /Kombinacje: kwalifikatorow 4/);
+        assert.match(r.out, /SYSOUT .*\*\.\*\.\*\.\*\.SYSOUT/);
+        assert.match(r.out, /Sprawdzenie: PROD \+ SYSOUT/);
+        const list = auto(['P.CSV', '--masks', 'q.csv']);
+        assert.equal(list.code, 0, list.err);
+        const rows = rowsOf('q.csv');
+        const checked = new Map(list.out.split('\n').reverse().map(l => l.trim().split(/ +/)).filter(c => c.length > 5).map(c => [c[0], c]));
+        for (const x of rows) if (x[0]) assert.deepEqual(checked.get(x[0])!.slice(1, 3), x.slice(1, 3), x[0]);
+        write('one.txt', '**.SYSOUT');
+        const rest = auto(['P.CSV', '--quals', '1', '--masks', 'one.txt']);
+        assert.match(rest.out, /pominiete, objete lista masek: malych [1-9]/);
+        assert.ok(!/^SYSOUT /m.test(rest.out));
+        for (const [args, msg] of [
+            [['--quals', '5'], /zakres 1-4/], [['--quals', '2', '--partial', '1'], /--partial/], [['--top', '5'], /tylko z --quals/],
+            [['--quals', '2', '--exclude'], /--exclude: nie z/], [['--try', ' , '], /brak kombinacji/], [['--try', 'A.B'], /znakiem \+/],
+        ] as [string[], RegExp][]) {
+            const e = auto(['P.CSV', ...args]);
+            assert.equal(e.code, 1);
+            assert.match(e.err, msg);
+        }
     });
 });

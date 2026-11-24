@@ -1,0 +1,11 @@
+**********************************************************************
+* SYMBOLE ROBOCZE DLA JOBA DCRMERGE (LACZENIE WYNIKOW DCOLLECT)      *
+* UZYWANE RAZEM Z HEADER I TYPE* (PREFIKS N_)                        *
+**********************************************************************
+* REKORD ROBOCZY VB PO INREC W MRG1 (RDW 1-4, ORYGINAL OD 125)
+N_DUP,5,104,BI                KLUCZ + PRZEBIEG + DRUGA CZESC
+N_KEY,5,52,BI                 TYP, NAZWA, WOLUMEN
+N_RUN,57,8,BI                 PRZEBIEG: DCUDATE, DCUTIME
+N_SUB,65,44,BI                DRUGA CZESC KLUCZA
+N_NEW,109,8,BI                NAJNOWSZY PRZEBIEG W GRUPIE (PUSH)
+N_SEQ,117,8,ZD                NUMER W GRUPIE N_DUP (PUSH)

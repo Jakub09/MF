@@ -27,6 +27,15 @@
  *                      dla malych zbiorow, ktorych lista nie obejmuje (zbiory objete lista, male i duze, sa pominiete).
  *                      --prefix: poczatek nowych masek, zaweza tez zbiory, na ktorych sprawdzana jest lista.
  *
+ *   --quals N          zamiast masek: najczestsze kombinacje 1..N kwalifikatorow w malych zbiorach (N 1-4), osobna tabela
+ *                      dla kazdej liczby; A + B = nazwy **.A.**.B.**, obok najwezsza maska z tymi samymi malymi.
+ *                      Takze kwalifikatory niepelne: ABC* *ABC *ABC* AB%% D%%%%%%. Z --masks: tylko zbiory spoza listy
+ *   --partial N        ile znakow stalych ma miec kwalifikator niepelny, 2-7; 0 = tylko pelne    (domyslnie 3)
+ *   --top N            wierszy w kazdej tabeli                                   (domyslnie 20)
+ *   --time SEK         najdluzej szuka kombinacji; potem wynik dla wiekszej liczby malych        (domyslnie 600)
+ *   --try LISTA        sprawdza podane kombinacje i ich skrocenia, np. "PROD+SYSOUT, LOGDAY, TMP*"
+ *                      Z --quals i --try: --min-purity tylko, gdy podane (domyslnie bez progu); --out: CSV z maskami
+ *
  * WARUNKI: pole, operator (= != < <= > >=), wartosc; kilka warunkow po spacji = wszystkie naraz (AND).
  *   Wartosc tekstowa po = / != moze byc maska: dsn=PROD.**  sg=SGEAV*
  * Pola liczbowe: allocTrk usedTrk freeTrk allocKb usedKb extents vols nqual lrecl blksize ageDays unrefDays
@@ -41,6 +50,7 @@ import { parseArgs } from 'node:util';
 import { acsProblem, ExcludeResult, filtlistText, findExcludes, maskTests, testFile } from './auto-acs';
 import { CheckInput, checkMasks, CheckResult, MaskListError, parseMaskList } from './auto-check';
 import { mine, MaskRow, MineOptions, MineResult } from './auto-mine';
+import { Combo, findCombos, parseTries, QualResult, tryCombos, TryRow } from './auto-quals';
 import { BOOL, BoolField, Field, NUM, NumField, readStore, Store, STR, StrField } from './auto-read';
 import { Interner, Progress, thousands, Tick } from './auto-util';
 import { CsvError } from './dataset';
@@ -62,8 +72,27 @@ const USAGE = 'Uzycie: node acs-masks-auto.cjs DCOLLECT.CSV [--scope "sms=true d
     + '        [--exclude [--exclude-min 2]] [--filtlist filtlist.txt] [--tests ACMTEST [--per-mask 1] [--test-prefix ACM]]\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --masks maski.txt [opcje jak wyzej]\n'
     + '         (sprawdza liste i szuka masek dla zbiorow, ktorych ona nie obejmuje)\n'
+    + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --quals 4 [--partial 3] [--top 20] [--time 600] [--try "PROD+SYSOUT, TMP*"]\n'
+    + '         (najczestsze kombinacje kwalifikatorow; sprawdzanie kwalifikatorow niepelnych)\n'
     + `Pola liczbowe: ${NUM.join(' ')}\n     tekstowe: ${STR.join(' ')}\n     true / false: ${BOOL.join(' ')}\n`
     + 'Operatory: = != < <= > >=; kilka warunkow po spacji = wszystkie naraz\n';
+
+const HELP = USAGE + `
+Przyklady (DC = DCOLLECT.CSV; w pliku .bat kazdy % podwojnie, w PowerShell apostrofy zamiast cudzyslowow):
+  node acs-masks-auto.cjs DC --scope "sms=true dsorg=PS sg=SGEAV*"                 tylko zbiory z wybranych SG
+  node acs-masks-auto.cjs DC --when "allocTrk>=315 usedTrk<15"                     inne kryterium malego zbioru
+  node acs-masks-auto.cjs DC --when "unrefDays>365" --unit TB                      nieuzywane od roku
+  node acs-masks-auto.cjs DC --prefix "ABC%.**"                                    kazda maska zaczyna sie od ABC%.
+  node acs-masks-auto.cjs DC --wild 1                                              prostsze maski, szybciej
+  node acs-masks-auto.cjs DC --min-purity 1 --min-count 50 --max-masks 20          malo masek, same czyste
+  node acs-masks-auto.cjs DC --masks maski.txt --out wynik.csv                     sprawdzenie listy i czego jej brakuje
+  node acs-masks-auto.cjs DC --min-purity 0.8 --exclude --filtlist f.txt           szersze maski i EXCLUDE
+  node acs-masks-auto.cjs DC --masks f.txt --tests ACMTEST --per-mask 2            testy ISMF do FILTLIST
+  node acs-masks-auto.cjs DC --quals 4                                             najczestsze kombinacje 1-4 kwalifikatorow
+  node acs-masks-auto.cjs DC --quals 2 --min-purity 0.95 --top 50                  tylko czyste, do 2 kwalifikatorow
+  node acs-masks-auto.cjs DC --quals 3 --masks f.txt                               w zbiorach, ktorych lista nie obejmuje
+  node acs-masks-auto.cjs DC --try "PROD+SYSOUT, LOGDAY, TMP*"                     te kombinacje i ich skrocenia
+`;
 
 class ArgError extends Error {}
 
@@ -250,6 +279,58 @@ export function check(file: string, scope: Conds, when: Conds, masks: string[], 
     return { list, fresh, input };
 }
 
+/** o ile czesci wiecej malych musi dac szersza kombinacja, zeby byla obok szczegolowszej */
+const MIN_GAIN = 0.02;
+
+export interface QualsInput {
+    /** null = bez szukania kombinacji */
+    quals: { maxQuals: number; top: number; seconds: number } | null;
+    partial: number;
+    tries: string[][];
+    /** lista masek; zbiory nia objete sa pominiete */
+    masks: string[];
+    excludes: string[];
+}
+
+export interface QualsResult {
+    /** null = bez listy masek */
+    skipped: { small: number; large: number } | null;
+    small: number;
+    large: number;
+    /** null = bez szukania kombinacji */
+    combos: QualResult | null;
+    tries: TryRow[][];
+}
+
+/** Najczestsze kombinacje kwalifikatorow malych zbiorow i sprawdzenie podanych. */
+export function quals(file: string, scope: Conds, when: Conds, q: QualsInput, opt: MineOptions, bar: Progress,
+    warn: (t: string) => void = () => {}): QualsResult {
+    const st = load(file, scope, when, bar, warn);
+    const tick = bar.stage('Kryteria');
+    let { pos, neg } = classify(st, scope, when, opt.head, p => tick(p));
+    bar.done(`malych: ${thousands(pos.length)}, duzych: ${thousands(neg.length)}`);
+    let skipped: QualsResult['skipped'] = null;
+    if (q.masks.length) {
+        const before = { small: pos.length, large: neg.length };
+        const { rest } = checkMasks({ names: st.names, allocKb: st.allocKb, pos, neg }, q.masks, q.excludes, bar.stage('Lista masek'));
+        ({ pos, neg } = rest);
+        skipped = { small: before.small - pos.length, large: before.large - neg.length };
+        bar.done(`spoza listy malych: ${thousands(pos.length)}, duzych: ${thousands(neg.length)}`);
+    }
+    const input = { names: st.names, allocKb: st.allocKb, pos, neg };
+    let combos: QualResult | null = null;
+    if (q.quals) {
+        combos = findCombos(input, { ...q.quals, partial: q.partial, minGain: MIN_GAIN, minCount: opt.minCount, minPurity: opt.minPurity, head: opt.head }, bar.stage('Kombinacje'));
+        bar.done(`sprawdzonych: ${thousands(combos.nodes)}`);
+    }
+    let tries: TryRow[][] = [];
+    if (q.tries.length) {
+        tries = tryCombos(input, q.tries, q.partial, opt.head ?? [], bar.stage('Podane kombinacje'));
+        bar.done(`sprawdzonych: ${tries.reduce((s, t) => s + t.length, 0)}`);
+    }
+    return { skipped, small: pos.length, large: neg.length, combos, tries };
+}
+
 function load(file: string, scope: Conds, when: Conds, bar: Progress, warn: (t: string) => void): Store {
     const st = readStore(file, new Set([...scope.fields, ...when.fields]), bar.stage('Czytanie CSV'));
     bar.done(`${thousands(st.records)} rekordow, ${thousands(st.sets)} zbiorow`);
@@ -403,6 +484,56 @@ export function excludeReport(r: ExcludeResult, u: Unit = 'GB'): string {
     return out.join('\n') + '\n';
 }
 
+const comboText = (c: string[]) => c.join(' + ');
+const MAX_ALSO = 3;
+
+export function qualsReport(r: QualsResult, u: Unit = 'GB'): string {
+    const out = [`Zbiorow w zakresie: ${r.small + r.large}, malych: ${r.small}, duzych: ${r.large}`
+        + (r.skipped ? ` (pominiete, objete lista masek: malych ${r.skipped.small}, duzych ${r.skipped.large})` : '')];
+    const row = (c: string[]) => c[0].padEnd(44) + c[1].padStart(9) + c[2].padStart(8) + c[3].padStart(9) + c[4].padStart(9)
+        + c.slice(5, 7).map(x => x.padStart(12)).join('') + (c.length > 7 ? `   ${c[7].padEnd(44)}${c[8].padStart(9)}${c[9].padStart(9)}` : '');
+    const nums = (c: Combo | TryRow) => [String(c.small), part(c.small, r.small), String(c.large), pct(c.purity), inUnit(c.smallKb, u), inUnit(c.largeKb, u)];
+    const head = ['Malych', '% mal.', 'Duzych', 'Purity', `Malych ${u}`, `Duzych ${u}`];
+    r.combos?.tables.forEach((t, i) => {
+        out.push('', `Kombinacje: kwalifikatorow ${i + 1}${t.length ? '' : ' - brak (--min-count, --min-purity)'}`);
+        if (t.length === 0) return;
+        out.push('', row(['Kombinacja', ...head, 'Najwezsza maska', 'Duzych', 'Purity']));
+        for (const c of t) {
+            out.push(row([comboText(c.quals), ...nums(c), c.mask?.text ?? '(ponad 44 znaki)', c.mask ? String(c.mask.large) : '', c.mask ? pct(c.mask.purity) : '']));
+            const more = c.also.length - MAX_ALSO + c.more;
+            if (c.also.length) out.push(`    te same male: ${c.also.slice(0, MAX_ALSO).map(comboText).join(';  ')}${more > 0 ? `  (i ${more} innych)` : ''}`);
+        }
+    });
+    if (r.combos && r.combos.floor !== null) {
+        out.push('', r.combos.floor > r.combos.small ? 'Uwaga: przerwano po czasie --time; tabele sa niepelne (mniej kwalifikatorow: --quals, --partial 0, wiekszy --min-count).'
+            : `Uwaga: przerwano po czasie --time; w tabelach sa tylko kombinacje o co najmniej ${r.combos.floor} malych.`);
+    }
+    for (const t of r.tries) {
+        out.push('', `Sprawdzenie: ${comboText(t[0].quals)}${t.length > 1 ? ' i skrocenia (od najwiekszej purity)' : ''}`, '', row(['Kombinacja', ...head, 'Maska', '+Malych', '+Duzych']));
+        for (const x of t) {
+            const more = (n: number) => (x.level ? `${n < 0 ? '' : '+'}${n}` : '');
+            out.push(row([comboText(x.quals), ...nums(x), x.text.length > 44 ? '(ponad 44 znaki)' : x.text, more(x.small - t[0].small), more(x.large - t[0].large)]));
+        }
+    }
+    return out.join('\n') + '\n';
+}
+
+/** Pierwsza kolumna (maska) nadaje sie na liste --masks. */
+export function qualsCsv(r: QualsResult, u: Unit = 'GB'): string {
+    const out = [`${csvHead(u)};rodzaj;kwalifikatorow;kombinacja;proc_malych;komb_duzych;komb_purity;te_same_male`];
+    for (const c of r.combos?.tables.flat() ?? []) {
+        const m = c.mask ? csvCells(c.mask, u) : ['', c.small, '', '', inUnit(c.smallKb, u), ''];
+        out.push([...m, 'kombinacja', c.quals.length, comboText(c.quals), part(c.small, r.small).slice(0, -1), c.large, pct(c.purity).slice(0, -1),
+            c.also.map(comboText).join(', ')].join(';'));
+    }
+    for (const x of r.tries.flat()) {
+        const m = csvCells(x, u);
+        if (x.text.length > 44) m[0] = '';
+        out.push([...m, x.level ? 'skrocenie' : 'podana', x.quals.length, comboText(x.quals), part(x.small, r.small).slice(0, -1), x.large, pct(x.purity).slice(0, -1), ''].join(';'));
+    }
+    return out.join('\n') + '\n';
+}
+
 export function main(argv: string[], io: Io = STDIO): number {
     let bar: Progress | null = null;
     const progress = (stages: number) => bar = new Progress(stages, io.err, io.tty ?? false, () => process.stderr.columns || 80);
@@ -414,11 +545,16 @@ export function main(argv: string[], io: Io = STDIO): number {
                 scope: { type: 'string', default: 'sms=true dsorg=PS' },
                 when: { type: 'string', default: 'allocTrk=315 usedTrk<=3' },
                 prefix: { type: 'string' },
-                'min-purity': { type: 'string', default: '0.95' },
+                'min-purity': { type: 'string' },
                 'min-count': { type: 'string', default: '10' },
                 'max-masks': { type: 'string', default: '100' },
                 wild: { type: 'string', default: '3' },
                 masks: { type: 'string' },
+                quals: { type: 'string' },
+                partial: { type: 'string' },
+                top: { type: 'string' },
+                time: { type: 'string' },
+                try: { type: 'string' },
                 unit: { type: 'string', default: 'GB' },
                 out: { type: 'string', short: 'o' },
                 exclude: { type: 'boolean', default: false },
@@ -431,7 +567,7 @@ export function main(argv: string[], io: Io = STDIO): number {
             },
         });
         if (o.help) {
-            io.out(USAGE);
+            io.out(HELP);
             return 0;
         }
         if (positionals.length !== 1) {
@@ -440,8 +576,9 @@ export function main(argv: string[], io: Io = STDIO): number {
         }
         const scope = parseConds(o.scope!, 'scope');
         const when = parseConds(o.when!, 'when');
+        const combos = o.quals !== undefined || o.try !== undefined;
         const opt = {
-            minPurity: num(o['min-purity']!, 'min-purity', 0, 1, false),
+            minPurity: num(o['min-purity'] ?? (combos ? '0' : '0.95'), 'min-purity', 0, 1, false),
             minCount: num(o['min-count']!, 'min-count', 1, 1e9, true),
             maxMasks: num(o['max-masks']!, 'max-masks', 1, 1e6, true),
             maxWild: num(o.wild!, 'wild', 0, 9, true),
@@ -457,6 +594,32 @@ export function main(argv: string[], io: Io = STDIO): number {
             fs.writeFileSync(file, text);
             io.err(`Zapisano: ${file}${info}\n`);
         };
+        if (!combos) {
+            const lone = (['partial', 'top', 'time'] as const).find(x => o[x] !== undefined);
+            if (lone) throw new ArgError(`--${lone}: tylko z --quals albo --try`);
+        } else {
+            const other = o.exclude ? 'exclude' : (['filtlist', 'tests'] as const).find(x => o[x] !== undefined);
+            if (other) throw new ArgError(`--${other}: nie z --quals i --try (wybrane maski zapisz w pliku i podaj w --masks)`);
+            const partial = num(o.partial ?? '3', 'partial', 0, 7, true);
+            if (partial === 1) throw new ArgError('--partial: 2-7 albo 0 (tylko pelne kwalifikatory)');
+            const q: QualsInput = {
+                quals: o.quals === undefined ? null
+                    : { maxQuals: num(o.quals, 'quals', 1, 4, true), top: num(o.top ?? '20', 'top', 1, 10000, true), seconds: num(o.time ?? '600', 'time', 1, 1e6, true) },
+                partial, tries: o.try === undefined ? [] : parseTries(o.try), masks: [], excludes: [],
+            };
+            if (o.try !== undefined && q.tries.length === 0) throw new ArgError('--try: brak kombinacji');
+            if (o.masks !== undefined) {
+                const list = parseMaskList(fs.readFileSync(o.masks, 'latin1').replace(/^\xef\xbb\xbf/, ''), o.masks);
+                for (const w of list.warnings) io.err(`Uwaga: ${w}\n`);
+                Object.assign(q, { masks: list.masks, excludes: list.excludes });
+            }
+            const r = quals(positionals[0], scope, when, q, opt, progress(2 + Number(q.masks.length > 0) + Number(q.quals !== null) + Number(q.tries.length > 0)), io.err);
+            io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek nazw: ${opt.head.join('.')}` : ''}`
+                + `${opt.minPurity > 0 ? `   min. purity: ${pct(opt.minPurity)}` : ''}   min. zbiorow: ${opt.minCount}\n`);
+            io.out(qualsReport(r, unit));
+            save(o.out, qualsCsv(r, unit));
+            return 0;
+        }
         const extra = Number(o.exclude) + Number(o.tests !== undefined);
         /** EXCLUDE, FILTLIST i testy do masek; wynik: nowe maski EXCLUDE */
         const finish = (p: Progress, input: CheckInput, include: string[], old: string[]): MaskRow[] => {
