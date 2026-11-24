@@ -2,7 +2,8 @@
  * Maski -> z/OS: EXCLUDE dla duzych zbiorow objetych maskami, tekst FILTLIST i testy ISMF (jak repr --tests).
  */
 import { CheckInput, MaskListError } from './auto-check';
-import { mine, MaskRow, MineResult } from './auto-mine';
+import { pickExcludes } from './auto-exclude';
+import { MaskRow } from './auto-mine';
 import { MaskTree } from './auto-tree';
 import { Interner, Tick } from './auto-util';
 import { chunks, filtlist, MAX_LIST } from './filtlist';
@@ -13,7 +14,7 @@ export interface ExcludeResult {
     /** zbiory objete maskami przed EXCLUDE */
     before: MaskRow;
     after: MaskRow;
-    /** maski EXCLUDE: small = 0, large = wylaczone duze zbiory */
+    /** maski EXCLUDE: large = wylaczone duze, small = stracone male */
     masks: MaskRow[];
     /** wylaczone razem, kazdy zbior raz */
     total: MaskRow;
@@ -35,34 +36,37 @@ function covered(input: CheckInput, include: string[], exclude: string[], tick: 
     return { ...input, pos: pick(input.pos), neg: pick(input.neg) };
 }
 
-const kbOf = (input: CheckInput, rows: Int32Array) => {
-    let kb = 0;
-    for (let x = 0; x < rows.length; x++) kb += input.allocKb[rows[x]];
-    return kb;
-};
-
 /**
- * Maski EXCLUDE: te same rodzaje masek co przy szukaniu, dobrane dla duzych zbiorow objetych INCLUDE; kazda obejmuje
- * co najmniej minCount nowych duzych i zadnego malego (z objetych INCLUDE - tylko na takie dziala EXCLUDE).
+ * Maski EXCLUDE (auto-exclude): jak najszersze - jeden kwalifikator, dwa, a na koncu pelna maska; kazda wylacza co
+ * najmniej minCount nowych duzych objetych INCLUDE i gain (czesc) ich alokacji, razem nie wiecej niz loss malych.
  */
-export function findExcludes(input: CheckInput, include: string[], old: string[], opt: { minCount: number; maxWild: number; head?: string[] }, tick: Tick): ExcludeResult {
-    const c = covered(input, include, old, p => tick(0.5 * p));
-    const res: MineResult = mine({ ...c, pos: c.neg, neg: c.pos }, { ...opt, minPurity: 1, maxMasks: MAX_LIST - old.length }, {
-        prepare: p => tick(0.5 + 0.1 * p),
-        search: () => p => tick(0.6 + 0.3 * p),
-        select: () => p => tick(0.9 + 0.1 * p),
-    });
-    const out = (r: MaskRow): MaskRow => ({ text: r.text, small: r.large, large: r.small, purity: 0, smallKb: r.largeKb, largeKb: r.smallKb });
-    const sum = (text: string, small: number, large: number, smallKb: number, largeKb: number): MaskRow =>
-        ({ text, small, large, smallKb, largeKb, purity: small ? small / (small + large) : 0 });
-    const total = out(res.total);
-    const [sKb, lKb] = [kbOf(c, c.pos), kbOf(c, c.neg)];
-    return {
-        before: sum('PRZED EXCLUDE', c.pos.length, c.neg.length, sKb, lKb),
-        after: sum('PO EXCLUDE', c.pos.length - total.small, c.neg.length - total.large, sKb - total.smallKb, lKb - total.largeKb),
-        masks: res.masks.map(out),
-        total,
+export function findExcludes(input: CheckInput, include: string[], old: string[],
+    opt: { minCount: number; maxWild: number; head?: string[]; gain?: number; loss?: number }, tick: Tick): ExcludeResult {
+    const c = covered(input, include, old, p => tick(0.2 * p));
+    const texts = c.neg.length ? pickExcludes(c, opt.head ?? [], {
+        minCount: opt.minCount, gain: opt.gain ?? 0, loss: opt.loss ?? 0, maxWild: opt.maxWild, maxMasks: MAX_LIST - old.length,
+    }, p => tick(0.2 + 0.7 * p)) : [];
+
+    // ---- liczby z porownania masek z nazwami
+    const row = (text: string): MaskRow => ({ text, small: 0, large: 0, purity: 0, smallKb: 0, largeKb: 0 });
+    const masks = texts.map(row);
+    const [before, total, after] = [row('PRZED EXCLUDE'), row('RAZEM'), row('PO EXCLUDE')];
+    const tree = new MaskTree(texts.map(t => t.split('.')));
+    const add = (rows: Int32Array, n: 'small' | 'large', kb: 'smallKb' | 'largeKb') => {
+        for (let x = 0; x < rows.length; x++) {
+            if ((x & 0x3fff) === 0) tick(0.9 + 0.1 * (x / rows.length));
+            const s = input.names.start[rows[x]];
+            const ids = tree.match(input.names.pool, s, s + input.names.len[rows[x]]);
+            for (const r of [before, ids.length ? total : after, ...ids.map(m => masks[m])]) {
+                r[n]++;
+                r[kb] += input.allocKb[rows[x]];
+            }
+        }
     };
+    add(c.pos, 'small', 'smallKb');
+    add(c.neg, 'large', 'largeKb');
+    for (const r of [before, after]) r.purity = r.small ? r.small / (r.small + r.large) : 0;
+    return { before, after, masks: masks.sort((a, b) => b.largeKb - a.largeKb || (a.text < b.text ? -1 : 1)), total };
 }
 
 /** Dlaczego translator ACS nie przyjmie maski; null = dobra. */

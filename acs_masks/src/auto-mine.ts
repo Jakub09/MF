@@ -93,7 +93,7 @@ interface Tokens {
 }
 
 /** Nazwy jako ciagi klas kwalifikatorow; klasa = zestaw pasujacych elementow: clsTok[clsOff[c]..clsOff[c + 1]). */
-interface Sequences {
+export interface Sequences {
     count: number;
     off: Int32Array;
     cls: Int32Array;
@@ -102,13 +102,14 @@ interface Sequences {
     /** ile malych / duzych zbiorow */
     wp: Int32Array;
     wn: Int32Array;
-    /** pozycje duzych zbiorow (-1 = nazwa pominieta) */
+    /** ciagi malych i duzych zbiorow (-1 = nazwa pominieta) */
+    posSeq: Int32Array;
     negSeq: Int32Array;
     tokens: Tokens;
 }
 
 /** Wynik przeszukania: maska jako ciag pozycji sciezki (element * 2 + 1, gdy przed nim **; STAR = samo *). */
-interface Found {
+export interface Found {
     path: Int32Array;
     open: boolean;
     small: number;
@@ -118,9 +119,9 @@ interface Found {
     len: number;
 }
 
-const STAR = -1;
+export const STAR = -1;
 
-function prepare(input: MineInput, opt: MineOptions, tick: Tick): Sequences {
+export function prepare(input: MineInput, opt: MineOptions, tick: Tick): Sequences {
     const { names, pos, neg } = input;
     const { pool } = names;
     const min = opt.minCount;
@@ -239,9 +240,11 @@ function prepare(input: MineInput, opt: MineOptions, tick: Tick): Sequences {
         }
         return s;
     };
+    const posSeq = new Int32Array(np);
     for (let i = 0; i < np; i++) {
         if ((i & 0x3fff) === 0) tick(0.3 + 0.3 * (i / np));
         const s = sequence(pos[i]);
+        posSeq[i] = s;
         if (s >= 0) wp[s]++;
     }
     const negSeq = new Int32Array(neg.length);
@@ -273,11 +276,11 @@ function prepare(input: MineInput, opt: MineOptions, tick: Tick): Sequences {
         let k = clsOff[c + 1];
         for (let x = c; x > 0; x = clsParent.a[x]) clsTok[--k] = clsLast.a[x];
     }
-    return { count, off, cls, clsOff, clsTok, wp, wn, negSeq, tokens };
+    return { count, off, cls, clsOff, clsTok, wp, wn, posSeq, negSeq, tokens };
 }
 
 /** Przeszukanie masek od lewej; wpis = ciag i pozycje (bity), na ktorych moze sie skonczyc poczatek maski. */
-class Search {
+export class Search {
     nodes = 0;
     private eSeq = new Int32Array(1 << 12);
     private eMask = new Int32Array(1 << 12);
@@ -295,7 +298,7 @@ class Search {
     private readonly rnd2: Int32Array;
     private readonly odd: Int32Array;
 
-    constructor(private readonly q: Sequences, private readonly headText: string, private readonly maxWild: number) {
+    constructor(private readonly q: Sequences, private readonly headText: string, private readonly maxWild: number, private readonly anchored = false) {
         const t = 2 * q.tokens.text.length;
         this.stamp = new Int32Array(t);
         this.nEnt = new Int32Array(t);
@@ -321,9 +324,10 @@ class Search {
      * @param weigh czy podnosic min
      * @param stop czy dobra maska (wynik emit) konczy galaz
      * @param emit maska (open: z koncowym .**) i wpisy, ktore obejmuje: [lo, hi); true = dobra
+     *   cover(f, true): takze ciagi bez malych
      */
     run(ids: ArrayLike<number>, min: number, weigh: boolean, stop: boolean,
-        emit: (f: () => Found, small: number, large: number, h1: number, h2: number, cover: (f: (seq: number) => void) => void) => boolean, tick: Tick): void {
+        emit: (f: () => Found, small: number, large: number, h1: number, h2: number, cover: (f: (seq: number) => void, all?: boolean) => void) => boolean, tick: Tick): void {
         const { q } = this;
         this.top = 0;
         this.reserve(ids.length);
@@ -376,23 +380,25 @@ class Search {
                     stars: stars + (open ? 2 : 0), len: len + (open ? 3 : 0),
                 });
                 if (xs >= need && len <= MAX_LEN) {
-                    emit(make(false), xs, xl, x1, x2, f => {
+                    emit(make(false), xs, xl, x1, x2, (f, every) => {
                         for (let i = lo; i < hi; i++) {
                             const s = this.eSeq[i];
-                            if (wp[s] && (this.eMask[i] >>> (off[s + 1] - off[s])) & 1) f(s);
+                            if ((every || wp[s]) && (this.eMask[i] >>> (off[s + 1] - off[s])) & 1) f(s);
                         }
                     });
                 }
                 if (len + 3 <= MAX_LEN) {
-                    const good = emit(make(true), small, large, h1, h2, f => {
-                        for (let i = lo; i < hi; i++) if (wp[this.eSeq[i]]) f(this.eSeq[i]);
+                    const good = emit(make(true), small, large, h1, h2, (f, every) => {
+                        for (let i = lo; i < hi; i++) if (every || wp[this.eSeq[i]]) f(this.eSeq[i]);
                     });
                     if (good && stop) return;
                 }
             }
 
             // ---- zliczenie rozwiniec: x = element * 2 + (1: przed nim **)
-            const canGap = wild < maxWild;
+            // anchored: maska nie zaczyna sie od ** ani *
+            const first = this.anchored && !named;
+            const canGap = wild < maxWild && !first;
             const touched: number[] = [];
             let starEnt = 0;
             let starPos = 0;
@@ -455,7 +461,7 @@ class Search {
                 keep.push({ x, n: nEnt[x], small: wPos[x], large: wNeg[x], off: this.top });
                 this.top += nEnt[x];
             }
-            const star = wild < maxWild && starPos >= needOf(wild + 1) && !adjacent.has(key(starSig, starPos));
+            const star = wild < maxWild && !first && starPos >= needOf(wild + 1) && !adjacent.has(key(starSig, starPos));
             if (star) {
                 keep.push({ x: STAR, n: starEnt, small: starPos, large: starNeg, off: this.top });
                 this.top += starEnt;
@@ -530,6 +536,38 @@ class Search {
     }
 }
 
+/** Tekst maski i kolejnosc masek o tym samym zysku: czystosc, mniej duzych, wiecej znakow stalych, mniej *, krotsza. */
+export function maskOrder(tokens: string[], head: string[]) {
+    const textOf = (f: Found): string => {
+        const parts = head.slice();
+        for (const x of f.path) {
+            if (x !== STAR && x & 1) parts.push('**');
+            parts.push(x === STAR ? '*' : tokens[x >> 1]);
+        }
+        if (f.open) parts.push('**');
+        return parts.join('.');
+    };
+    const rank = (a: Found, b: Found): number => purityOf(b.small, b.large) - purityOf(a.small, a.large) || a.large - b.large
+        || b.lit - a.lit || a.stars - b.stars || a.len - b.len || (textOf(a) < textOf(b) ? -1 : 1);
+    return { textOf, rank };
+}
+
+/** Najbardziej szczegolowa maska zawarta w own i obejmujaca te same male; ids = ciagi, ktore own obejmuje. */
+export function specialise(search: Search, ids: ArrayLike<number>, small: number, own: string, order: ReturnType<typeof maskOrder>): string {
+    const all: Found[] = [];
+    search.run(ids, small, false, false, make => {
+        all.push(make());
+        return false;
+    }, () => {});
+    all.sort(order.rank);
+    const quals = own.split('.');
+    const best = all.find(f => {
+        const t = order.textOf(f);
+        return t === own || within(t.split('.'), quals);
+    });
+    return best ? order.textOf(best) : own;
+}
+
 export function mine(input: MineInput, opt: MineOptions, stages: Stages): MineResult {
     const { names, allocKb, pos, neg } = input;
     const min = opt.minCount;
@@ -540,18 +578,7 @@ export function mine(input: MineInput, opt: MineOptions, stages: Stages): MineRe
     // ---- przeszukanie: dobre maski, z masek o tych samych malych zbiorach jedna
     const tickSearch = stages.search(q.count);
     const search = new Search(q, headText, opt.maxWild);
-    const textOf = (f: Found): string => {
-        const parts = opt.head?.slice() ?? [];
-        for (const x of f.path) {
-            if (x !== STAR && x & 1) parts.push('**');
-            parts.push(x === STAR ? '*' : tokens.text[x >> 1]);
-        }
-        if (f.open) parts.push('**');
-        return parts.join('.');
-    };
-    /** lepsza z masek o tym samym zysku: czystosc, mniej duzych, wiecej znakow stalych, mniej *, krotsza */
-    const rank = (a: Found, b: Found): number => purityOf(b.small, b.large) - purityOf(a.small, a.large) || a.large - b.large
-        || b.lit - a.lit || a.stars - b.stars || a.len - b.len || (textOf(a) < textOf(b) ? -1 : 1);
+    const { textOf, rank } = maskOrder(tokens.text, opt.head ?? []);
     const good: Found[] = [];
     const byCover = new PairMap();
     const list = new IntList();
@@ -663,18 +690,7 @@ export function mine(input: MineInput, opt: MineOptions, stages: Stages): MineRe
         const ids = new Set(negOf[j]);
         for (let x = lo.a[g]; x < lo.a[g + 1]; x++) ids.add(list.a[x]);
         // male zbiory spoza maski nie moga tu trafic: ciag z duzych ma wage malych tylko, gdy pasuje do maski
-        const all: Found[] = [];
-        search.run([...ids], good[g].small, false, false, make => {
-            all.push(make());
-            return false;
-        }, () => {});
-        const own = texts[j].split('.');
-        all.sort(rank);
-        const best = all.find(f => {
-            const t = textOf(f);
-            return t === texts[j] || within(t.split('.'), own);
-        });
-        if (best) texts[j] = textOf(best);
+        texts[j] = specialise(search, [...ids], good[g].small, texts[j], { textOf, rank });
     });
 
     // ---- liczby wprost z porownania wynikowych masek z nazwami
@@ -793,7 +809,7 @@ export interface Patterns {
  * Rozwijane znak po znaku: set = kwalifikatory pasujace do poczatku wzorca, own = te, ktorych wlasny wzorzec
  * tak sie zaczyna; galaz konczy sie, gdy own jest puste albo set ma mniej niz min wystapien.
  */
-export function buildPatterns(quals: Interner, occ: Int32Array, min: number, tick: Tick): Patterns {
+export function buildPatterns(quals: Interner, occ: ArrayLike<number>, min: number, tick: Tick): Patterns {
     const { pool, start, len } = quals;
     const texts: string[] = [];
     const gen = new Int32Array(quals.size).fill(-1);

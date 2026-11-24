@@ -9,6 +9,8 @@ import { check, main as autoMain, parseConds, parseHead, search, SearchResult } 
 import { acsProblem, filtlistText, findExcludes, maskTests } from '../src/auto-acs';
 import { parseMaskList } from '../src/auto-check';
 import { MaskRow } from '../src/auto-mine';
+import { CompactOptions, defaultPoint, findCompact, Point } from '../src/auto-compact';
+import { pickExcludes } from '../src/auto-exclude';
 import { findCombos, narrower, parseTries, QualOptions, shorten, tryCombos } from '../src/auto-quals';
 import { MaskTree, within } from '../src/auto-tree';
 import { BOOL, Field, NUM, readStore, STR } from '../src/auto-read';
@@ -677,11 +679,17 @@ describe('EXCLUDE, FILTLIST i testy', () => {
             const [small, large] = [cov.filter(isSmall), cov.filter(x => !isSmall(x))];
             for (const minCount of [1, 2, 5]) {
                 const e = findExcludes(r.input, include, old, { minCount, maxWild: 1 }, () => {});
-                // najwieksza mozliwa maska bez malych; zadna dodatkowa nie wylaczy juz minCount duzych
+                // bez malych; zadna dodatkowa maska nie wylaczy juz minCount duzych
                 const pure = family(large, small, { minPurity: 1, minCount, maxMasks: 255, maxWild: 1 }).filter(f => f.neg === 0 && f.pos.length >= minCount);
-                const most = pure.reduce((n, f) => Math.max(n, f.pos.length), 0);
-                assert.equal(e.masks.reduce((n, m) => Math.max(n, m.large), 0), most);
-                assert.ok(e.masks.every(m => m.small === 0 && m.large >= minCount && pure.some(f => f.text === m.text && f.pos.length === m.large)));
+                for (const m of e.masks) {
+                    const own = cov.filter(hits([m.text]));
+                    assert.deepEqual([m.small, m.large, m.largeKb], [0, own.length, kb(own)], m.text);
+                    assert.ok(own.every(x => !isSmall(x)) && own.length >= minCount, m.text);
+                }
+                // najwieksza jest co najmniej tak dobra, jak kazda z jednego pelnego kwalifikatora (z dokladnoscia 2%)
+                const oneQual = [...new Set(large.flatMap(x => x.quals))].map(t => cov.filter(hits([`**.${t}.**`])))
+                    .filter(l => l.length >= minCount && !l.some(isSmall)).map(kb);
+                assert.ok((e.masks[0]?.largeKb ?? 0) >= 0.98 * Math.max(0, ...oneQual));
                 const gone = hits(e.masks.map(m => m.text));
                 for (const f of pure) assert.ok(f.pos.filter(i => !gone(large[i])).length < minCount, f.text);
                 const isNew = hits(e.masks.map(m => m.text));
@@ -804,17 +812,17 @@ describe('EXCLUDE, FILTLIST i testy', () => {
         assert.match(r.out, /Masek EXCLUDE: 1; wylaczaja 80,0% duzych objetych maskami/);
         assert.match(r.out, /Po EXCLUDE: malych 20, duzych 5 -> 1, purity 80,0% -> 95,2%/);
         const read = (n: string) => fs.readFileSync(path.join(dir, n), 'utf-8');
-        assert.equal(read('fl.txt'), '  FILTLIST MALE INCLUDE(ABC.**)\n                EXCLUDE(ABC.N%.LOG)\n');
+        assert.equal(read('fl.txt'), '  FILTLIST MALE INCLUDE(ABC.**)\n                EXCLUDE(**.LOG.**)\n');
         assert.equal(read('ACMTEST'), ['./ ADD NAME=ACM00001', 'DESCRIPTION1:', 'ABC.**', 'DSN: ABC.N0.DAT', 'ACSENVIR: ALLOC',
-            './ ADD NAME=ACM00002', 'DESCRIPTION1:', 'EXCLUDE ABC.N%.LOG', 'DSN: ABC.N0.LOG', 'ACSENVIR: ALLOC', './ ENDUP', ''].join('\n'));
-        assert.deepEqual(rowsOf('e.csv').map(x => [x[0], x[1], x[2], x[7]]), [['ABC.**', '20', '5', ''], ['ABC.N%.LOG', '0', '4', 'exclude']]);
+            './ ADD NAME=ACM00002', 'DESCRIPTION1:', 'EXCLUDE **.LOG.**', 'DSN: ABC.N0.LOG', 'ACSENVIR: ALLOC', './ ENDUP', ''].join('\n'));
+        assert.deepEqual(rowsOf('e.csv').map(x => [x[0], x[1], x[2], x[7]]), [['ABC.**', '20', '5', ''], ['**.LOG.**', '0', '4', 'exclude']]);
         assert.equal(r.err.split('\n').filter(l => /^\[\d\/7\]/.test(l)).length, 7);
 
         const again = ['fl.txt', 'e.csv'].map(f => auto(['X.CSV', '--masks', f, '--exclude', '--out', 'e2.csv']).out.split('\n').slice(1).join('\n'));
         assert.equal(again[0], again[1]);
-        assert.match(again[0], /ABC\.N%\.LOG +0 +4 /);
+        assert.match(again[0], /\*\*\.LOG\.\*\* +0 +4 /);
         assert.match(again[0], /Brak masek EXCLUDE/);
-        assert.deepEqual(rowsOf('e2.csv').map(x => [x[0], x[2], x[7]]), [['ABC.**', '1', ''], ['ABC.N%.LOG', '4', 'exclude']]);
+        assert.deepEqual(rowsOf('e2.csv').map(x => [x[0], x[2], x[7]]), [['ABC.**', '1', ''], ['**.LOG.**', '4', 'exclude']]);
 
         // FILTLIST: maski z listy i nowe, EXCLUDE z listy i nowy
         write('abx.txt', 'FILTLIST A INCLUDE(ABC.N1*.**) EXCLUDE(ABC.N1.LOG)');
@@ -1115,5 +1123,231 @@ describe('kombinacje kwalifikatorow', () => {
             assert.equal(e.code, 1);
             assert.match(e.err, msg);
         }
+    });
+});
+
+describe('--compact', () => {
+    interface Set1 { dsn: string; kb: number; quals: string[] }
+    /** aplikacje, rodziny nazw i koncowki: male i duze skupione, z wyjatkami */
+    function data(seed: number, n: number) {
+        const r = rng(seed * 31 + 1);
+        const pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
+        const apps = ['ABC', 'ABD', 'XYZ', 'QRS'];
+        const fams = apps.flatMap(a => [['LOG', 0.97], ['LIST', 0.9], ['DUMP', 0.05], ['BKP', 0.3], ['WORK', 0.6]].filter(() => r() < 0.6)
+            .map(([q, p]) => ({ a, q: q as string, p: p as number, mid: pick(['DAY', 'MTH', 'JOBS']), form: Math.floor(r() * 3) })));
+        const seen = new Set<string>();
+        const small: Set1[] = [];
+        const large: Set1[] = [];
+        for (let i = 0; i < n; i++) {
+            const f = pick(fams);
+            const h = f.a + pick(['P', 'T']);
+            const j = `J${1 + Math.floor(r() * 40)}`;
+            const dsn = [[h, f.mid, j, f.q], [h, f.q, j], [h, j, f.mid, f.q, pick(['A', 'B'])]][f.form].join('.');
+            if (seen.has(dsn)) continue;
+            seen.add(dsn);
+            const isSmall = r() < f.p;
+            (isSmall ? small : large).push({ dsn, quals: dsn.split('.'), kb: isSmall ? 1000 : 1000 + Math.floor(r() * 4000) });
+        }
+        return { small, large };
+    }
+    const input = (small: Set1[], large: Set1[]) => {
+        const names = new Interner();
+        const all = [...small, ...large];
+        for (const x of all) names.add(Buffer.from(x.dsn), 0, x.dsn.length);
+        return { names, allocKb: Float64Array.from(all, x => x.kb), pos: Int32Array.from(small, (_, i) => i), neg: Int32Array.from(large, (_, i) => small.length + i) };
+    };
+    const base: CompactOptions = {
+        minPurity: 0.5, minCount: 5, maxMasks: 30, maxWild: 2, anyStart: false, maxLarge: { part: 0.1 }, loss: 0.02, exMin: 2, exGain: 0.005, seconds: 600,
+    };
+    const run = (small: Set1[], large: Set1[], o: Partial<CompactOptions> = {}) =>
+        findCompact(input(small, large), { ...base, ...o }, { candidates: () => {}, excludes: () => () => {}, select: () => () => {} });
+    const hit = (list: string[]) => {
+        const p = list.map(m => parseMask(m));
+        return (x: Set1) => p.some(m => matches(m, x.dsn));
+    };
+    const sum = (l: Set1[]) => l.reduce((t, x) => t + x.kb, 0);
+    const size = (p: Point) => p.include.length + p.exclude.length;
+
+    it('kazdy punkt: liczby zgodne z maskami, granica, strata, purity, poczatek; krzywa rosnie', () => {
+        for (let seed = 1; seed <= 20; seed++) {
+            const { small, large } = data(seed, 200);
+            for (const o of [{}, { maxLarge: { kb: 3000 }, loss: 0 }, { anyStart: true, maxLarge: { part: 0.3 }, loss: 0.1, minPurity: 0.3 }, { maxMasks: 4 }] as Partial<CompactOptions>[]) {
+                const opt = { ...base, ...o };
+                const r = run(small, large, o);
+                assert.deepEqual([r.small, r.large, r.smallKb], [small.length, large.length, sum(small)]);
+                r.points.forEach((p, i) => {
+                    const [inc, exc] = [hit(p.include), hit(p.exclude)];
+                    const s = small.filter(x => inc(x) && !exc(x));
+                    const l = large.filter(x => inc(x) && !exc(x));
+                    const lost = small.filter(x => inc(x) && exc(x));
+                    assert.deepEqual([p.small, p.large, p.smallKb, p.largeKb, p.lost], [s.length, l.length, sum(s), sum(l), lost.length], `${seed} ${p.include} | ${p.exclude}`);
+                    assert.ok(sum(l) <= ('kb' in opt.maxLarge ? opt.maxLarge.kb : opt.maxLarge.part * sum(s)) + 1e-6);
+                    assert.ok(lost.length <= opt.loss * (s.length + lost.length));
+                    assert.ok(size(p) <= opt.maxMasks);
+                    for (const m of p.include) {
+                        const [a, b] = [small.filter(hit([m])).length, large.filter(hit([m])).length];
+                        assert.ok(a / (a + b) >= opt.minPurity && a >= opt.minCount, m);
+                        assert.ok(opt.anyStart || !/^\*/.test(m), m);
+                    }
+                    for (const m of p.exclude) assert.ok(large.filter(x => inc(x) && hit([m])(x)).length >= opt.exMin || large.filter(hit([m])).length >= opt.exMin, m);
+                    if (i) assert.ok(size(p) > size(r.points[i - 1]) && p.small > r.points[i - 1].small);
+                });
+            }
+        }
+    });
+
+    it('blisko najlepszego mozliwego wyniku (pelny przeglad do 3 masek)', () => {
+        const ratios: number[] = [];
+        for (let seed = 1; seed <= 15; seed++) {
+            const { small, large } = data(seed, 110);
+            const o = { ...base, minCount: 4 };
+            const r = run(small, large, { minCount: 4 });
+            const fam = family(small as unknown as DataSet[], large as unknown as DataSet[], { minPurity: 0, minCount: 4, maxMasks: 1, maxWild: 2 } as BruteOpt)
+                .filter(f => !/^\*/.test(f.text) && f.pos.length >= 4 * Math.max(1, f.wild) && f.pos.length / (f.pos.length + f.neg) >= 0.5);
+            const bits = (m: string[], l: Set1[]) => {
+                const t = hit(m);
+                return l.map(x => Number(t(x)));
+            };
+            const uniq = <T extends { s: number[]; l: number[] }>(list: T[]) => [...new Map(list.map(x => [`${x.s.join('')}|${x.l.join('')}`, x])).values()];
+            const inc = uniq(fam.map(f => ({ s: bits([f.text], small), l: bits([f.text], large) })));
+            const toks = new Set(large.flatMap(x => x.quals.flatMap(q => [q, ...Array.from({ length: Math.max(0, q.length - 3) }, (_, i) => `${q.slice(0, 3 + i)}*`), digitMask(q) ?? q])));
+            const exc = uniq([...toks].filter(t => /[A-Z]/.test(t)).map(t => ({ s: bits([`**.${t}.**`], small), l: bits([`**.${t}.**`], large) }))).filter(e => e.l.reduce((a, b) => a + b, 0) >= 2);
+            /** male po EXCLUDE albo -1, gdy poza granica */
+            const value = (a: typeof inc, e: typeof exc): number => {
+                let s = 0;
+                let lost = 0;
+                let skb = 0;
+                let lkb = 0;
+                for (let i = 0; i < small.length; i++) {
+                    if (!a.some(x => x.s[i])) continue;
+                    if (e.some(x => x.s[i])) lost++;
+                    else {
+                        s++;
+                        skb += small[i].kb;
+                    }
+                }
+                for (let i = 0; i < large.length; i++) if (a.some(x => x.l[i]) && !e.some(x => x.l[i])) lkb += large[i].kb;
+                return lkb <= 0.1 * skb && lost <= o.loss * (s + lost) ? s : -1;
+            };
+            const best = [0, 0, 0, 0];
+            // najwiecej malych bez granicy: porzadek pozwala szybko odciac
+            const top = inc.sort((a, b) => b.s.reduce((x, y) => x + y, 0) - a.s.reduce((x, y) => x + y, 0)).slice(0, 25);
+            top.forEach((a, i) => {
+                best[1] = Math.max(best[1], value([a], []));
+                for (const e of exc) best[2] = Math.max(best[2], value([a], [e]));
+                for (let j = i + 1; j < top.length; j++) {
+                    best[2] = Math.max(best[2], value([a, top[j]], []));
+                    for (const e of exc) best[3] = Math.max(best[3], value([a, top[j]], [e]));
+                    for (let k = j + 1; k < top.length; k++) best[3] = Math.max(best[3], value([a, top[j], top[k]], []));
+                }
+            });
+            for (let k = 1; k <= 3; k++) {
+                const got = Math.max(0, ...r.points.filter(p => size(p) <= k).map(p => p.small));
+                if (best[k] > 0) ratios.push(got / best[k]);
+            }
+        }
+        const avg = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+        assert.ok(avg >= 0.95, `srednio ${avg}`);
+        assert.ok(ratios.filter(x => x < 0.8).length <= 0.1 * ratios.length, ratios.map(x => x.toFixed(2)).join(' '));
+    });
+
+    it('EXCLUDE: pary w obu kolejnosciach, rodzaj kwalifikatora, strata, KB malych, zbedne', () => {
+        const make = (dsn: string, kb: number): Set1 => ({ dsn, kb, quals: dsn.split('.') });
+        const rep = (n: number, f: (i: number) => string, kb = 100) => Array.from({ length: n }, (_, i) => make(f(i), kb));
+        const abc = (i: number) => 'ABCDEFGH'[i];
+        const pickX = (small: Set1[], large: Set1[], o: Partial<Parameters<typeof pickExcludes>[2]> = {}) =>
+            pickExcludes(input(small, large), [], { minCount: 2, gain: 0.005, loss: 0, maxWild: 0, maxMasks: 9, ...o }, () => {});
+        // QQQ i WWW maja male, QQQ potem WWW - nie (i odwrotnie)
+        const mixed = [...rep(3, i => `H.QQQ.${abc(i)}A.ZZZ`), ...rep(3, i => `H.${abc(i)}B.WWW.ZZZ`), ...rep(3, i => `H.WWW.${abc(i)}B.QQQ`)];
+        assert.deepEqual(pickX(mixed, rep(5, i => `H.QQQ.${abc(i)}C.WWW`)), ['**.QQQ.**.WWW.**']);
+        // wiekszy kwalifikator jest drugi: pierwszy z pary rzadszy niz PAIR_HEADS i tak znaleziony
+        assert.deepEqual(pickX([...rep(3, i => `H.${abc(i)}A.WWW`), ...rep(2, i => `K.QQQ.${abc(i)}A`)],
+            [...rep(5, i => `H.QQQ.${abc(i)}C.WWW`), ...rep(9, i => `${abc(i % 8)}K.WWW.${abc(i % 8)}L${i}`, 1)]).slice(0, 1), ['**.QQQ.**.WWW.**']);
+        // pelny kwalifikator przed niepelnym i cyframi, choc te maja o 1% wiecej
+        assert.deepEqual(pickX(rep(3, i => `H.${abc(i)}A.ZZZ`), [...rep(5, i => `H.P${i}${i}.DUMP`, 1000), make('H.P77.XXX', 40)], { minCount: 1 })[0], '**.DUMP.**');
+        // druga maska juz bez prawa do straty
+        const loss = [...rep(96, i => `H.N${i}X.ZZZ`), make('H.AA.DUMP', 100), make('H.AB.BACK', 100)];
+        const two = [...rep(9, i => `H.${abc(i % 8)}${i}.DUMP`, 1000), ...rep(9, i => `H.${abc(i % 8)}${i}.BACK`, 900)];
+        assert.deepEqual(pickX(loss, two, { loss: 0.0103 }), ['**.DUMP.**']);
+        assert.deepEqual(pickX(loss, two, { loss: 0.03 }), ['**.DUMP.**', '**.BACK.**']);
+        // strata malych wieksza niz zysk
+        assert.deepEqual(pickX([...rep(96, i => `H.N${i}X.ZZZ`), make('H.AA.DUMP', 99999)], rep(9, i => `H.${abc(i % 8)}${i}.DUMP`, 1000), { loss: 0.5 }), []);
+        // maska dobrana wczesniej, ktorej duze obejmuja pozniejsze, odpada
+        const red = pickX(rep(3, i => `H.${abc(i)}A.ZZZ`), [...rep(4, i => `H.XX.${abc(i)}Q.MM`), ...rep(4, i => `H.${abc(i)}Q.MM.YY`),
+            ...rep(3, i => `H.XX.${abc(i)}Q`), ...rep(3, i => `H.${abc(i)}Q.YY`)]);
+        assert.deepEqual(red.sort(), ['**.XX.**', '**.YY.**']);
+    });
+
+    it('--min-purity dziala przed EXCLUDE', () => {
+        const make = (dsn: string, kb: number): Set1 => ({ dsn, kb, quals: dsn.split('.') });
+        const small = Array.from({ length: 20 }, (_, i) => make(`ABC1.${'ABCDEFGHIJKLMNOPQRST'[i]}X.LOG`, 1000));
+        const large = Array.from({ length: 30 }, (_, i) => make(`ABC1.${'ABCDEFGHIJKLMNOPQRSTUVWXYZABCD'[i]}${i}.LOG`, 1000)).map((x, i) => (i % 2 ? x : make(`${x.dsn}.DUMP`, 1000)));
+        for (const p of run(small, large, { minPurity: 0.6, maxWild: 1 }).points) {
+            for (const m of p.include) assert.ok(small.filter(hit([m])).length >= 0.6 * [...small, ...large].filter(hit([m])).length, m);
+        }
+        const dump = large.map(x => make(`ABC1.${x.quals[1]}.DUMP`, 1000));
+        assert.deepEqual(run(small, dump, { minPurity: 0.6, maxWild: 0 }).points.flatMap(p => p.include).filter(m => m === 'ABC1.**'), []);
+        assert.equal(run(small, dump, { minPurity: 0.3, maxWild: 0 }).points[0]?.include[0], 'ABC1.**');
+    });
+
+    it('szeroki INCLUDE z EXCLUDE o jednym kwalifikatorze; punkt domyslny; przerwanie', () => {
+        const make = (dsn: string, kb: number): Set1 => ({ dsn, kb, quals: dsn.split('.') });
+        const mids = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+        const small = mids.flatMap((m, i) => Array.from({ length: 10 }, (_, k) => make(`ABC1.${m}X.N${k}.${['LOG', 'RPT', 'MSG', 'TXT'][i % 4]}`, 1000)));
+        const large = mids.flatMap(m => Array.from({ length: 4 }, (_, k) => make(`ABC1.${m}X.N${k}.DUMP`, 9000)));
+        const r = run(small, large, { exGain: 0.005 });
+        const last = r.points[r.points.length - 1];
+        assert.deepEqual([last.include, last.exclude, last.small, last.large], [['ABC1.*.N%.*'], ['**.DUMP.**'], 80, 0]);
+        const p = (small1: number) => ({ small: small1 }) as Point;
+        assert.equal(defaultPoint([p(50), p(94), p(96), p(100)], 0.95)!.small, 96);
+        assert.equal(defaultPoint([], 0.95), null);
+        assert.ok(run(small, large, { seconds: -1 }).stopped);
+        assert.deepEqual(run([], large).points, []);
+    });
+
+    it('z wiersza polecen: krzywa, --pick, --verify, pliki, bledy', () => {
+        const line = (dsn: string, trk: number, usekb: number) => dline({ dsn, allkb: kbForTrk(trk), usekb });
+        const file = (extra: string[]) => csv([...['LOG', 'RPT', 'MSG'].flatMap(q => Array.from({ length: 20 }, (_, i) => line(`ABC1.DAY.N${i}.${q}`, 315, 40))),
+            ...Array.from({ length: 8 }, (_, i) => line(`ABC1.DAY.N${i}.DUMP`, 900, kbForTrk(800))), ...extra]);
+        write('C1.CSV', file([]));
+        write('C2.CSV', file([...Array.from({ length: 5 }, (_, i) => line(`ABC1.DAY.N${i}.BKP`, 9000, kbForTrk(8000))), line('ABC1.DAY.N50.LOG', 315, 40)]));
+        const r = auto(['C1.CSV', '--compact', '--verify', 'C2.CSV', '--out', 'c.csv', '--filtlist', 'cf.txt', '--tests', 'CT']);
+        assert.equal(r.code, 0, r.err);
+        assert.match(r.out, /<- wybrany/);
+        assert.match(r.out, /Uwaga: duze w drugim pliku przekraczaja granice/);
+        assert.match(r.out, /w tym nazwy, ktorych w pierwszym nie bylo +1 +1 +100,0% +5 /);
+        assert.match(r.out, /gorszej o ponad 5 punktow|\*\*\.BKP/);
+        assert.equal(fs.readFileSync(path.join(dir, 'cf.txt'), 'utf-8'), '  FILTLIST MALE INCLUDE(ABC1.DAY.**) EXCLUDE(**.DUMP.**)\n'.replace(' EXCLUDE', '\n                EXCLUDE'));
+        assert.deepEqual(rowsOf('c.csv').map(x => [x[0], x[1], x[2], x[7]]), [['ABC1.DAY.**', '60', '0', ''], ['**.DUMP.**', '0', '8', 'exclude']]);
+        // ta sama lista przez --masks daje te same liczby
+        assert.match(auto(['C1.CSV', '--masks', 'cf.txt']).out, /RAZEM +60 +0 /);
+        const one = auto(['C1.CSV', '--compact', '--pick', '1']);
+        assert.match(one.out, /Wybrany punkt: masek 1 \(INCLUDE 1, EXCLUDE 0\)/);
+        assert.match(one.out, /FILTLIST MALE INCLUDE\(/);
+        assert.match(auto(['C1.CSV', '--compact', '--min-count', '1000']).out, /Brak masek dla tych progow/);
+        assert.match(auto(['C1.CSV', '--compact', '--max-large', '1TB', '--unit', 'GB']).out, /Duze w liscie: do 1024,00 GB/);
+        for (const [args, msg] of [
+            [['--compact', '--max-large', 'x'], /--max-large/], [['--compact', '--pick', '0'], /--pick/], [['--pick', '3'], /tylko z --compact/],
+            [['--any-start'], /tylko z --compact/], [['--compact', '--quals', '2'], /--quals: nie z --compact/], [['--compact', '--masks', 'cf.txt'], /--masks: nie z/],
+            [['--exclude-loss', '1%'], /tylko z --exclude/], [['--compact', '--exclude-loss', '101%'], /0-100/], [['--compact', '--verify', 'brak.csv'], /brak pliku/],
+            [['--time', '5'], /--time: tylko/],
+        ] as [string[], RegExp][]) {
+            const e = auto(['C1.CSV', ...args]);
+            assert.equal(e.code, 1, args.join(' '));
+            assert.match(e.err, msg);
+        }
+    });
+
+    it('--exclude: --exclude-gain i --exclude-loss', () => {
+        const line = (dsn: string, trk: number, usekb: number) => dline({ dsn, allkb: kbForTrk(trk), usekb });
+        write('E1.CSV', csv([...Array.from({ length: 50 }, (_, i) => line(`ABC1.N${i}.LOG`, 315, 40)), line('ABC1.N1.DUMP', 315, 40),
+            ...Array.from({ length: 9 }, (_, i) => line(`ABC1.N${i + 10}.DUMP`, 900, kbForTrk(800))), ...Array.from({ length: 2 }, (_, i) => line(`ABC1.N${i}.TINY`, 1, 40))]));
+        write('abc1.txt', 'ABC1.**\n');
+        const ex = (a: string[]) => auto(['E1.CSV', '--masks', 'abc1.txt', '--exclude', ...a]).out;
+        assert.ok(!/\*\*\.TINY/.test(ex([])));
+        assert.match(ex(['--exclude-gain', '0']), /\*\*\.TINY\.\*\*/);
+        assert.ok(!/^\*\*\.DUMP\.\*\*/m.test(ex([])));
+        assert.match(ex([]), /^\*\*\.N%%\.\*\*\.DUMP\.\*\* +9 /m);
+        assert.match(ex(['--exclude-loss', '2%']), /\n\*\*\.DUMP\.\*\* +9 .* 1\n/);
     });
 });

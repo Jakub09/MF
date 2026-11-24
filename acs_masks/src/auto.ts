@@ -14,8 +14,11 @@
  *   --unit MB|GB|TB    jednostka sumy alokacji                                   (domyslnie GB)
  *   --out PLIK         maski takze do pliku CSV (separator ;)
  *
- *   --exclude          maski EXCLUDE: duze zbiory objete maskami, bez zadnego malego (najwyzej 255)
+ *   --exclude          maski EXCLUDE dla duzych zbiorow objetych maskami (najwyzej 255), jak najszersze: jeden kwalifikator
+ *                      (**.DUMP.**, **.*DUMP*.**), dwa, a na koncu pelna maska
  *   --exclude-min N    ile duzych ma wylaczyc maska EXCLUDE                      (domyslnie 2)
+ *   --exclude-gain P   jaka czesc alokacji objetych duzych ma wylaczyc           (domyslnie 0.5%)
+ *   --exclude-loss P   jaka czesc objetych malych moga razem zabrac EXCLUDE      (domyslnie 0%, z --compact 1%)
  *   --filtlist PLIK    FILTLIST z INCLUDE (i EXCLUDE) do rutyny ACS
  *   --tests PLIK       testy ISMF do masek (wejscie IEBUPDTE, job ACMTLOAD): DSN i opis = maska; EXCLUDE maska;
  *                      BEZ MASKI - maska = nazwa, ktora do maski z * prawie pasuje (inna liczba kwalifikatorow)
@@ -27,12 +30,21 @@
  *                      dla malych zbiorow, ktorych lista nie obejmuje (zbiory objete lista, male i duze, sa pominiete).
  *                      --prefix: poczatek nowych masek, zaweza tez zbiory, na ktorych sprawdzana jest lista.
  *
+ *   --compact          FILTLIST z jak najmniejsza liczba masek (INCLUDE i EXCLUDE razem) przy jak najwiekszym pokryciu:
+ *                      krzywa liczba masek -> pokrycie i wybrany punkt. Domyslnie --min-purity 0.5 (przed EXCLUDE)
+ *                      i --min-count 0,5% malych (najmniej 10); INCLUDE zaczyna sie od kwalifikatora, nie od ** ani *
+ *   --max-large P      ile duzych (alokacja) moze zostac w liscie: 5% alokacji objetych malych albo np. 200GB (domyslnie 5%)
+ *   --pick N           punkt krzywej: najwyzej N masek; max = najwieksze pokrycie
+ *                      (domyslnie najmniej masek z pokryciem od 95% najwiekszego)
+ *   --any-start        INCLUDE moze zaczynac sie od ** i *
+ *   --verify PLIK      sprawdza wybrany punkt na drugim CSV (np. nowszym), osobno dla nazw, ktorych w pierwszym nie bylo
+ *
  *   --quals N          zamiast masek: najczestsze kombinacje 1..N kwalifikatorow w malych zbiorach (N 1-4), osobna tabela
  *                      dla kazdej liczby; A + B = nazwy **.A.**.B.**, obok najwezsza maska z tymi samymi malymi.
  *                      Takze kwalifikatory niepelne: ABC* *ABC *ABC* AB%% D%%%%%%. Z --masks: tylko zbiory spoza listy
  *   --partial N        ile znakow stalych ma miec kwalifikator niepelny, 2-7; 0 = tylko pelne    (domyslnie 3)
  *   --top N            wierszy w kazdej tabeli                                   (domyslnie 20)
- *   --time SEK         najdluzej szuka kombinacji; potem wynik dla wiekszej liczby malych        (domyslnie 600)
+ *   --time SEK         limit czasu --quals i --compact; potem wynik czesciowy                     (domyslnie 600)
  *   --try LISTA        sprawdza podane kombinacje i ich skrocenia, np. "PROD+SYSOUT, LOGDAY, TMP*"
  *                      Z --quals i --try: --min-purity tylko, gdy podane (domyslnie bez progu); --out: CSV z maskami
  *
@@ -49,12 +61,14 @@ import fs from 'node:fs';
 import { parseArgs } from 'node:util';
 import { acsProblem, ExcludeResult, filtlistText, findExcludes, maskTests, testFile } from './auto-acs';
 import { CheckInput, checkMasks, CheckResult, MaskListError, parseMaskList } from './auto-check';
+import { CompactResult, defaultPoint, findCompact, LargeLimit, Point } from './auto-compact';
 import { mine, MaskRow, MineOptions, MineResult } from './auto-mine';
 import { Combo, findCombos, parseTries, QualResult, tryCombos, TryRow } from './auto-quals';
 import { BOOL, BoolField, Field, NUM, NumField, readStore, Store, STR, StrField } from './auto-read';
 import { Interner, Progress, thousands, Tick } from './auto-util';
 import { CsvError } from './dataset';
 import { MaskError, matches, parseMask } from './mask';
+import { MAX_LIST } from './filtlist';
 import { memberNames, TestCaseError } from './testcase';
 
 export interface Io {
@@ -69,9 +83,11 @@ const STDIO: Io = { out: t => process.stdout.write(t), err: t => process.stderr.
 const USAGE = 'Uzycie: node acs-masks-auto.cjs DCOLLECT.CSV [--scope "sms=true dsorg=PS"]\n'
     + '        [--when "allocTrk=315 usedTrk<=3"] [--prefix "ABC%.**"] [--min-purity 0.95]\n'
     + '        [--min-count 10] [--max-masks 100] [--wild 3] [--unit GB] [--out maski.csv]\n'
-    + '        [--exclude [--exclude-min 2]] [--filtlist filtlist.txt] [--tests ACMTEST [--per-mask 1] [--test-prefix ACM]]\n'
+    + '        [--exclude [--exclude-min 2] [--exclude-gain 0.5%] [--exclude-loss 0%]]\n        [--filtlist filtlist.txt] [--tests ACMTEST [--per-mask 1] [--test-prefix ACM]]\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --masks maski.txt [opcje jak wyzej]\n'
     + '         (sprawdza liste i szuka masek dla zbiorow, ktorych ona nie obejmuje)\n'
+    + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --compact [--max-large 5%] [--pick N] [--any-start] [--verify NOWSZY.CSV]\n'
+    + '         [--filtlist filtlist.txt] (najmniej masek INCLUDE i EXCLUDE, najwieksze pokrycie)\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --quals 4 [--partial 3] [--top 20] [--time 600] [--try "PROD+SYSOUT, TMP*"]\n'
     + '         (najczestsze kombinacje kwalifikatorow; sprawdzanie kwalifikatorow niepelnych)\n'
     + `Pola liczbowe: ${NUM.join(' ')}\n     tekstowe: ${STR.join(' ')}\n     true / false: ${BOOL.join(' ')}\n`
@@ -88,6 +104,8 @@ Przyklady (DC = DCOLLECT.CSV; w pliku .bat kazdy % podwojnie, w PowerShell apost
   node acs-masks-auto.cjs DC --masks maski.txt --out wynik.csv                     sprawdzenie listy i czego jej brakuje
   node acs-masks-auto.cjs DC --min-purity 0.8 --exclude --filtlist f.txt           szersze maski i EXCLUDE
   node acs-masks-auto.cjs DC --masks f.txt --tests ACMTEST --per-mask 2            testy ISMF do FILTLIST
+  node acs-masks-auto.cjs DC --compact --verify NOWSZY.CSV                         najmniej masek, sprawdzone na nowszych danych
+  node acs-masks-auto.cjs DC --compact --max-large 200GB --pick 12 --filtlist f.txt
   node acs-masks-auto.cjs DC --quals 4                                             najczestsze kombinacje 1-4 kwalifikatorow
   node acs-masks-auto.cjs DC --quals 2 --min-purity 0.95 --top 50                  tylko czyste, do 2 kwalifikatorow
   node acs-masks-auto.cjs DC --quals 3 --masks f.txt                               w zbiorach, ktorych lista nie obejmuje
@@ -331,6 +349,88 @@ export function quals(file: string, scope: Conds, when: Conds, q: QualsInput, op
     return { skipped, small: pos.length, large: neg.length, combos, tries };
 }
 
+export interface CompactSettings {
+    /** null = 0,5% malych, najmniej 10 */
+    minCount: number | null;
+    exMin: number;
+    exGain: number;
+    loss: number;
+    maxLarge: LargeLimit;
+    anyStart: boolean;
+    seconds: number;
+    /** null = domyslny punkt, Infinity = najwieksze pokrycie */
+    pick: number | null;
+    verify?: string;
+}
+
+export interface Verified {
+    small: number;
+    large: number;
+    list: CheckResult;
+    /** zbiory, ktorych nazw nie bylo w pierwszym pliku */
+    fresh: CheckResult;
+}
+
+export interface CompactRun {
+    result: CompactResult;
+    minCount: number;
+    chosen: Point | null;
+    /** wybrane maski na danych */
+    list: CheckResult | null;
+    verified: Verified | null;
+}
+
+const DEFAULT_PART = 0.95;
+
+/** Krzywa --compact, wybrany punkt i jego sprawdzenie na drugim pliku. */
+export function compact(file: string, scope: Conds, when: Conds, c: CompactSettings, opt: MineOptions, bar: Progress,
+    warn: (t: string) => void = () => {}): WithInput<CompactRun> {
+    const read = (name: string, label: string): CheckInput => {
+        const st = load(name, scope, when, bar, warn);
+        const tick = bar.stage(label);
+        const { pos, neg } = classify(st, scope, when, opt.head, p => tick(p));
+        bar.done(`malych: ${thousands(pos.length)}, duzych: ${thousands(neg.length)}`);
+        return { names: st.names, allocKb: st.allocKb, pos, neg };
+    };
+    const input = read(file, 'Kryteria');
+    const minCount = c.minCount ?? Math.max(10, Math.ceil(0.005 * input.pos.length));
+    const result = findCompact(input, {
+        minPurity: opt.minPurity, minCount, maxMasks: opt.maxMasks, maxWild: opt.maxWild, head: opt.head, anyStart: c.anyStart,
+        maxLarge: c.maxLarge, loss: c.loss, exMin: c.exMin, exGain: c.exGain, seconds: c.seconds,
+    }, {
+        candidates: bar.stage('Maski'),
+        excludes: n => {
+            bar.done(`masek: ${thousands(n)}`);
+            return bar.stage('Nazwy EXCLUDE');
+        },
+        select: () => {
+            bar.done();
+            return bar.stage('Dobor listy');
+        },
+    });
+    bar.done(`punktow krzywej: ${result.points.length}`);
+    const { points } = result;
+    const chosen = c.pick === null ? defaultPoint(points, DEFAULT_PART)
+        : points.filter(p => p.include.length + p.exclude.length <= c.pick!).pop() ?? null;
+    if (points.length && !chosen) throw new ArgError(`--pick: najmniejszy punkt ma masek: ${points[0].include.length + points[0].exclude.length}`);
+    const list = chosen && checkMasks(input, chosen.include, chosen.exclude, () => {});
+    let verified: Verified | null = null;
+    if (chosen && c.verify !== undefined) {
+        const second = read(c.verify, 'Kryteria');
+        const known = new Interner();
+        for (const rows of [input.pos, input.neg]) {
+            for (let x = 0; x < rows.length; x++) known.add(input.names.pool, input.names.start[rows[x]], input.names.start[rows[x]] + input.names.len[rows[x]]);
+        }
+        const isNew = (r: number) => known.find(second.names.pool, second.names.start[r], second.names.start[r] + second.names.len[r]) < 0;
+        verified = {
+            small: second.pos.length, large: second.neg.length,
+            list: checkMasks(second, chosen.include, chosen.exclude, () => {}),
+            fresh: checkMasks({ ...second, pos: second.pos.filter(isNew), neg: second.neg.filter(isNew) }, chosen.include, chosen.exclude, () => {}),
+        };
+    }
+    return { result, minCount, chosen, list, verified, input };
+}
+
 function load(file: string, scope: Conds, when: Conds, bar: Progress, warn: (t: string) => void): Store {
     const st = readStore(file, new Set([...scope.fields, ...when.fields]), bar.stage('Czytanie CSV'));
     bar.done(`${thousands(st.records)} rekordow, ${thousands(st.sets)} zbiorow`);
@@ -472,14 +572,14 @@ export function checkCsv(list: CheckResult, fresh: SearchResult, u: Unit = 'GB',
 }
 
 export function excludeReport(r: ExcludeResult, u: Unit = 'GB'): string {
-    const out = ['', `EXCLUDE - duze zbiory objete maskami (${r.before.large}), bez zadnego malego`, ''];
+    const out = ['', `EXCLUDE - duze zbiory objete maskami (${r.before.large})${r.total.small ? '' : ', bez zadnego malego'}`, ''];
     if (r.masks.length) {
-        out.push(wide(['Maska EXCLUDE', 'Duzych', `Duzych ${u}`]));
-        for (const m of [...r.masks, r.total]) out.push(wide([m.text, String(m.large), inUnit(m.largeKb, u)]));
+        out.push(wide(['Maska EXCLUDE', 'Duzych', `Duzych ${u}`, ...(r.total.small ? ['Malych'] : [])]));
+        for (const m of [...r.masks, r.total]) out.push(wide([m.text, String(m.large), inUnit(m.largeKb, u), ...(r.total.small ? [String(m.small)] : [])]));
         out.push('', `Masek EXCLUDE: ${r.masks.length}; wylaczaja ${part(r.total.large, r.before.large)} duzych objetych maskami`);
-        out.push(`Po EXCLUDE: malych ${r.after.small}, duzych ${r.before.large} -> ${r.after.large}, purity ${pct(r.before.purity)} -> ${pct(r.after.purity)}`);
+        out.push(`Po EXCLUDE: malych ${r.total.small ? `${r.before.small} -> ` : ''}${r.after.small}, duzych ${r.before.large} -> ${r.after.large}, purity ${pct(r.before.purity)} -> ${pct(r.after.purity)}`);
     } else {
-        out.push(r.before.large ? 'Brak masek EXCLUDE (--exclude-min; duze pod ta sama maska co male).' : 'Maski nie obejmuja duzych zbiorow - EXCLUDE niepotrzebny.');
+        out.push(r.before.large ? 'Brak masek EXCLUDE (--exclude-min, --exclude-gain; duze pod ta sama maska co male).' : 'Maski nie obejmuja duzych zbiorow - EXCLUDE niepotrzebny.');
     }
     return out.join('\n') + '\n';
 }
@@ -534,6 +634,70 @@ export function qualsCsv(r: QualsResult, u: Unit = 'GB'): string {
     return out.join('\n') + '\n';
 }
 
+const count = (p: Point) => p.include.length + p.exclude.length;
+const limitText = (l: LargeLimit, u: Unit) => ('kb' in l ? `${inUnit(l.kb, u)} ${u}` : `${pctOf(l.part)} alokacji objetych malych`);
+const pctOf = (x: number) => `${String(Math.round(x * 1e6) / 1e4).replace('.', ',')}%`;
+
+export function compactReport(r: CompactRun, c: CompactSettings, u: Unit = 'GB'): string {
+    const { result: res, chosen, list, verified: v } = r;
+    const out = [`Zbiorow w zakresie: ${res.small + res.large}, malych: ${res.small}, duzych: ${res.large}`,
+        `Duze w liscie: do ${limitText(c.maxLarge, u)}   male stracone przez EXCLUDE: do ${pctOf(c.loss)}   INCLUDE daje malych: od ${r.minCount}`,
+        ''];
+    if (!chosen || !list) {
+        out.push('Brak masek dla tych progow (--min-purity, --min-count, --max-large, --any-start).');
+        return out.join('\n') + '\n';
+    }
+    if (res.stopped) out.push('Uwaga: przerwano po czasie --time; krzywa moze byc niepelna.', '');
+    const row = (x: string[]) => [7, 9, 9, 9, 9, 12, 9, 12, 10, 10].map((w, i) => x[i].padStart(w)).join('') + (x[10] ?? '');
+    out.push('Krzywa: liczba masek i pokrycie', '', row(['Masek', 'INCLUDE', 'EXCLUDE', 'Malych', '% mal.', `Malych ${u}`, 'Duzych', `Duzych ${u}`, 'duze/male', 'Stracone']));
+    for (const p of res.points) {
+        out.push(row([String(count(p)), String(p.include.length), String(p.exclude.length), String(p.small), part(p.small, res.small), inUnit(p.smallKb, u),
+            String(p.large), inUnit(p.largeKb, u), part(p.largeKb, p.smallKb), String(p.lost), p === chosen ? '   <- wybrany' : '']));
+    }
+    out.push('', `Wybrany punkt: masek ${count(chosen)} (INCLUDE ${chosen.include.length}, EXCLUDE ${chosen.exclude.length}); inny: --pick N`, '',
+        line([...heads(u), 'Tylko ta']));
+    for (const m of list.rows) out.push(line([...cells(m, u), String(m.only)]));
+    out.push(line(cells(list.total, u)), '', `Obejmuja ${part(list.total.small, list.small)} malych (${list.total.small} z ${list.small}), po EXCLUDE`);
+    if (list.excludes.length) {
+        out.push('', wide(['Maska EXCLUDE', 'Duzych', `Duzych ${u}`, 'Malych']));
+        for (const m of list.excludes) out.push(wide([m.text, String(m.large), inUnit(m.largeKb, u), String(m.small)]));
+    }
+    if (v) {
+        out.push('', `Sprawdzenie na drugim pliku: ${c.verify}`, '', wide(['', 'Malych', 'objete', '% mal.', 'Duze w l.', `Duze ${u}`, 'duze/male']));
+        const sum = (name: string, l: CheckResult) => wide([name, String(l.small), String(l.total.small), part(l.total.small, l.small), String(l.total.large),
+            inUnit(l.total.largeKb, u), l.total.smallKb ? part(l.total.largeKb, l.total.smallKb) : '-']);
+        out.push(sum('pierwszy plik', list), sum('drugi plik', v.list), sum('w tym nazwy, ktorych w pierwszym nie bylo', v.fresh), '');
+        const cap = 'kb' in c.maxLarge ? c.maxLarge.kb : c.maxLarge.part * v.list.total.smallKb;
+        out.push(v.list.total.largeKb <= cap + 1e-6 ? 'Duze w drugim pliku mieszcza sie w granicy --max-large.'
+            : `Uwaga: duze w drugim pliku przekraczaja granice --max-large (${inUnit(v.list.total.largeKb, u)} z ${inUnit(cap, u)} ${u}).`);
+        const worse = v.list.rows.map((m, i) => ({ m, was: list.rows[i] })).filter(x => x.m.small + x.m.large > 0 && x.m.purity < x.was.purity - 0.05);
+        if (worse.length) {
+            out.push('', 'Maski o purity gorszej o ponad 5 punktow:');
+            for (const x of worse) out.push(`  ${x.m.text.padEnd(44)} ${pct(x.was.purity)} -> ${pct(x.m.purity)}  (duzych ${x.m.large}, ${inUnit(x.m.largeKb, u)} ${u})`);
+        }
+        const none = v.list.rows.filter(m => m.small + m.large === 0);
+        if (none.length) out.push('', `Maski bez zbiorow w drugim pliku: ${none.map(m => m.text).join('  ')}`);
+    }
+    return out.join('\n') + '\n';
+}
+
+export function compactCsv(r: CompactRun, u: Unit = 'GB'): string {
+    return [`${csvHead(u)};tylko_ta;stan`, ...(r.list?.rows ?? []).map(m => [...csvCells(m, u), m.only, ''].join(';')),
+        ...(r.list?.excludes ?? []).map(m => [...csvCells(m, u), '', 'exclude'].join(';'))].join('\n') + '\n';
+}
+
+/** "5%" -> 0.05; sama liczba tez znaczy procent */
+function percent(v: string, name: string): number {
+    return num(v.trim().replace(/%$/, ''), name, 0, 100, false) / 100;
+}
+
+function largeLimit(v: string): LargeLimit {
+    const m = /^([0-9.,]+)\s*(MB|GB|TB)$/i.exec(v.trim());
+    if (m) return { kb: num(m[1], 'max-large', 0, 1e12, false) * UNITS[m[2].toUpperCase() as Unit][0] };
+    if (!/^[0-9.,]+%?$/.test(v.trim())) throw new ArgError(`--max-large: niepoprawna wartosc "${v}" (np. 5% albo 200GB)`);
+    return { part: num(v.trim().replace(/%$/, ''), 'max-large', 0, 10000, false) / 100 };
+}
+
 export function main(argv: string[], io: Io = STDIO): number {
     let bar: Progress | null = null;
     const progress = (stages: number) => bar = new Progress(stages, io.err, io.tty ?? false, () => process.stderr.columns || 80);
@@ -546,7 +710,7 @@ export function main(argv: string[], io: Io = STDIO): number {
                 when: { type: 'string', default: 'allocTrk=315 usedTrk<=3' },
                 prefix: { type: 'string' },
                 'min-purity': { type: 'string' },
-                'min-count': { type: 'string', default: '10' },
+                'min-count': { type: 'string' },
                 'max-masks': { type: 'string', default: '100' },
                 wild: { type: 'string', default: '3' },
                 masks: { type: 'string' },
@@ -559,6 +723,13 @@ export function main(argv: string[], io: Io = STDIO): number {
                 out: { type: 'string', short: 'o' },
                 exclude: { type: 'boolean', default: false },
                 'exclude-min': { type: 'string', default: '2' },
+                'exclude-gain': { type: 'string' },
+                'exclude-loss': { type: 'string' },
+                compact: { type: 'boolean', default: false },
+                'max-large': { type: 'string' },
+                pick: { type: 'string' },
+                'any-start': { type: 'boolean', default: false },
+                verify: { type: 'string' },
                 filtlist: { type: 'string' },
                 tests: { type: 'string' },
                 'per-mask': { type: 'string', default: '1' },
@@ -578,8 +749,8 @@ export function main(argv: string[], io: Io = STDIO): number {
         const when = parseConds(o.when!, 'when');
         const combos = o.quals !== undefined || o.try !== undefined;
         const opt = {
-            minPurity: num(o['min-purity'] ?? (combos ? '0' : '0.95'), 'min-purity', 0, 1, false),
-            minCount: num(o['min-count']!, 'min-count', 1, 1e9, true),
+            minPurity: num(o['min-purity'] ?? (combos ? '0' : o.compact ? '0.5' : '0.95'), 'min-purity', 0, 1, false),
+            minCount: num(o['min-count'] ?? '10', 'min-count', 1, 1e9, true),
             maxMasks: num(o['max-masks']!, 'max-masks', 1, 1e6, true),
             maxWild: num(o.wild!, 'wild', 0, 9, true),
             head: o.prefix === undefined ? [] : parseHead(o.prefix),
@@ -594,9 +765,21 @@ export function main(argv: string[], io: Io = STDIO): number {
             fs.writeFileSync(file, text);
             io.err(`Zapisano: ${file}${info}\n`);
         };
+        const exGain = percent(o['exclude-gain'] ?? '0.5', 'exclude-gain');
+        const loss = percent(o['exclude-loss'] ?? (o.compact ? '1' : '0'), 'exclude-loss');
+        if (o.compact) {
+            const other = o.exclude ? 'exclude' : (['masks', 'quals', 'try', 'partial', 'top'] as const).find(x => o[x] !== undefined);
+            if (other) throw new ArgError(`--${other}: nie z --compact`);
+        } else {
+            const lone = o['any-start'] ? 'any-start' : (['max-large', 'pick', 'verify'] as const).find(x => o[x] !== undefined);
+            if (lone) throw new ArgError(`--${lone}: tylko z --compact`);
+            const ex = (['exclude-gain', 'exclude-loss'] as const).find(x => o[x] !== undefined);
+            if (ex && !o.exclude) throw new ArgError(`--${ex}: tylko z --exclude albo --compact`);
+        }
         if (!combos) {
-            const lone = (['partial', 'top', 'time'] as const).find(x => o[x] !== undefined);
+            const lone = (['partial', 'top'] as const).find(x => o[x] !== undefined);
             if (lone) throw new ArgError(`--${lone}: tylko z --quals albo --try`);
+            if (o.time !== undefined && !o.compact) throw new ArgError('--time: tylko z --quals albo --compact');
         } else {
             const other = o.exclude ? 'exclude' : (['filtlist', 'tests'] as const).find(x => o[x] !== undefined);
             if (other) throw new ArgError(`--${other}: nie z --quals i --try (wybrane maski zapisz w pliku i podaj w --masks)`);
@@ -626,7 +809,7 @@ export function main(argv: string[], io: Io = STDIO): number {
             let added: MaskRow[] = [];
             if (o.exclude) {
                 const tick = p.stage('EXCLUDE');
-                const e = findExcludes(input, include, old, { minCount: excludeMin, maxWild: opt.maxWild, head: opt.head }, tick);
+                const e = findExcludes(input, include, old, { minCount: excludeMin, maxWild: opt.maxWild, head: opt.head, gain: exGain, loss }, tick);
                 p.done(`masek EXCLUDE: ${e.masks.length}`);
                 io.out(excludeReport(e, unit));
                 added = e.masks;
@@ -651,6 +834,22 @@ export function main(argv: string[], io: Io = STDIO): number {
             }
             return added;
         };
+        if (o.compact) {
+            if (o.verify !== undefined) fs.accessSync(o.verify);
+            const c: CompactSettings = {
+                minCount: o['min-count'] === undefined ? null : opt.minCount, exMin: excludeMin, exGain, loss, anyStart: o['any-start']!,
+                maxLarge: largeLimit(o['max-large'] ?? '5%'), seconds: num(o.time ?? '600', 'time', 1, 1e6, true),
+                pick: o.pick === undefined ? null : o.pick === 'max' ? Infinity : num(o.pick, 'pick', 1, 1e6, true), verify: o.verify,
+            };
+            const p = progress(5 + 2 * Number(o.verify !== undefined) + Number(o.tests !== undefined));
+            const r = compact(positionals[0], scope, when, c, { ...opt, maxMasks: Math.min(opt.maxMasks, MAX_LIST) }, p, io.err);
+            io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek masek: ${opt.head.join('.')}` : ''}   min. purity przed EXCLUDE: ${pct(opt.minPurity)}\n`);
+            io.out(compactReport(r, c, unit));
+            if (r.chosen && o.filtlist === undefined) io.out(`\n${filtlistText('MALE', r.chosen.include.filter(m => !acsProblem(m)), r.chosen.exclude.filter(m => !acsProblem(m))).join('\n')}\n`);
+            if (r.chosen) finish(p, r.input, r.chosen.include, r.chosen.exclude);
+            save(o.out, compactCsv(r, unit));
+            return 0;
+        }
         if (o.masks !== undefined) {
             const list = parseMaskList(fs.readFileSync(o.masks, 'latin1').replace(/^\xef\xbb\xbf/, ''), o.masks);
             for (const w of list.warnings) io.err(`Uwaga: ${w}\n`);

@@ -861,7 +861,10 @@ function coveredBy(m, groups, allowed) {
 MODULES["./auto-mine"] = function (exports, require, module) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.starChars = exports.literalChars = exports.purityOf = exports.isDigit = exports.DATED = exports.MAX_LEN = void 0;
+exports.Search = exports.STAR = exports.starChars = exports.literalChars = exports.purityOf = exports.isDigit = exports.DATED = exports.MAX_LEN = void 0;
+exports.prepare = prepare;
+exports.maskOrder = maskOrder;
+exports.specialise = specialise;
 exports.mine = mine;
 exports.buildPatterns = buildPatterns;
 /**
@@ -902,7 +905,7 @@ const literalChars = (t) => t.replace(/[*%.]/g, '').length;
 exports.literalChars = literalChars;
 const starChars = (t) => t.replace(/[^*]/g, '').length;
 exports.starChars = starChars;
-const STAR = -1;
+exports.STAR = -1;
 function prepare(input, opt, tick) {
     const { names, pos, neg } = input;
     const { pool } = names;
@@ -1029,10 +1032,12 @@ function prepare(input, opt, tick) {
         }
         return s;
     };
+    const posSeq = new Int32Array(np);
     for (let i = 0; i < np; i++) {
         if ((i & 0x3fff) === 0)
             tick(0.3 + 0.3 * (i / np));
         const s = sequence(pos[i]);
+        posSeq[i] = s;
         if (s >= 0)
             wp[s]++;
     }
@@ -1069,13 +1074,14 @@ function prepare(input, opt, tick) {
         for (let x = c; x > 0; x = clsParent.a[x])
             clsTok[--k] = clsLast.a[x];
     }
-    return { count, off, cls, clsOff, clsTok, wp, wn, negSeq, tokens };
+    return { count, off, cls, clsOff, clsTok, wp, wn, posSeq, negSeq, tokens };
 }
 /** Przeszukanie masek od lewej; wpis = ciag i pozycje (bity), na ktorych moze sie skonczyc poczatek maski. */
 class Search {
     q;
     headText;
     maxWild;
+    anchored;
     nodes = 0;
     eSeq = new Int32Array(1 << 12);
     eMask = new Int32Array(1 << 12);
@@ -1092,10 +1098,11 @@ class Search {
     rnd1;
     rnd2;
     odd;
-    constructor(q, headText, maxWild) {
+    constructor(q, headText, maxWild, anchored = false) {
         this.q = q;
         this.headText = headText;
         this.maxWild = maxWild;
+        this.anchored = anchored;
         const t = 2 * q.tokens.text.length;
         this.stamp = new Int32Array(t);
         this.nEnt = new Int32Array(t);
@@ -1120,6 +1127,7 @@ class Search {
      * @param weigh czy podnosic min
      * @param stop czy dobra maska (wynik emit) konczy galaz
      * @param emit maska (open: z koncowym .**) i wpisy, ktore obejmuje: [lo, hi); true = dobra
+     *   cover(f, true): takze ciagi bez malych
      */
     run(ids, min, weigh, stop, emit, tick) {
         const { q } = this;
@@ -1175,18 +1183,18 @@ class Search {
                     stars: stars + (open ? 2 : 0), len: len + (open ? 3 : 0),
                 });
                 if (xs >= need && len <= exports.MAX_LEN) {
-                    emit(make(false), xs, xl, x1, x2, f => {
+                    emit(make(false), xs, xl, x1, x2, (f, every) => {
                         for (let i = lo; i < hi; i++) {
                             const s = this.eSeq[i];
-                            if (wp[s] && (this.eMask[i] >>> (off[s + 1] - off[s])) & 1)
+                            if ((every || wp[s]) && (this.eMask[i] >>> (off[s + 1] - off[s])) & 1)
                                 f(s);
                         }
                     });
                 }
                 if (len + 3 <= exports.MAX_LEN) {
-                    const good = emit(make(true), small, large, h1, h2, f => {
+                    const good = emit(make(true), small, large, h1, h2, (f, every) => {
                         for (let i = lo; i < hi; i++)
-                            if (wp[this.eSeq[i]])
+                            if (every || wp[this.eSeq[i]])
                                 f(this.eSeq[i]);
                     });
                     if (good && stop)
@@ -1194,7 +1202,9 @@ class Search {
                 }
             }
             // ---- zliczenie rozwiniec: x = element * 2 + (1: przed nim **)
-            const canGap = wild < maxWild;
+            // anchored: maska nie zaczyna sie od ** ani *
+            const first = this.anchored && !named;
+            const canGap = wild < maxWild && !first;
             const touched = [];
             let starEnt = 0;
             let starPos = 0;
@@ -1268,9 +1278,9 @@ class Search {
                 keep.push({ x, n: nEnt[x], small: wPos[x], large: wNeg[x], off: this.top });
                 this.top += nEnt[x];
             }
-            const star = wild < maxWild && starPos >= needOf(wild + 1) && !adjacent.has(key(starSig, starPos));
+            const star = wild < maxWild && !first && starPos >= needOf(wild + 1) && !adjacent.has(key(starSig, starPos));
             if (star) {
-                keep.push({ x: STAR, n: starEnt, small: starPos, large: starNeg, off: this.top });
+                keep.push({ x: exports.STAR, n: starEnt, small: starPos, large: starNeg, off: this.top });
                 this.top += starEnt;
             }
             for (const x of touched)
@@ -1317,7 +1327,7 @@ class Search {
             }
             let all = 0;
             for (const c of keep) {
-                if (c.x !== STAR)
+                if (c.x !== exports.STAR)
                     slot[c.x] = -1;
                 all += c.n;
             }
@@ -1326,7 +1336,7 @@ class Search {
                 const till = at + (to - from) * (c.n / all);
                 const dot = named ? 1 : 0;
                 path.push(c.x);
-                if (c.x === STAR) {
+                if (c.x === exports.STAR) {
                     node(c.off, c.off + c.n, wild + 1, lit, stars + 1, len + dot + 1, c.small, c.large, at, till);
                 }
                 else {
@@ -1348,6 +1358,39 @@ class Search {
         this.eMask = (0, auto_util_1.grow)(this.eMask, n);
     }
 }
+exports.Search = Search;
+/** Tekst maski i kolejnosc masek o tym samym zysku: czystosc, mniej duzych, wiecej znakow stalych, mniej *, krotsza. */
+function maskOrder(tokens, head) {
+    const textOf = (f) => {
+        const parts = head.slice();
+        for (const x of f.path) {
+            if (x !== exports.STAR && x & 1)
+                parts.push('**');
+            parts.push(x === exports.STAR ? '*' : tokens[x >> 1]);
+        }
+        if (f.open)
+            parts.push('**');
+        return parts.join('.');
+    };
+    const rank = (a, b) => (0, exports.purityOf)(b.small, b.large) - (0, exports.purityOf)(a.small, a.large) || a.large - b.large
+        || b.lit - a.lit || a.stars - b.stars || a.len - b.len || (textOf(a) < textOf(b) ? -1 : 1);
+    return { textOf, rank };
+}
+/** Najbardziej szczegolowa maska zawarta w own i obejmujaca te same male; ids = ciagi, ktore own obejmuje. */
+function specialise(search, ids, small, own, order) {
+    const all = [];
+    search.run(ids, small, false, false, make => {
+        all.push(make());
+        return false;
+    }, () => { });
+    all.sort(order.rank);
+    const quals = own.split('.');
+    const best = all.find(f => {
+        const t = order.textOf(f);
+        return t === own || (0, auto_tree_1.within)(t.split('.'), quals);
+    });
+    return best ? order.textOf(best) : own;
+}
 function mine(input, opt, stages) {
     const { names, allocKb, pos, neg } = input;
     const min = opt.minCount;
@@ -1357,20 +1400,7 @@ function mine(input, opt, stages) {
     // ---- przeszukanie: dobre maski, z masek o tych samych malych zbiorach jedna
     const tickSearch = stages.search(q.count);
     const search = new Search(q, headText, opt.maxWild);
-    const textOf = (f) => {
-        const parts = opt.head?.slice() ?? [];
-        for (const x of f.path) {
-            if (x !== STAR && x & 1)
-                parts.push('**');
-            parts.push(x === STAR ? '*' : tokens.text[x >> 1]);
-        }
-        if (f.open)
-            parts.push('**');
-        return parts.join('.');
-    };
-    /** lepsza z masek o tym samym zysku: czystosc, mniej duzych, wiecej znakow stalych, mniej *, krotsza */
-    const rank = (a, b) => (0, exports.purityOf)(b.small, b.large) - (0, exports.purityOf)(a.small, a.large) || a.large - b.large
-        || b.lit - a.lit || a.stars - b.stars || a.len - b.len || (textOf(a) < textOf(b) ? -1 : 1);
+    const { textOf, rank } = maskOrder(tokens.text, opt.head ?? []);
     const good = [];
     const byCover = new auto_util_1.PairMap();
     const list = new auto_util_1.IntList();
@@ -1502,19 +1532,7 @@ function mine(input, opt, stages) {
         for (let x = lo.a[g]; x < lo.a[g + 1]; x++)
             ids.add(list.a[x]);
         // male zbiory spoza maski nie moga tu trafic: ciag z duzych ma wage malych tylko, gdy pasuje do maski
-        const all = [];
-        search.run([...ids], good[g].small, false, false, make => {
-            all.push(make());
-            return false;
-        }, () => { });
-        const own = texts[j].split('.');
-        all.sort(rank);
-        const best = all.find(f => {
-            const t = textOf(f);
-            return t === texts[j] || (0, auto_tree_1.within)(t.split('.'), own);
-        });
-        if (best)
-            texts[j] = textOf(best);
+        texts[j] = specialise(search, [...ids], good[g].small, texts[j], { textOf, rank });
     });
     // ---- liczby wprost z porownania wynikowych masek z nazwami
     const masks = texts.map((text) => ({ text, small: 0, large: 0, purity: 0, smallKb: 0, largeKb: 0 }));
@@ -1758,334 +1776,13 @@ function buildPatterns(quals, occ, min, tick) {
 }
 };
 
-// ==================== src/filtlist.ts
-MODULES["./filtlist"] = function (exports, require, module) {
-"use strict";
-/** FILTLIST rutyn ACS: zapis list w liniach do kolumny 71. */
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.MAX_LIST = exports.ACS_MAX_COL = void 0;
-exports.chunks = chunks;
-exports.filtlist = filtlist;
-exports.ACS_MAX_COL = 71;
-/** limit pozycji listy INCLUDE / EXCLUDE */
-exports.MAX_LIST = 255;
-function chunks(a, n) {
-    const out = [];
-    for (let i = 0; i < a.length; i += n)
-        out.push(a.slice(i, i + n));
-    return out;
-}
-/** Pozycja listy FILTLIST: maska bez apostrofow; nazwa z '-' / '{' w apostrofach. */
-function entry(text) {
-    return /[-{]/.test(text) && !/[*%]/.test(text) ? `'${text}'` : text;
-}
-/** Najdluzsza pozycja FILTLIST: nazwa 44 znaki w apostrofach + przecinek. */
-const MAX_ENTRY = 47;
-/**
- * FILTLIST z zawijaniem do ACS_MAX_COL; kazda linia poza ostatnia konczy sie przecinkiem (albo nawiasem
- * otwierajacym, gdy pierwsza pozycja nie miesci sie za naglowkiem; EXCLUDE od nowej linii, pod INCLUDE). Wciecie
- * kontynuacji pod nawiasem, a gdy przy dlugiej nazwie listy pelna nazwa zbioru by sie nie zmiescila - 4 spacje.
- */
-function filtlist(name, items, excludes = []) {
-    const start = `  FILTLIST ${name} `;
-    const fits = start.length + 'INCLUDE('.length + MAX_ENTRY <= exports.ACS_MAX_COL;
-    const list = (head, entries) => {
-        const indent = ' '.repeat(fits ? head.length : 4);
-        const lines = [];
-        let cur = head;
-        entries.forEach((it, i) => {
-            const piece = entry(it) + (i < entries.length - 1 ? ',' : ')');
-            if (cur.length + piece.length > exports.ACS_MAX_COL && cur !== indent) {
-                lines.push(cur);
-                cur = indent;
-            }
-            cur += piece;
-        });
-        lines.push(cur);
-        return lines;
-    };
-    return [...list(`${start}INCLUDE(`, items),
-        ...(excludes.length ? list(`${' '.repeat(fits ? start.length : 4)}EXCLUDE(`, excludes) : [])];
-}
-};
-
-// ==================== src/zos.ts
-MODULES["./zos"] = function (exports, require, module) {
-"use strict";
-/** Kontrola tekstu dla z/OS: FB 80, kolumny 1-71 (ACS, karty DFSORT), znaki bezpieczne dla IBM-1047. */
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.ZosTextError = void 0;
-exports.checkZosLines = checkZosLines;
-exports.zosText = zosText;
-class ZosTextError extends Error {
-}
-exports.ZosTextError = ZosTextError;
-function checkZosLines(member, lines, maxCol = 71) {
-    if (!/^[A-Z#@$][A-Z0-9#@$]{0,7}$/.test(member))
-        throw new ZosTextError(`niepoprawna nazwa membra ${member}`);
-    lines.forEach((l, i) => {
-        if (l.length > maxCol)
-            throw new ZosTextError(`${member}:${i + 1} linia dluzsza niz ${maxCol} (${l.length})`);
-        if (/[^\x20-\x7e]|[[\]\\!^~`]/.test(l)) {
-            throw new ZosTextError(`${member}:${i + 1} znak niebezpieczny dla EBCDIC: ${l}`);
-        }
-    });
-}
-/**
- * Tekst do pliku z/OS: bez polskich znakow, wielkie litery, tylko znaki bezpieczne dla IBM-1047
- * (bez [ ] \ ! ^ ~ ` i znakow spoza ASCII).
- */
-function zosText(s) {
-    return s.replace(/[łŁ]/g, 'L').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
-        .replace(/[^\x20-\x7e]|[[\]\\!^~`]/g, '?');
-}
-};
-
-// ==================== src/testcase.ts
-MODULES["./testcase"] = function (exports, require, module) {
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.TEST_MAX_COL = exports.TestCaseError = void 0;
-exports.memberNames = memberNames;
-exports.testLines = testLines;
-exports.buildTests = buildTests;
-exports.iebupdte = iebupdte;
-/**
- * Testy ACS w formacie ISMF (member biblioteki testow, FB 80) - generowane z reprezentantow (acs-masks repr --tests),
- * zamiast testow z DCOLLECT przez NaviQuest (ACBQBAG1; ta droga zostaje).
- *
- * Format membera (z membera utworzonego w ISMF 7.4, 2026-11-17): linie "SLOWO: wartosc"; opis w linii pod
- * DESCRIPTION1:
- *   DESCRIPTION1:
- *   <opis: maski / kwalifikatory z rutyn, do ktorych pasuje DSN>
- *   DSN: <nazwa zbioru>
- *   ACSENVIR: ALLOC
- * Na razie tylko te pola. Pozostale zmienne (DSORG, SIZE, UNIT...) maja w tescie wartosc pusta - warunki rutyn
- * na nich nie roznicuja testow (raport repr je wypisuje).
- *
- * Wynik dla z/OS:
- *   zos/ACMTEST    - wejscie IEBUPDTE (./ ADD NAME=... + linie membera), ladowane jobem ACMTLOAD do TESTBED
- *   zos/testy/*    - te same membery jako osobne pliki (alternatywa: FTP mput do PDS)
- */
-const zos_1 = require("./zos");
-class TestCaseError extends Error {
-}
-exports.TestCaseError = TestCaseError;
-/** Najdluzsza linia membera (bez kolumn 73-80). */
-exports.TEST_MAX_COL = 72;
-/** Nazwy memberow jak w NaviQuest: prefiks 1-4 litery + numer do 8 znakow. */
-function memberNames(prefix, count) {
-    const p = prefix.toUpperCase();
-    if (!/^[A-Z#@$]{1,4}$/.test(p))
-        throw new TestCaseError(`prefiks testow "${prefix}": 1-4 litery (A-Z # @ $)`);
-    const digits = 8 - p.length;
-    if (count > 10 ** digits - 1) {
-        throw new TestCaseError(`${count} testow nie miesci sie w nazwach ${p}${'n'.repeat(digits)} - uzyj krotszego prefiksu`);
-    }
-    return Array.from({ length: count }, (_, i) => p + String(i + 1).padStart(digits, '0'));
-}
-function testLines(description, dsn, acsenvir = 'ALLOC') {
-    const desc = (0, zos_1.zosText)(description).replace(/^\.\//, '. /').slice(0, exports.TEST_MAX_COL).trimEnd();
-    return ['DESCRIPTION1:', desc, `DSN: ${dsn}`, `ACSENVIR: ${acsenvir}`];
-}
-function buildTests(prefix, items) {
-    const names = memberNames(prefix, items.length);
-    return items.map((it, i) => ({ member: names[i], dsn: it.dsn, description: it.description, lines: testLines(it.description, it.dsn) }));
-}
-/** Wejscie IEBUPDTE (PARM=NEW): kazdy member po "./ ADD NAME=", na koncu "./ ENDUP". */
-function iebupdte(tests) {
-    const out = [];
-    for (const t of tests)
-        out.push(`./ ADD NAME=${t.member}`, ...t.lines);
-    out.push('./ ENDUP');
-    return out;
-}
-};
-
-// ==================== src/auto-acs.ts
-MODULES["./auto-acs"] = function (exports, require, module) {
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.testFile = void 0;
-exports.findExcludes = findExcludes;
-exports.acsProblem = acsProblem;
-exports.filtlistText = filtlistText;
-exports.maskTests = maskTests;
-/**
- * Maski -> z/OS: EXCLUDE dla duzych zbiorow objetych maskami, tekst FILTLIST i testy ISMF (jak repr --tests).
- */
-const auto_check_1 = require("./auto-check");
-const auto_mine_1 = require("./auto-mine");
-const auto_tree_1 = require("./auto-tree");
-const filtlist_1 = require("./filtlist");
-const mask_1 = require("./mask");
-const testcase_1 = require("./testcase");
-/** Wiersze objete maskami (INCLUDE i nie EXCLUDE). */
-function covered(input, include, exclude, tick) {
-    const { names } = input;
-    const inc = new auto_tree_1.MaskTree(include.map(m => m.split('.')));
-    const exc = exclude.length ? new auto_tree_1.MaskTree(exclude.map(m => m.split('.'))) : null;
-    const total = input.pos.length + input.neg.length;
-    let done = 0;
-    const pick = (rows) => rows.filter(row => {
-        if ((done++ & 0x3fff) === 0)
-            tick(done / total);
-        const s = names.start[row];
-        const e = s + names.len[row];
-        return inc.match(names.pool, s, e).length > 0 && !exc?.match(names.pool, s, e).length;
-    });
-    return { ...input, pos: pick(input.pos), neg: pick(input.neg) };
-}
-const kbOf = (input, rows) => {
-    let kb = 0;
-    for (let x = 0; x < rows.length; x++)
-        kb += input.allocKb[rows[x]];
-    return kb;
-};
-/**
- * Maski EXCLUDE: te same rodzaje masek co przy szukaniu, dobrane dla duzych zbiorow objetych INCLUDE; kazda obejmuje
- * co najmniej minCount nowych duzych i zadnego malego (z objetych INCLUDE - tylko na takie dziala EXCLUDE).
- */
-function findExcludes(input, include, old, opt, tick) {
-    const c = covered(input, include, old, p => tick(0.5 * p));
-    const res = (0, auto_mine_1.mine)({ ...c, pos: c.neg, neg: c.pos }, { ...opt, minPurity: 1, maxMasks: filtlist_1.MAX_LIST - old.length }, {
-        prepare: p => tick(0.5 + 0.1 * p),
-        search: () => p => tick(0.6 + 0.3 * p),
-        select: () => p => tick(0.9 + 0.1 * p),
-    });
-    const out = (r) => ({ text: r.text, small: r.large, large: r.small, purity: 0, smallKb: r.largeKb, largeKb: r.smallKb });
-    const sum = (text, small, large, smallKb, largeKb) => ({ text, small, large, smallKb, largeKb, purity: small ? small / (small + large) : 0 });
-    const total = out(res.total);
-    const [sKb, lKb] = [kbOf(c, c.pos), kbOf(c, c.neg)];
-    return {
-        before: sum('PRZED EXCLUDE', c.pos.length, c.neg.length, sKb, lKb),
-        after: sum('PO EXCLUDE', c.pos.length - total.small, c.neg.length - total.large, sKb - total.smallKb, lKb - total.largeKb),
-        masks: res.masks.map(out),
-        total,
-    };
-}
-/** Dlaczego translator ACS nie przyjmie maski; null = dobra. */
-function acsProblem(mask) {
-    try {
-        if ((0, mask_1.parseMask)(mask).generic && mask.includes('-'))
-            return '"-" w masce to znak kontynuacji';
-        return null;
-    }
-    catch (e) {
-        return e.message;
-    }
-}
-/** FILTLIST z INCLUDE i EXCLUDE; ponad 255 masek - kilka list, kazda z tym samym EXCLUDE. */
-function filtlistText(name, include, exclude) {
-    if (exclude.length > filtlist_1.MAX_LIST)
-        throw new auto_check_1.MaskListError(`EXCLUDE: ${exclude.length} masek, FILTLIST przyjmuje ${filtlist_1.MAX_LIST}`);
-    const parts = (0, filtlist_1.chunks)(include, filtlist_1.MAX_LIST);
-    return parts.flatMap((p, i) => (0, filtlist_1.filtlist)(parts.length > 1 ? `${name}_${i + 1}` : name, p, exclude));
-}
-/**
- * Testy do masek INCLUDE i EXCLUDE, najwyzej per zbiorow kazdego rodzaju na maske; opis = maski, do ktorych nazwa pasuje:
- *   maska               zbior objety INCLUDE (maly, a gdy ich nie ma - duzy); maska z **: nazwy o najmniejszej
- *                       i o najwiekszej liczbie kwalifikatorow
- *   EXCLUDE maska       zbior wylaczony
- *   BEZ MASKI - maska   zbior, ktory nie pasuje do zadnej maski, a pasowalby, gdyby * bylo **
- */
-function maskTests(input, include, exclude, per, prefix, tick) {
-    const { names, pos, neg } = input;
-    const inc = new auto_tree_1.MaskTree(include.map(m => m.split('.')));
-    const exc = new auto_tree_1.MaskTree(exclude.map(m => m.split('.')));
-    const wide = include.filter(m => m.split('.').includes('*'));
-    const near = new auto_tree_1.MaskTree(wide.map(m => m.split('.').map(x => (x === '*' ? '**' : x))));
-    const make = (n) => Array.from({ length: n }, () => new Map());
-    const incSmall = make(include.length);
-    const incLarge = make(include.length);
-    const excAny = make(exclude.length);
-    const nearAny = make(wide.length);
-    const put = (reps, key, r) => {
-        let list = reps.get(key);
-        if (!list)
-            reps.set(key, list = []);
-        let i = list.length;
-        while (i > 0 && (list[i - 1].masks - r.masks || compareNames(names, list[i - 1].row, r.row)) >= 0)
-            i--;
-        if (i === per)
-            return;
-        // ta sama nazwa (generacje GDG pod nazwa bazy) raz
-        if (list.some(x => compareNames(names, x.row, r.row) === 0))
-            return;
-        list.splice(i, 0, r);
-        if (list.length > per)
-            list.pop();
-    };
-    const total = pos.length + neg.length;
-    let done = 0;
-    const scan = (rows, small) => {
-        for (let x = 0; x < rows.length; x++) {
-            if ((done++ & 0x3fff) === 0)
-                tick(done / total);
-            const s = names.start[rows[x]];
-            const e = s + names.len[rows[x]];
-            const ids = inc.match(names.pool, s, e);
-            if (ids.length === 0) {
-                const almost = near.match(names.pool, s, e);
-                for (const m of almost)
-                    put(nearAny[m], 0, { row: rows[x], masks: almost.length });
-                continue;
-            }
-            const out = exc.match(names.pool, s, e);
-            if (out.length) {
-                for (const m of out)
-                    put(excAny[m], 0, { row: rows[x], masks: out.length });
-                continue;
-            }
-            let n = 1;
-            for (let p = s; p < e; p++)
-                if (names.pool[p] === 46)
-                    n++;
-            for (const m of ids)
-                put((small ? incSmall : incLarge)[m], n, { row: rows[x], masks: ids.length });
-        }
-    };
-    scan(pos, true);
-    scan(neg, false);
-    const items = new Map();
-    const add = (reps, masks, tree, label) => {
-        for (const { row } of reps) {
-            const s = names.start[row];
-            items.set(names.text(row), label + tree.match(names.pool, s, s + names.len[row]).map(m => masks[m]).join(' '));
-        }
-    };
-    include.forEach((mask, m) => {
-        const reps = incSmall[m].size ? incSmall[m] : incLarge[m];
-        const keys = [...reps.keys()];
-        if (keys.length === 0)
-            return;
-        add(reps.get(Math.min(...keys)), include, inc, '');
-        if (mask.split('.').includes('**'))
-            add(reps.get(Math.max(...keys)), include, inc, '');
-    });
-    excAny.forEach(reps => add(reps.get(0) ?? [], exclude, exc, 'EXCLUDE '));
-    nearAny.forEach(reps => add(reps.get(0) ?? [], wide, near, 'BEZ MASKI - '));
-    return (0, testcase_1.buildTests)(prefix, [...items].map(([dsn, description]) => ({ dsn, description })));
-}
-function compareNames(names, a, b) {
-    const { pool, start, len } = names;
-    const n = Math.min(len[a], len[b]);
-    for (let i = 0; i < n; i++) {
-        const d = pool[start[a] + i] - pool[start[b] + i];
-        if (d)
-            return d;
-    }
-    return len[a] - len[b];
-}
-const testFile = (tests) => (0, testcase_1.iebupdte)(tests).join('\n') + '\n';
-exports.testFile = testFile;
-};
-
 // ==================== src/auto-quals.ts
 MODULES["./auto-quals"] = function (exports, require, module) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.readNames = readNames;
 exports.narrower = narrower;
+exports.buildSequences = buildSequences;
 exports.findCombos = findCombos;
 exports.parseTries = parseTries;
 exports.shorten = shorten;
@@ -2122,13 +1819,13 @@ const NUMBERED = /^[A-Z#@$]{1,3}[0-9]{4,7}$/;
 const GROUP = 1 << 24;
 class Timeout extends Error {
 }
-function readNames(input, skip, tick) {
+function readNames(input, skip, tick, byKb = false) {
     const { names, allocKb, pos, neg } = input;
     const { pool } = names;
     const total = pos.length + neg.length;
     const quals = new auto_util_1.Interner();
     const other = new auto_util_1.Interner();
-    let occ = new Int32Array(1 << 10);
+    let occ = new Float64Array(1 << 10);
     const off = new Int32Array(total + 1);
     const ids = new auto_util_1.IntList();
     const kb = new Float64Array(total);
@@ -2138,6 +1835,7 @@ function readNames(input, skip, tick) {
         const small = i < pos.length;
         const row = small ? pos[i] : neg[i - pos.length];
         kb[i] = allocKb[row];
+        const weight = byKb ? Math.max(1, Math.round(kb[i])) : 1;
         const e = names.start[row] + names.len[row];
         let b = names.start[row];
         for (let k = 0; k < skip; k++) {
@@ -2153,7 +1851,7 @@ function readNames(input, skip, tick) {
                 id = quals.add(pool, b, p);
                 if (id >= occ.length)
                     occ = (0, auto_util_1.grow)(occ, id + 1);
-                occ[id]++;
+                occ[id] += weight;
             }
             else {
                 id = quals.find(pool, b, p);
@@ -2315,14 +2013,19 @@ function buildSequences(n, min, partial, hasHead, tick) {
         if (occ[id] >= min)
             texts.add(quals.text(id));
     const literals = texts.size;
+    const patterns = new Set();
     if (partial) {
         for (const t of (0, auto_mine_1.buildPatterns)(quals, occ, min, p => tick(0.2 * p)).texts)
             if ((0, auto_mine_1.literalChars)(t))
-                texts.add(t);
+                patterns.add(t);
+        for (const t of patterns)
+            texts.add(t);
         for (const t of buildPartials(quals, occ, min, partial))
             texts.add(t);
     }
-    const tokens = [...texts].map((text, i) => ({ text, lit: (0, auto_mine_1.literalChars)(text), stars: (0, auto_mine_1.starChars)(text), dated: i < literals && auto_mine_1.DATED.test(text) }));
+    const tokens = [...texts].map((text, i) => ({
+        text, kind: i < literals ? 0 : patterns.has(text) ? 2 : 1, lit: (0, auto_mine_1.literalChars)(text), stars: (0, auto_mine_1.starChars)(text), dated: i < literals && auto_mine_1.DATED.test(text),
+    }));
     tick(0.4);
     // ---- klasy: osobno dla pierwszego miejsca (tam wolno literal z data)
     const tree = new auto_tree_1.MaskTree(tokens.map(t => [t.text]));
@@ -2366,6 +2069,7 @@ function buildSequences(n, min, partial, hasHead, tick) {
     let kp = new Float64Array(1 << 10);
     let kn = new Float64Array(1 << 10);
     const total = n.off.length - 1;
+    const rowSeq = new Int32Array(total);
     for (let i = 0; i < total; i++) {
         if ((i & 0x3fff) === 0)
             tick(0.7 + 0.3 * (i / total));
@@ -2377,6 +2081,7 @@ function buildSequences(n, min, partial, hasHead, tick) {
             buf[w++] = c;
         }
         const s = seqs.add(buf, 0, w);
+        rowSeq[i] = s;
         if (s >= wp.length) {
             wp = (0, auto_util_1.grow)(wp, s + 1);
             wn = (0, auto_util_1.grow)(wn, s + 1);
@@ -2419,7 +2124,7 @@ function buildSequences(n, min, partial, hasHead, tick) {
         for (let x = c; x > 0; x = clsParent.a[x])
             clsTok[--k] = clsLast.a[x];
     }
-    return { tokens, count, off, cls, end, clsOff, clsTok, wp, wn, kp, kn };
+    return { tokens, count, off, cls, end, clsOff, clsTok, wp, wn, kp, kn, rowSeq };
 }
 class Search {
     q;
@@ -2924,6 +2629,996 @@ function tryCombos(input, tries, partial, head, tick) {
                 seen.push(r);
         return [base, ...seen.slice(1).sort((a, b) => b.purity - a.purity || b.small - a.small)];
     });
+}
+};
+
+// ==================== src/auto-exclude.ts
+MODULES["./auto-exclude"] = function (exports, require, module) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ExcludeSpace = void 0;
+exports.pickExcludes = pickExcludes;
+const auto_mine_1 = require("./auto-mine");
+const auto_quals_1 = require("./auto-quals");
+const auto_tree_1 = require("./auto-tree");
+const auto_util_1 = require("./auto-util");
+/** ile najwiekszych kwalifikatorow jest sprawdzanych jako pierwszy albo drugi z pary */
+const PAIR_HEADS = 60;
+/** o tyle gorszy wynik nadal przegrywa z lepszym rodzajem kwalifikatora */
+const NEAR = 0.98;
+/** o tyle wiecej musza wylaczac dwa kwalifikatory */
+const TWO = 1.25;
+class ExcludeSpace {
+    input;
+    head;
+    q;
+    /** liczba duzych; rowSeq: duze, potem male */
+    nl;
+    ns;
+    constructor(input, head, minKb, partial, tick) {
+        this.input = input;
+        this.head = head;
+        this.nl = input.neg.length;
+        this.ns = input.pos.length;
+        const names = (0, auto_quals_1.readNames)({ ...input, pos: input.neg, neg: input.pos }, head.length, p => tick(0.4 * p), true);
+        this.q = (0, auto_quals_1.buildSequences)(names, Math.max(1, minKb), partial, head.length > 0, p => tick(0.4 + 0.6 * p));
+    }
+    text(combo) {
+        return [...this.head, '**', ...combo.flatMap(t => [this.q.tokens[t].text, '**'])].join('.');
+    }
+    /** useL / useS: 1 = duzy do wylaczenia / maly do oszczedzenia */
+    weigh(useL, useS) {
+        const { rowSeq, count } = this.q;
+        const { allocKb, pos, neg } = this.input;
+        const w = { kb: new Float64Array(count), n: new Float64Array(count), small: new Float64Array(count), smallKb: new Float64Array(count) };
+        for (let i = 0; i < this.nl; i++) {
+            if (!useL[i])
+                continue;
+            w.kb[rowSeq[i]] += allocKb[neg[i]];
+            w.n[rowSeq[i]]++;
+        }
+        for (let i = 0; i < this.ns; i++) {
+            if (!useS[i])
+                continue;
+            w.small[rowSeq[this.nl + i]]++;
+            w.smallKb[rowSeq[this.nl + i]] += allocKb[pos[i]];
+        }
+        return w;
+    }
+    /** Najlepsza maska z jednego albo dwoch kwalifikatorow. */
+    best(w, lim) {
+        const { tokens, count, off, cls, clsOff, clsTok, end } = this.q;
+        const nt = tokens.length;
+        const stamp = new Int32Array(nt);
+        let round = 0;
+        const sum = { kb: new Float64Array(nt), n: new Float64Array(nt), small: new Float64Array(nt), smallKb: new Float64Array(nt) };
+        const add = (t, s) => {
+            sum.kb[t] += w.kb[s];
+            sum.n[t] += w.n[s];
+            sum.small[t] += w.small[s];
+            sum.smallKb[t] += w.smallKb[s];
+        };
+        const clear = () => {
+            for (const a of Object.values(sum))
+                a.fill(0);
+        };
+        const net = (t) => sum.kb[t] - sum.smallKb[t];
+        const ok = (t) => sum.small[t] <= lim.maxLoss && sum.n[t] >= lim.minCount && sum.kb[t] > 0 && net(t) >= lim.minKb;
+        const make = (combo, t) => ({
+            combo, net: net(t), loss: sum.small[t],
+            kind: Math.max(...combo.map(x => tokens[x].kind)), lit: combo.reduce((n, x) => n + tokens[x].lit, 0),
+        });
+        const fits = (combo) => this.text(combo).length <= auto_mine_1.MAX_LEN;
+        const choose = (list) => {
+            if (list.length === 0)
+                return null;
+            const top = list.reduce((m, c) => Math.max(m, c.net), 0);
+            return list.filter(c => c.net >= top * NEAR).sort((a, b) => a.kind - b.kind || b.net - a.net || a.loss - b.loss || b.lit - a.lit
+                || (this.text(a.combo) < this.text(b.combo) ? -1 : 1))[0];
+        };
+        for (let s = 0; s < count; s++) {
+            if (w.n[s] === 0 && w.small[s] === 0)
+                continue;
+            round++;
+            for (let p = off[s]; p < off[s] + end[s]; p++) {
+                for (let y = clsOff[cls[p]]; y < clsOff[cls[p] + 1]; y++) {
+                    const t = clsTok[y];
+                    if (stamp[t] === round)
+                        continue;
+                    stamp[t] = round;
+                    add(t, s);
+                }
+            }
+        }
+        const one = [];
+        const bad = [];
+        for (let t = 0; t < nt; t++) {
+            if (sum.n[t] < lim.minCount || sum.kb[t] < lim.minKb)
+                continue;
+            if (!ok(t))
+                bad.push(t);
+            else if (fits([t]))
+                one.push(make([t], t));
+        }
+        const single = choose(one);
+        const need = Math.max(lim.minKb, single ? TWO * single.net : 0);
+        // ---- pary: co najmniej jeden kwalifikator z najwiekszych, ktore same zabieraja za duzo malych
+        const heads = bad.filter(t => sum.kb[t] >= need).sort((a, b) => sum.kb[b] - sum.kb[a]).slice(0, PAIR_HEADS);
+        const big = Uint8Array.from(sum.kb, v => Number(v >= need));
+        const slot = new Int32Array(nt).fill(-1);
+        heads.forEach((t, i) => { slot[t] = i; });
+        const lists = heads.map(() => new auto_util_1.IntList());
+        if (heads.length) {
+            for (let s = 0; s < count; s++) {
+                if (w.n[s] === 0 && w.small[s] === 0)
+                    continue;
+                round++;
+                for (let p = off[s]; p < off[s] + end[s]; p++) {
+                    for (let y = clsOff[cls[p]]; y < clsOff[cls[p] + 1]; y++) {
+                        const t = clsTok[y];
+                        if (slot[t] < 0 || stamp[t] === round)
+                            continue;
+                        stamp[t] = round;
+                        lists[slot[t]].push(s);
+                    }
+                }
+            }
+        }
+        const two = [];
+        heads.forEach((a, i) => {
+            const has = (c) => {
+                for (let y = clsOff[c]; y < clsOff[c + 1]; y++)
+                    if (clsTok[y] === a)
+                        return true;
+                return false;
+            };
+            for (const before of [false, true]) {
+                clear();
+                for (let x = 0; x < lists[i].n; x++) {
+                    const s = lists[i].a[x];
+                    let lo = off[s];
+                    let hi = off[s] + end[s];
+                    if (before) {
+                        do
+                            hi--;
+                        while (!has(cls[hi]));
+                    }
+                    else {
+                        while (!has(cls[lo]))
+                            lo++;
+                        lo++;
+                    }
+                    round++;
+                    for (let p = lo; p < hi; p++) {
+                        for (let y = clsOff[cls[p]]; y < clsOff[cls[p] + 1]; y++) {
+                            const t = clsTok[y];
+                            if (!big[t] || stamp[t] === round)
+                                continue;
+                            stamp[t] = round;
+                            add(t, s);
+                        }
+                    }
+                }
+                for (let t = 0; t < nt; t++) {
+                    const combo = before ? [t, a] : [a, t];
+                    if (big[t] && net(t) >= need && ok(t) && fits(combo))
+                        two.push(make(combo, t));
+                }
+            }
+        });
+        return (choose(two) ?? single)?.combo ?? null;
+    }
+    /** 1 = nazwa pasuje: [duze], [male] */
+    hits(combo) {
+        const { count, off, cls, clsOff, clsTok, end, rowSeq } = this.q;
+        const flag = new Uint8Array(count);
+        for (let s = 0; s < count; s++) {
+            let j = 0;
+            for (let p = off[s]; p < off[s] + end[s] && j < combo.length; p++) {
+                for (let y = clsOff[cls[p]]; y < clsOff[cls[p] + 1]; y++) {
+                    if (clsTok[y] !== combo[j])
+                        continue;
+                    j++;
+                    break;
+                }
+            }
+            flag[s] = Number(j === combo.length);
+        }
+        const l = new Uint8Array(this.nl);
+        const s = new Uint8Array(this.ns);
+        for (let i = 0; i < this.nl; i++)
+            l[i] = flag[rowSeq[i]];
+        for (let i = 0; i < this.ns; i++)
+            s[i] = flag[rowSeq[this.nl + i]];
+        return [l, s];
+    }
+    hitsOf(mask) {
+        const { names, pos, neg } = this.input;
+        const tree = new auto_tree_1.MaskTree([mask.split('.')]);
+        const test = (rows) => Uint8Array.from(rows, r => Number(tree.match(names.pool, names.start[r], names.start[r] + names.len[r]).length > 0));
+        return [test(neg), test(pos)];
+    }
+    /** Pelne maski bez straty malych dla pozostalych duzych, od najwiekszej alokacji. */
+    fullMasks(useL, useS, opt, tick) {
+        const { input } = this;
+        const pos = input.neg.filter((_, i) => useL[i]);
+        const neg = input.pos.filter((_, i) => useS[i]);
+        const res = (0, auto_mine_1.mine)({ names: input.names, allocKb: input.allocKb, pos, neg }, { ...opt, minPurity: 1, head: this.head }, { prepare: p => tick(0.2 * p), search: () => p => tick(0.2 + 0.6 * p), select: () => p => tick(0.8 + 0.2 * p) });
+        return res.masks.filter(m => m.smallKb >= opt.minKb).map(m => ({ text: m.text, kb: m.smallKb })).sort((a, b) => b.kb - a.kb);
+    }
+}
+exports.ExcludeSpace = ExcludeSpace;
+/** Maski EXCLUDE dla wszystkich duzych z input (zachlannie), bez zbednych. */
+function pickExcludes(input, head, opt, tick) {
+    const { allocKb, pos, neg } = input;
+    let total = 0;
+    for (let i = 0; i < neg.length; i++)
+        total += allocKb[neg[i]];
+    const minKb = total * opt.gain;
+    const space = new ExcludeSpace(input, head, minKb, 3, p => tick(0.4 * p));
+    const useL = new Uint8Array(neg.length).fill(1);
+    const useS = new Uint8Array(pos.length).fill(1);
+    let loss = Math.floor(pos.length * opt.loss);
+    const out = [];
+    const take = (text, [l, s]) => {
+        out.push({ text, l });
+        for (let i = 0; i < l.length; i++)
+            if (l[i])
+                useL[i] = 0;
+        for (let i = 0; i < s.length; i++) {
+            if (!s[i] || !useS[i])
+                continue;
+            useS[i] = 0;
+            loss--;
+        }
+    };
+    while (out.length < opt.maxMasks) {
+        tick(0.4 + 0.3 * (1 - 1 / (1 + out.length)));
+        const combo = space.best(space.weigh(useL, useS), { maxLoss: loss, minKb, minCount: opt.minCount });
+        if (!combo)
+            break;
+        take(space.text(combo), space.hits(combo));
+    }
+    if (out.length < opt.maxMasks && useL.includes(1)) {
+        const o = { minCount: opt.minCount, minKb, maxMasks: opt.maxMasks - out.length, maxWild: opt.maxWild };
+        for (const m of space.fullMasks(useL, useS, o, p => tick(0.7 + 0.3 * p)))
+            out.push({ text: m.text, l: space.hitsOf(m.text)[0] });
+    }
+    // zbedne: wszystkie ich duze wylaczaja pozostale
+    const cover = new Int32Array(neg.length);
+    for (const m of out)
+        for (let i = 0; i < cover.length; i++)
+            cover[i] += m.l[i];
+    const keep = out.map(() => true);
+    for (let j = out.length - 1; j >= 0; j--) {
+        if (out[j].l.some((v, i) => v && cover[i] < 2))
+            continue;
+        keep[j] = false;
+        for (let i = 0; i < cover.length; i++)
+            cover[i] -= out[j].l[i];
+    }
+    return out.filter((m, j) => keep[j] && (0, auto_mine_1.literalChars)(m.text)).map(m => m.text);
+}
+};
+
+// ==================== src/filtlist.ts
+MODULES["./filtlist"] = function (exports, require, module) {
+"use strict";
+/** FILTLIST rutyn ACS: zapis list w liniach do kolumny 71. */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MAX_LIST = exports.ACS_MAX_COL = void 0;
+exports.chunks = chunks;
+exports.filtlist = filtlist;
+exports.ACS_MAX_COL = 71;
+/** limit pozycji listy INCLUDE / EXCLUDE */
+exports.MAX_LIST = 255;
+function chunks(a, n) {
+    const out = [];
+    for (let i = 0; i < a.length; i += n)
+        out.push(a.slice(i, i + n));
+    return out;
+}
+/** Pozycja listy FILTLIST: maska bez apostrofow; nazwa z '-' / '{' w apostrofach. */
+function entry(text) {
+    return /[-{]/.test(text) && !/[*%]/.test(text) ? `'${text}'` : text;
+}
+/** Najdluzsza pozycja FILTLIST: nazwa 44 znaki w apostrofach + przecinek. */
+const MAX_ENTRY = 47;
+/**
+ * FILTLIST z zawijaniem do ACS_MAX_COL; kazda linia poza ostatnia konczy sie przecinkiem (albo nawiasem
+ * otwierajacym, gdy pierwsza pozycja nie miesci sie za naglowkiem; EXCLUDE od nowej linii, pod INCLUDE). Wciecie
+ * kontynuacji pod nawiasem, a gdy przy dlugiej nazwie listy pelna nazwa zbioru by sie nie zmiescila - 4 spacje.
+ */
+function filtlist(name, items, excludes = []) {
+    const start = `  FILTLIST ${name} `;
+    const fits = start.length + 'INCLUDE('.length + MAX_ENTRY <= exports.ACS_MAX_COL;
+    const list = (head, entries) => {
+        const indent = ' '.repeat(fits ? head.length : 4);
+        const lines = [];
+        let cur = head;
+        entries.forEach((it, i) => {
+            const piece = entry(it) + (i < entries.length - 1 ? ',' : ')');
+            if (cur.length + piece.length > exports.ACS_MAX_COL && cur !== indent) {
+                lines.push(cur);
+                cur = indent;
+            }
+            cur += piece;
+        });
+        lines.push(cur);
+        return lines;
+    };
+    return [...list(`${start}INCLUDE(`, items),
+        ...(excludes.length ? list(`${' '.repeat(fits ? start.length : 4)}EXCLUDE(`, excludes) : [])];
+}
+};
+
+// ==================== src/zos.ts
+MODULES["./zos"] = function (exports, require, module) {
+"use strict";
+/** Kontrola tekstu dla z/OS: FB 80, kolumny 1-71 (ACS, karty DFSORT), znaki bezpieczne dla IBM-1047. */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ZosTextError = void 0;
+exports.checkZosLines = checkZosLines;
+exports.zosText = zosText;
+class ZosTextError extends Error {
+}
+exports.ZosTextError = ZosTextError;
+function checkZosLines(member, lines, maxCol = 71) {
+    if (!/^[A-Z#@$][A-Z0-9#@$]{0,7}$/.test(member))
+        throw new ZosTextError(`niepoprawna nazwa membra ${member}`);
+    lines.forEach((l, i) => {
+        if (l.length > maxCol)
+            throw new ZosTextError(`${member}:${i + 1} linia dluzsza niz ${maxCol} (${l.length})`);
+        if (/[^\x20-\x7e]|[[\]\\!^~`]/.test(l)) {
+            throw new ZosTextError(`${member}:${i + 1} znak niebezpieczny dla EBCDIC: ${l}`);
+        }
+    });
+}
+/**
+ * Tekst do pliku z/OS: bez polskich znakow, wielkie litery, tylko znaki bezpieczne dla IBM-1047
+ * (bez [ ] \ ! ^ ~ ` i znakow spoza ASCII).
+ */
+function zosText(s) {
+    return s.replace(/[łŁ]/g, 'L').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
+        .replace(/[^\x20-\x7e]|[[\]\\!^~`]/g, '?');
+}
+};
+
+// ==================== src/testcase.ts
+MODULES["./testcase"] = function (exports, require, module) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TEST_MAX_COL = exports.TestCaseError = void 0;
+exports.memberNames = memberNames;
+exports.testLines = testLines;
+exports.buildTests = buildTests;
+exports.iebupdte = iebupdte;
+/**
+ * Testy ACS w formacie ISMF (member biblioteki testow, FB 80) - generowane z reprezentantow (acs-masks repr --tests),
+ * zamiast testow z DCOLLECT przez NaviQuest (ACBQBAG1; ta droga zostaje).
+ *
+ * Format membera (z membera utworzonego w ISMF 7.4, 2026-11-17): linie "SLOWO: wartosc"; opis w linii pod
+ * DESCRIPTION1:
+ *   DESCRIPTION1:
+ *   <opis: maski / kwalifikatory z rutyn, do ktorych pasuje DSN>
+ *   DSN: <nazwa zbioru>
+ *   ACSENVIR: ALLOC
+ * Na razie tylko te pola. Pozostale zmienne (DSORG, SIZE, UNIT...) maja w tescie wartosc pusta - warunki rutyn
+ * na nich nie roznicuja testow (raport repr je wypisuje).
+ *
+ * Wynik dla z/OS:
+ *   zos/ACMTEST    - wejscie IEBUPDTE (./ ADD NAME=... + linie membera), ladowane jobem ACMTLOAD do TESTBED
+ *   zos/testy/*    - te same membery jako osobne pliki (alternatywa: FTP mput do PDS)
+ */
+const zos_1 = require("./zos");
+class TestCaseError extends Error {
+}
+exports.TestCaseError = TestCaseError;
+/** Najdluzsza linia membera (bez kolumn 73-80). */
+exports.TEST_MAX_COL = 72;
+/** Nazwy memberow jak w NaviQuest: prefiks 1-4 litery + numer do 8 znakow. */
+function memberNames(prefix, count) {
+    const p = prefix.toUpperCase();
+    if (!/^[A-Z#@$]{1,4}$/.test(p))
+        throw new TestCaseError(`prefiks testow "${prefix}": 1-4 litery (A-Z # @ $)`);
+    const digits = 8 - p.length;
+    if (count > 10 ** digits - 1) {
+        throw new TestCaseError(`${count} testow nie miesci sie w nazwach ${p}${'n'.repeat(digits)} - uzyj krotszego prefiksu`);
+    }
+    return Array.from({ length: count }, (_, i) => p + String(i + 1).padStart(digits, '0'));
+}
+function testLines(description, dsn, acsenvir = 'ALLOC') {
+    const desc = (0, zos_1.zosText)(description).replace(/^\.\//, '. /').slice(0, exports.TEST_MAX_COL).trimEnd();
+    return ['DESCRIPTION1:', desc, `DSN: ${dsn}`, `ACSENVIR: ${acsenvir}`];
+}
+function buildTests(prefix, items) {
+    const names = memberNames(prefix, items.length);
+    return items.map((it, i) => ({ member: names[i], dsn: it.dsn, description: it.description, lines: testLines(it.description, it.dsn) }));
+}
+/** Wejscie IEBUPDTE (PARM=NEW): kazdy member po "./ ADD NAME=", na koncu "./ ENDUP". */
+function iebupdte(tests) {
+    const out = [];
+    for (const t of tests)
+        out.push(`./ ADD NAME=${t.member}`, ...t.lines);
+    out.push('./ ENDUP');
+    return out;
+}
+};
+
+// ==================== src/auto-acs.ts
+MODULES["./auto-acs"] = function (exports, require, module) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.testFile = void 0;
+exports.findExcludes = findExcludes;
+exports.acsProblem = acsProblem;
+exports.filtlistText = filtlistText;
+exports.maskTests = maskTests;
+/**
+ * Maski -> z/OS: EXCLUDE dla duzych zbiorow objetych maskami, tekst FILTLIST i testy ISMF (jak repr --tests).
+ */
+const auto_check_1 = require("./auto-check");
+const auto_exclude_1 = require("./auto-exclude");
+const auto_tree_1 = require("./auto-tree");
+const filtlist_1 = require("./filtlist");
+const mask_1 = require("./mask");
+const testcase_1 = require("./testcase");
+/** Wiersze objete maskami (INCLUDE i nie EXCLUDE). */
+function covered(input, include, exclude, tick) {
+    const { names } = input;
+    const inc = new auto_tree_1.MaskTree(include.map(m => m.split('.')));
+    const exc = exclude.length ? new auto_tree_1.MaskTree(exclude.map(m => m.split('.'))) : null;
+    const total = input.pos.length + input.neg.length;
+    let done = 0;
+    const pick = (rows) => rows.filter(row => {
+        if ((done++ & 0x3fff) === 0)
+            tick(done / total);
+        const s = names.start[row];
+        const e = s + names.len[row];
+        return inc.match(names.pool, s, e).length > 0 && !exc?.match(names.pool, s, e).length;
+    });
+    return { ...input, pos: pick(input.pos), neg: pick(input.neg) };
+}
+/**
+ * Maski EXCLUDE (auto-exclude): jak najszersze - jeden kwalifikator, dwa, a na koncu pelna maska; kazda wylacza co
+ * najmniej minCount nowych duzych objetych INCLUDE i gain (czesc) ich alokacji, razem nie wiecej niz loss malych.
+ */
+function findExcludes(input, include, old, opt, tick) {
+    const c = covered(input, include, old, p => tick(0.2 * p));
+    const texts = c.neg.length ? (0, auto_exclude_1.pickExcludes)(c, opt.head ?? [], {
+        minCount: opt.minCount, gain: opt.gain ?? 0, loss: opt.loss ?? 0, maxWild: opt.maxWild, maxMasks: filtlist_1.MAX_LIST - old.length,
+    }, p => tick(0.2 + 0.7 * p)) : [];
+    // ---- liczby z porownania masek z nazwami
+    const row = (text) => ({ text, small: 0, large: 0, purity: 0, smallKb: 0, largeKb: 0 });
+    const masks = texts.map(row);
+    const [before, total, after] = [row('PRZED EXCLUDE'), row('RAZEM'), row('PO EXCLUDE')];
+    const tree = new auto_tree_1.MaskTree(texts.map(t => t.split('.')));
+    const add = (rows, n, kb) => {
+        for (let x = 0; x < rows.length; x++) {
+            if ((x & 0x3fff) === 0)
+                tick(0.9 + 0.1 * (x / rows.length));
+            const s = input.names.start[rows[x]];
+            const ids = tree.match(input.names.pool, s, s + input.names.len[rows[x]]);
+            for (const r of [before, ids.length ? total : after, ...ids.map(m => masks[m])]) {
+                r[n]++;
+                r[kb] += input.allocKb[rows[x]];
+            }
+        }
+    };
+    add(c.pos, 'small', 'smallKb');
+    add(c.neg, 'large', 'largeKb');
+    for (const r of [before, after])
+        r.purity = r.small ? r.small / (r.small + r.large) : 0;
+    return { before, after, masks: masks.sort((a, b) => b.largeKb - a.largeKb || (a.text < b.text ? -1 : 1)), total };
+}
+/** Dlaczego translator ACS nie przyjmie maski; null = dobra. */
+function acsProblem(mask) {
+    try {
+        if ((0, mask_1.parseMask)(mask).generic && mask.includes('-'))
+            return '"-" w masce to znak kontynuacji';
+        return null;
+    }
+    catch (e) {
+        return e.message;
+    }
+}
+/** FILTLIST z INCLUDE i EXCLUDE; ponad 255 masek - kilka list, kazda z tym samym EXCLUDE. */
+function filtlistText(name, include, exclude) {
+    if (exclude.length > filtlist_1.MAX_LIST)
+        throw new auto_check_1.MaskListError(`EXCLUDE: ${exclude.length} masek, FILTLIST przyjmuje ${filtlist_1.MAX_LIST}`);
+    const parts = (0, filtlist_1.chunks)(include, filtlist_1.MAX_LIST);
+    return parts.flatMap((p, i) => (0, filtlist_1.filtlist)(parts.length > 1 ? `${name}_${i + 1}` : name, p, exclude));
+}
+/**
+ * Testy do masek INCLUDE i EXCLUDE, najwyzej per zbiorow kazdego rodzaju na maske; opis = maski, do ktorych nazwa pasuje:
+ *   maska               zbior objety INCLUDE (maly, a gdy ich nie ma - duzy); maska z **: nazwy o najmniejszej
+ *                       i o najwiekszej liczbie kwalifikatorow
+ *   EXCLUDE maska       zbior wylaczony
+ *   BEZ MASKI - maska   zbior, ktory nie pasuje do zadnej maski, a pasowalby, gdyby * bylo **
+ */
+function maskTests(input, include, exclude, per, prefix, tick) {
+    const { names, pos, neg } = input;
+    const inc = new auto_tree_1.MaskTree(include.map(m => m.split('.')));
+    const exc = new auto_tree_1.MaskTree(exclude.map(m => m.split('.')));
+    const wide = include.filter(m => m.split('.').includes('*'));
+    const near = new auto_tree_1.MaskTree(wide.map(m => m.split('.').map(x => (x === '*' ? '**' : x))));
+    const make = (n) => Array.from({ length: n }, () => new Map());
+    const incSmall = make(include.length);
+    const incLarge = make(include.length);
+    const excAny = make(exclude.length);
+    const nearAny = make(wide.length);
+    const put = (reps, key, r) => {
+        let list = reps.get(key);
+        if (!list)
+            reps.set(key, list = []);
+        let i = list.length;
+        while (i > 0 && (list[i - 1].masks - r.masks || compareNames(names, list[i - 1].row, r.row)) >= 0)
+            i--;
+        if (i === per)
+            return;
+        // ta sama nazwa (generacje GDG pod nazwa bazy) raz
+        if (list.some(x => compareNames(names, x.row, r.row) === 0))
+            return;
+        list.splice(i, 0, r);
+        if (list.length > per)
+            list.pop();
+    };
+    const total = pos.length + neg.length;
+    let done = 0;
+    const scan = (rows, small) => {
+        for (let x = 0; x < rows.length; x++) {
+            if ((done++ & 0x3fff) === 0)
+                tick(done / total);
+            const s = names.start[rows[x]];
+            const e = s + names.len[rows[x]];
+            const ids = inc.match(names.pool, s, e);
+            if (ids.length === 0) {
+                const almost = near.match(names.pool, s, e);
+                for (const m of almost)
+                    put(nearAny[m], 0, { row: rows[x], masks: almost.length });
+                continue;
+            }
+            const out = exc.match(names.pool, s, e);
+            if (out.length) {
+                for (const m of out)
+                    put(excAny[m], 0, { row: rows[x], masks: out.length });
+                continue;
+            }
+            let n = 1;
+            for (let p = s; p < e; p++)
+                if (names.pool[p] === 46)
+                    n++;
+            for (const m of ids)
+                put((small ? incSmall : incLarge)[m], n, { row: rows[x], masks: ids.length });
+        }
+    };
+    scan(pos, true);
+    scan(neg, false);
+    const items = new Map();
+    const add = (reps, masks, tree, label) => {
+        for (const { row } of reps) {
+            const s = names.start[row];
+            items.set(names.text(row), label + tree.match(names.pool, s, s + names.len[row]).map(m => masks[m]).join(' '));
+        }
+    };
+    include.forEach((mask, m) => {
+        const reps = incSmall[m].size ? incSmall[m] : incLarge[m];
+        const keys = [...reps.keys()];
+        if (keys.length === 0)
+            return;
+        add(reps.get(Math.min(...keys)), include, inc, '');
+        if (mask.split('.').includes('**'))
+            add(reps.get(Math.max(...keys)), include, inc, '');
+    });
+    excAny.forEach(reps => add(reps.get(0) ?? [], exclude, exc, 'EXCLUDE '));
+    nearAny.forEach(reps => add(reps.get(0) ?? [], wide, near, 'BEZ MASKI - '));
+    return (0, testcase_1.buildTests)(prefix, [...items].map(([dsn, description]) => ({ dsn, description })));
+}
+function compareNames(names, a, b) {
+    const { pool, start, len } = names;
+    const n = Math.min(len[a], len[b]);
+    for (let i = 0; i < n; i++) {
+        const d = pool[start[a] + i] - pool[start[b] + i];
+        if (d)
+            return d;
+    }
+    return len[a] - len[b];
+}
+const testFile = (tests) => (0, testcase_1.iebupdte)(tests).join('\n') + '\n';
+exports.testFile = testFile;
+};
+
+// ==================== src/auto-compact.ts
+MODULES["./auto-compact"] = function (exports, require, module) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.findCompact = findCompact;
+exports.defaultPoint = defaultPoint;
+const auto_exclude_1 = require("./auto-exclude");
+const auto_mine_1 = require("./auto-mine");
+const auto_tree_1 = require("./auto-tree");
+const auto_util_1 = require("./auto-util");
+/** wpisow w listach kandydatow; przy wiekszej liczbie rosnie prog malych */
+const MAX_LIST = 60e6;
+/** ile kandydatow jest dokladnie sprawdzanych w jednym kroku */
+const MAX_EVAL = 40;
+const MAX_FULL = 3;
+/** pelna maska EXCLUDE tylko przy takiej liczbie duzych */
+const FULL_ROWS = 200000;
+const PRICES = [1, 0.5, 0];
+class TooMany extends Error {
+}
+function findCompact(input, opt, stages) {
+    const { names, allocKb } = input;
+    const deadline = Date.now() + opt.seconds * 1000;
+    let allKb = 0;
+    for (let i = 0; i < input.pos.length; i++)
+        allKb += allocKb[input.pos[i]];
+    const out = { small: input.pos.length, large: input.neg.length, smallKb: allKb, points: [], candidates: 0, stopped: false };
+    if (input.pos.length < opt.minCount)
+        return out;
+    // ---- kandydaci INCLUDE
+    const head = opt.head ?? [];
+    const mineOpt = { minPurity: opt.minPurity, minCount: opt.minCount, maxMasks: 0, maxWild: opt.maxWild, head };
+    const q = (0, auto_mine_1.prepare)(input, mineOpt, p => stages.candidates(0.4 * p));
+    const search = new auto_mine_1.Search(q, head.join('.'), opt.maxWild, !opt.anyStart);
+    const order = (0, auto_mine_1.maskOrder)(q.tokens.text, head);
+    const everything = Int32Array.from({ length: q.count }, (_, s) => s);
+    let cands = [];
+    for (let min = opt.minCount;; min *= 2) {
+        cands = [];
+        const byCover = new Map();
+        let size = 0;
+        try {
+            search.run(everything, min, true, true, (make, small, large, h1, h2, cover) => {
+                if ((0, auto_mine_1.purityOf)(small, large) < opt.minPurity)
+                    return false;
+                const key = (h1 >>> 0) * 2097152 + (h2 >>> 11);
+                const old = byCover.get(key);
+                const found = make();
+                if (old === undefined || order.rank(found, cands[old].found) < 0) {
+                    const list = [];
+                    cover(s => list.push(s), true);
+                    const c = { found, text: '', seqs: Int32Array.from(list) };
+                    if (old === undefined) {
+                        byCover.set(key, cands.length);
+                        cands.push(c);
+                        size += list.length;
+                        if (size > MAX_LIST)
+                            throw new TooMany();
+                    }
+                    else {
+                        cands[old] = c;
+                    }
+                }
+                // wezsza nie odetnie juz zadnego duzego
+                return large === 0;
+            }, p => stages.candidates(0.4 + 0.6 * p, `masek: ${(0, auto_util_1.thousands)(cands.length)}`));
+            break;
+        }
+        catch (e) {
+            if (!(e instanceof TooMany))
+                throw e;
+        }
+    }
+    out.candidates = cands.length;
+    if (cands.length === 0)
+        return out;
+    // ---- zbiory objete ktorymkolwiek kandydatem
+    const any = new Uint8Array(q.count);
+    for (const c of cands)
+        for (let x = 0; x < c.seqs.length; x++)
+            any[c.seqs[x]] = 1;
+    const pick = (rows, seq) => {
+        const ids = Array.prototype.filter.call(Int32Array.from(rows, (_, i) => i), (i) => seq[i] >= 0 && any[seq[i]]);
+        return [Int32Array.from(ids, i => rows[i]), Int32Array.from(ids, i => seq[i])];
+    };
+    const [sRow, sSeq] = pick(input.pos, q.posSeq);
+    const [lRow, lSeq] = pick(input.neg, q.negSeq);
+    const ns = sRow.length;
+    const nl = lRow.length;
+    const sKb = Float64Array.from(sRow, r => allocKb[r]);
+    const lKb = Float64Array.from(lRow, r => allocKb[r]);
+    const tickEx = stages.excludes(cands.length);
+    const total = lKb.reduce((a, b) => a + b, 0);
+    const space = nl ? new auto_exclude_1.ExcludeSpace({ names, allocKb, pos: sRow, neg: lRow }, head, 0.1 * opt.exGain * total, 3, tickEx) : null;
+    const tick = stages.select();
+    const limit = (smallKb) => ('kb' in opt.maxLarge ? opt.maxLarge.kb : opt.maxLarge.part * smallKb);
+    const fits = (t) => t.largeKb <= limit(t.smallKb) + 1e-6;
+    const lossOk = (t) => t.lost <= opt.loss * (t.small + t.lost);
+    const late = () => {
+        if (Date.now() > deadline)
+            out.stopped = true;
+        return out.stopped;
+    };
+    /** 1 = objety i nie wylaczony */
+    const masks = (cov, dead) => {
+        const useL = new Uint8Array(nl);
+        const useS = new Uint8Array(ns);
+        const t = { small: 0, large: 0, smallKb: 0, largeKb: 0, lost: 0, rawKb: 0 };
+        for (let i = 0; i < ns; i++) {
+            if (!cov[sSeq[i]])
+                continue;
+            if (dead.s[i]) {
+                t.lost++;
+            }
+            else {
+                useS[i] = 1;
+                t.small++;
+                t.smallKb += sKb[i];
+            }
+        }
+        for (let i = 0; i < nl; i++) {
+            if (!cov[lSeq[i]])
+                continue;
+            t.rawKb += lKb[i];
+            if (!dead.l[i]) {
+                useL[i] = 1;
+                t.large++;
+                t.largeKb += lKb[i];
+            }
+        }
+        return { useL, useS, t };
+    };
+    const coverOf = (inc) => {
+        const cov = new Uint8Array(q.count);
+        for (const c of inc)
+            for (let x = 0; x < cands[c].seqs.length; x++)
+                cov[cands[c].seqs[x]] = 1;
+        return cov;
+    };
+    const deadOf = (exc) => {
+        const d = { l: new Uint8Array(nl), s: new Uint8Array(ns) };
+        for (const e of exc) {
+            for (let i = 0; i < nl; i++)
+                d.l[i] |= e.l[i];
+            for (let i = 0; i < ns; i++)
+                d.s[i] |= e.s[i];
+        }
+        return d;
+    };
+    const measure = (x) => masks(coverOf(x.inc), deadOf(x.exc)).t;
+    // ---- pelne maski EXCLUDE sa drogie
+    let fullLeft = 0;
+    /** INCLUDE inc z EXCLUDE exc i najmniejsza liczba nowych, zeby zmiescic sie w granicy; enough: kiedy dalej nie warto */
+    const complete = (inc, exc, enough) => {
+        const added = [];
+        const cov = coverOf(inc);
+        const dead = deadOf(exc);
+        for (;;) {
+            const { useL, useS, t } = masks(cov, dead);
+            if (!lossOk(t))
+                return { short: Infinity };
+            if (fits(t))
+                return { added, t };
+            const short = t.largeKb - limit(t.smallKb);
+            if (!space || enough(t, added.length) || inc.length + exc.length + added.length >= opt.maxMasks)
+                return { short };
+            const minKb = opt.exGain * t.rawKb;
+            const w = space.weigh(useL, useS);
+            const maxLoss = Math.floor(opt.loss * (t.small + t.lost) + 1e-9) - t.lost;
+            const combo = space.best(w, { maxLoss, minKb, minCount: opt.exMin });
+            let text;
+            let hit;
+            if (combo) {
+                text = space.text(combo);
+                hit = space.hits(combo);
+            }
+            else {
+                if (fullLeft <= 0 || t.large > FULL_ROWS)
+                    return { short };
+                fullLeft--;
+                const full = space.fullMasks(useL, useS, { minCount: Math.max(opt.exMin, Math.ceil(0.005 * t.large)), minKb, maxMasks: 5, maxWild: Math.min(2, opt.maxWild) }, () => { });
+                if (full.length === 0)
+                    return { short };
+                text = full[0].text;
+                hit = space.hitsOf(text);
+            }
+            added.push({ text, l: hit[0], s: hit[1] });
+            for (let i = 0; i < nl; i++)
+                dead.l[i] |= hit[0][i];
+            for (let i = 0; i < ns; i++)
+                dead.s[i] |= hit[1][i];
+        }
+    };
+    // ---- wolne male i duze na ciag nazw, bez objetych wybranymi
+    const free = (cov, dead) => {
+        const f = { n: new Float64Array(q.count), kb: new Float64Array(q.count), large: new Float64Array(q.count) };
+        for (let i = 0; i < ns; i++) {
+            if (cov[sSeq[i]] || dead.s[i])
+                continue;
+            f.n[sSeq[i]]++;
+            f.kb[sSeq[i]] += sKb[i];
+        }
+        for (let i = 0; i < nl; i++)
+            if (!cov[lSeq[i]] && !dead.l[i])
+                f.large[lSeq[i]] += lKb[i];
+        return f;
+    };
+    const snapshots = [];
+    const greedy = (price, from, to) => {
+        let x = { inc: [], exc: [] };
+        /** kandydat, ktorego nie dalo sie zmiescic: ile KB zabraklo i ile bylo wtedy miejsca */
+        const failed = new Map();
+        while (x.inc.length + x.exc.length < opt.maxMasks && !late()) {
+            const dead = deadOf(x.exc);
+            const cov = coverOf(x.inc);
+            const { t } = masks(cov, dead);
+            const f = free(cov, dead);
+            const room = limit(t.smallKb) - t.largeKb;
+            const list = [];
+            cands.forEach((c, i) => {
+                let gain = 0;
+                let kb = 0;
+                let large = 0;
+                for (let y = 0; y < c.seqs.length; y++) {
+                    gain += f.n[c.seqs[y]];
+                    kb += f.kb[c.seqs[y]];
+                    large += f.large[c.seqs[y]];
+                }
+                if (gain < opt.minCount)
+                    return;
+                const k = t.largeKb + large <= limit(t.smallKb + kb) ? 0 : 1;
+                list.push({ c: i, gain, large, bound: gain / (1 + price * k) });
+            });
+            list.sort((a, b) => b.bound - a.bound || a.large - b.large || a.c - b.c);
+            let best = null;
+            let evals = 0;
+            fullLeft = MAX_FULL;
+            for (const l of list) {
+                if ((best && l.bound <= best.score) || evals >= MAX_EVAL || late())
+                    break;
+                const was = failed.get(l.c);
+                if (was !== undefined && room < was)
+                    continue;
+                evals++;
+                const score = (after, added) => (after.small - t.small) / (1 + price * added);
+                const r = complete([...x.inc, l.c], x.exc, (after, added) => after.small - t.small < opt.minCount * (2 + added) || (best !== null && score(after, added + 1) <= best.score));
+                if ('short' in r) {
+                    // przerwane, bo jest lepszy: w nastepnym kroku moze sie oplacic
+                    if (!best)
+                        failed.set(l.c, room + r.short * 0.5);
+                    continue;
+                }
+                const sc = score(r.t, r.added.length);
+                // kazda maska pakietu ma dac minCount
+                if (r.t.small - t.small < opt.minCount * (1 + r.added.length) || (best && sc <= best.score))
+                    continue;
+                best = { score: sc, next: { inc: [...x.inc, l.c], exc: [...x.exc, ...r.added] } };
+            }
+            if (!best)
+                break;
+            x = best.next;
+            snapshots.push(x);
+            tick(from + (to - from) * Math.min(1, t.small / input.pos.length), `masek: ${x.inc.length + x.exc.length}`);
+        }
+    };
+    PRICES.forEach((p, i) => greedy(p, 0.2 * i, 0.2 * (i + 1)));
+    const count = (x) => x.inc.length + x.exc.length;
+    /** dla kazdej liczby masek najlepsze, bez gorszych od krotszych */
+    const pareto = (list) => {
+        list.sort((a, b) => count(a.x) - count(b.x) || b.t.small - a.t.small || a.t.largeKb - b.t.largeKb);
+        const keep = [];
+        for (const p of list)
+            if (keep.length === 0 || p.t.small > keep[keep.length - 1].t.small)
+                keep.push(p);
+        return keep;
+    };
+    // ---- poprawianie
+    const polish = (start) => {
+        let x = start;
+        let t = measure(x);
+        for (let iter = 0; iter < 20 && !late(); iter++) {
+            const dead = deadOf(x.exc);
+            const times = new Int32Array(q.count);
+            const owner = new Int32Array(q.count).fill(-1);
+            for (const c of x.inc) {
+                const { seqs } = cands[c];
+                for (let y = 0; y < seqs.length; y++) {
+                    times[seqs[y]]++;
+                    owner[seqs[y]] = c;
+                }
+            }
+            const f = free(new Uint8Array(q.count), dead);
+            const uniq = new Map(x.inc.map(c => [c, 0]));
+            for (let s = 0; s < q.count; s++)
+                if (times[s] === 1)
+                    uniq.set(owner[s], uniq.get(owner[s]) + f.n[s]);
+            let next = null;
+            const consider = (y, better) => {
+                if (y.inc.length === 0)
+                    return;
+                const u = measure(y);
+                if (!fits(u) || !lossOk(u) || !better(u))
+                    return;
+                if (!next || count(y) < count(next.x) || (count(y) === count(next.x) && u.small > next.t.small))
+                    next = { x: y, t: u };
+            };
+            // zbedny INCLUDE i EXCLUDE
+            for (const [c, n] of uniq)
+                if (n < opt.minCount)
+                    consider({ inc: x.inc.filter(i => i !== c), exc: x.exc }, u => u.small > t.small - opt.minCount);
+            for (const e of x.exc)
+                consider({ inc: x.inc, exc: x.exc.filter(i => i !== e) }, u => u.small >= t.small);
+            if (!next) {
+                // jedna maska zamiast innych
+                const swaps = [];
+                cands.forEach((c, i) => {
+                    if (x.inc.includes(i))
+                        return;
+                    const over = new Map();
+                    let gain = 0;
+                    for (let y = 0; y < c.seqs.length; y++) {
+                        const s = c.seqs[y];
+                        if (times[s] === 0)
+                            gain += f.n[s];
+                        else if (times[s] === 1)
+                            over.set(owner[s], (over.get(owner[s]) ?? 0) + f.n[s]);
+                    }
+                    const drop = x.inc.filter(j => uniq.get(j) - (over.get(j) ?? 0) < opt.minCount);
+                    if (drop.length >= 2 || (drop.length === 1 && gain >= 1))
+                        swaps.push({ c: i, drop, gain });
+                });
+                swaps.sort((a, b) => b.drop.length - a.drop.length || b.gain - a.gain);
+                fullLeft = 1;
+                for (const s of swaps.slice(0, 15)) {
+                    if (late())
+                        break;
+                    const inc = [...x.inc.filter(j => !s.drop.includes(j)), s.c];
+                    const r = complete(inc, x.exc, (_t, added) => added + 1 > s.drop.length - 1);
+                    if ('short' in r)
+                        continue;
+                    consider({ inc, exc: [...x.exc, ...r.added] }, u => {
+                        const less = s.drop.length - 1 - r.added.length;
+                        return (less > 0 && u.small > t.small - opt.minCount) || (less === 0 && u.small > t.small);
+                    });
+                }
+            }
+            if (!next)
+                break;
+            ({ x, t } = next);
+        }
+        return x;
+    };
+    let curve = pareto(snapshots.map(x => ({ x, t: measure(x) })));
+    const better = [];
+    curve.forEach((p, i) => {
+        tick(0.6 + 0.3 * (i / curve.length), `poprawianie: ${i + 1} z ${curve.length}`);
+        const x = polish(p.x);
+        better.push({ x, t: measure(x) });
+    });
+    curve = pareto([...curve, ...better]);
+    // ---- uscislenie wybranych INCLUDE; ich ciagi z porownania z nazwami
+    const used = [...new Set(curve.flatMap(p => p.x.inc))];
+    used.forEach((c, i) => {
+        tick(0.9 + 0.08 * (i / used.length), 'uscislanie masek');
+        const own = order.textOf(cands[c].found);
+        cands[c].text = (0, auto_mine_1.specialise)(search, cands[c].seqs, cands[c].found.small, own, order);
+    });
+    const tree = new auto_tree_1.MaskTree(used.map(c => cands[c].text.split('.')));
+    const now = used.map(() => new Set());
+    const scan = (rows, seq) => {
+        for (let i = 0; i < rows.length; i++) {
+            const s = names.start[rows[i]];
+            for (const m of tree.match(names.pool, s, s + names.len[rows[i]]))
+                now[m].add(seq[i]);
+        }
+    };
+    scan(sRow, sSeq);
+    scan(lRow, lSeq);
+    used.forEach((c, m) => { cands[c].seqs = Int32Array.from(now[m]); });
+    out.points = pareto(curve.map(p => ({ x: p.x, t: measure(p.x) }))).map(({ x, t }) => ({
+        include: x.inc.map(c => cands[c].text), exclude: x.exc.map(e => e.text),
+        small: t.small, large: t.large, smallKb: t.smallKb, largeKb: t.largeKb, lost: t.lost,
+    }));
+    return out;
+}
+/** Punkt krzywej: najmniej masek z pokryciem co najmniej part najwiekszego. */
+function defaultPoint(points, part) {
+    if (points.length === 0)
+        return null;
+    const most = points[points.length - 1].small;
+    return points.find(p => p.small >= part * most);
 }
 };
 
@@ -3779,6 +4474,7 @@ exports.parseHead = parseHead;
 exports.search = search;
 exports.check = check;
 exports.quals = quals;
+exports.compact = compact;
 exports.report = report;
 exports.freshReport = freshReport;
 exports.toCsv = toCsv;
@@ -3787,6 +4483,8 @@ exports.checkCsv = checkCsv;
 exports.excludeReport = excludeReport;
 exports.qualsReport = qualsReport;
 exports.qualsCsv = qualsCsv;
+exports.compactReport = compactReport;
+exports.compactCsv = compactCsv;
 exports.main = main;
 /**
  * Szukanie masek DSN wg kryteriow z CSV DCOLLECT (job ACMCSV) i sprawdzanie gotowej listy masek. Wersja jednoplikowa: acs-masks-auto.cjs (bez npm).
@@ -3804,8 +4502,11 @@ exports.main = main;
  *   --unit MB|GB|TB    jednostka sumy alokacji                                   (domyslnie GB)
  *   --out PLIK         maski takze do pliku CSV (separator ;)
  *
- *   --exclude          maski EXCLUDE: duze zbiory objete maskami, bez zadnego malego (najwyzej 255)
+ *   --exclude          maski EXCLUDE dla duzych zbiorow objetych maskami (najwyzej 255), jak najszersze: jeden kwalifikator
+ *                      (**.DUMP.**, **.*DUMP*.**), dwa, a na koncu pelna maska
  *   --exclude-min N    ile duzych ma wylaczyc maska EXCLUDE                      (domyslnie 2)
+ *   --exclude-gain P   jaka czesc alokacji objetych duzych ma wylaczyc           (domyslnie 0.5%)
+ *   --exclude-loss P   jaka czesc objetych malych moga razem zabrac EXCLUDE      (domyslnie 0%, z --compact 1%)
  *   --filtlist PLIK    FILTLIST z INCLUDE (i EXCLUDE) do rutyny ACS
  *   --tests PLIK       testy ISMF do masek (wejscie IEBUPDTE, job ACMTLOAD): DSN i opis = maska; EXCLUDE maska;
  *                      BEZ MASKI - maska = nazwa, ktora do maski z * prawie pasuje (inna liczba kwalifikatorow)
@@ -3817,12 +4518,21 @@ exports.main = main;
  *                      dla malych zbiorow, ktorych lista nie obejmuje (zbiory objete lista, male i duze, sa pominiete).
  *                      --prefix: poczatek nowych masek, zaweza tez zbiory, na ktorych sprawdzana jest lista.
  *
+ *   --compact          FILTLIST z jak najmniejsza liczba masek (INCLUDE i EXCLUDE razem) przy jak najwiekszym pokryciu:
+ *                      krzywa liczba masek -> pokrycie i wybrany punkt. Domyslnie --min-purity 0.5 (przed EXCLUDE)
+ *                      i --min-count 0,5% malych (najmniej 10); INCLUDE zaczyna sie od kwalifikatora, nie od ** ani *
+ *   --max-large P      ile duzych (alokacja) moze zostac w liscie: 5% alokacji objetych malych albo np. 200GB (domyslnie 5%)
+ *   --pick N           punkt krzywej: najwyzej N masek; max = najwieksze pokrycie
+ *                      (domyslnie najmniej masek z pokryciem od 95% najwiekszego)
+ *   --any-start        INCLUDE moze zaczynac sie od ** i *
+ *   --verify PLIK      sprawdza wybrany punkt na drugim CSV (np. nowszym), osobno dla nazw, ktorych w pierwszym nie bylo
+ *
  *   --quals N          zamiast masek: najczestsze kombinacje 1..N kwalifikatorow w malych zbiorach (N 1-4), osobna tabela
  *                      dla kazdej liczby; A + B = nazwy **.A.**.B.**, obok najwezsza maska z tymi samymi malymi.
  *                      Takze kwalifikatory niepelne: ABC* *ABC *ABC* AB%% D%%%%%%. Z --masks: tylko zbiory spoza listy
  *   --partial N        ile znakow stalych ma miec kwalifikator niepelny, 2-7; 0 = tylko pelne    (domyslnie 3)
  *   --top N            wierszy w kazdej tabeli                                   (domyslnie 20)
- *   --time SEK         najdluzej szuka kombinacji; potem wynik dla wiekszej liczby malych        (domyslnie 600)
+ *   --time SEK         limit czasu --quals i --compact; potem wynik czesciowy                     (domyslnie 600)
  *   --try LISTA        sprawdza podane kombinacje i ich skrocenia, np. "PROD+SYSOUT, LOGDAY, TMP*"
  *                      Z --quals i --try: --min-purity tylko, gdy podane (domyslnie bez progu); --out: CSV z maskami
  *
@@ -3839,20 +4549,24 @@ const node_fs_1 = __importDefault(require("node:fs"));
 const node_util_1 = require("node:util");
 const auto_acs_1 = require("./auto-acs");
 const auto_check_1 = require("./auto-check");
+const auto_compact_1 = require("./auto-compact");
 const auto_mine_1 = require("./auto-mine");
 const auto_quals_1 = require("./auto-quals");
 const auto_read_1 = require("./auto-read");
 const auto_util_1 = require("./auto-util");
 const dataset_1 = require("./dataset");
 const mask_1 = require("./mask");
+const filtlist_1 = require("./filtlist");
 const testcase_1 = require("./testcase");
 const STDIO = { out: t => process.stdout.write(t), err: t => process.stderr.write(t), tty: process.stderr.isTTY };
 const USAGE = 'Uzycie: node acs-masks-auto.cjs DCOLLECT.CSV [--scope "sms=true dsorg=PS"]\n'
     + '        [--when "allocTrk=315 usedTrk<=3"] [--prefix "ABC%.**"] [--min-purity 0.95]\n'
     + '        [--min-count 10] [--max-masks 100] [--wild 3] [--unit GB] [--out maski.csv]\n'
-    + '        [--exclude [--exclude-min 2]] [--filtlist filtlist.txt] [--tests ACMTEST [--per-mask 1] [--test-prefix ACM]]\n'
+    + '        [--exclude [--exclude-min 2] [--exclude-gain 0.5%] [--exclude-loss 0%]]\n        [--filtlist filtlist.txt] [--tests ACMTEST [--per-mask 1] [--test-prefix ACM]]\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --masks maski.txt [opcje jak wyzej]\n'
     + '         (sprawdza liste i szuka masek dla zbiorow, ktorych ona nie obejmuje)\n'
+    + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --compact [--max-large 5%] [--pick N] [--any-start] [--verify NOWSZY.CSV]\n'
+    + '         [--filtlist filtlist.txt] (najmniej masek INCLUDE i EXCLUDE, najwieksze pokrycie)\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --quals 4 [--partial 3] [--top 20] [--time 600] [--try "PROD+SYSOUT, TMP*"]\n'
     + '         (najczestsze kombinacje kwalifikatorow; sprawdzanie kwalifikatorow niepelnych)\n'
     + `Pola liczbowe: ${auto_read_1.NUM.join(' ')}\n     tekstowe: ${auto_read_1.STR.join(' ')}\n     true / false: ${auto_read_1.BOOL.join(' ')}\n`
@@ -3868,6 +4582,8 @@ Przyklady (DC = DCOLLECT.CSV; w pliku .bat kazdy % podwojnie, w PowerShell apost
   node acs-masks-auto.cjs DC --masks maski.txt --out wynik.csv                     sprawdzenie listy i czego jej brakuje
   node acs-masks-auto.cjs DC --min-purity 0.8 --exclude --filtlist f.txt           szersze maski i EXCLUDE
   node acs-masks-auto.cjs DC --masks f.txt --tests ACMTEST --per-mask 2            testy ISMF do FILTLIST
+  node acs-masks-auto.cjs DC --compact --verify NOWSZY.CSV                         najmniej masek, sprawdzone na nowszych danych
+  node acs-masks-auto.cjs DC --compact --max-large 200GB --pick 12 --filtlist f.txt
   node acs-masks-auto.cjs DC --quals 4                                             najczestsze kombinacje 1-4 kwalifikatorow
   node acs-masks-auto.cjs DC --quals 2 --min-purity 0.95 --top 50                  tylko czyste, do 2 kwalifikatorow
   node acs-masks-auto.cjs DC --quals 3 --masks f.txt                               w zbiorach, ktorych lista nie obejmuje
@@ -4070,6 +4786,56 @@ function quals(file, scope, when, q, opt, bar, warn = () => { }) {
     }
     return { skipped, small: pos.length, large: neg.length, combos, tries };
 }
+const DEFAULT_PART = 0.95;
+/** Krzywa --compact, wybrany punkt i jego sprawdzenie na drugim pliku. */
+function compact(file, scope, when, c, opt, bar, warn = () => { }) {
+    const read = (name, label) => {
+        const st = load(name, scope, when, bar, warn);
+        const tick = bar.stage(label);
+        const { pos, neg } = classify(st, scope, when, opt.head, p => tick(p));
+        bar.done(`malych: ${(0, auto_util_1.thousands)(pos.length)}, duzych: ${(0, auto_util_1.thousands)(neg.length)}`);
+        return { names: st.names, allocKb: st.allocKb, pos, neg };
+    };
+    const input = read(file, 'Kryteria');
+    const minCount = c.minCount ?? Math.max(10, Math.ceil(0.005 * input.pos.length));
+    const result = (0, auto_compact_1.findCompact)(input, {
+        minPurity: opt.minPurity, minCount, maxMasks: opt.maxMasks, maxWild: opt.maxWild, head: opt.head, anyStart: c.anyStart,
+        maxLarge: c.maxLarge, loss: c.loss, exMin: c.exMin, exGain: c.exGain, seconds: c.seconds,
+    }, {
+        candidates: bar.stage('Maski'),
+        excludes: n => {
+            bar.done(`masek: ${(0, auto_util_1.thousands)(n)}`);
+            return bar.stage('Nazwy EXCLUDE');
+        },
+        select: () => {
+            bar.done();
+            return bar.stage('Dobor listy');
+        },
+    });
+    bar.done(`punktow krzywej: ${result.points.length}`);
+    const { points } = result;
+    const chosen = c.pick === null ? (0, auto_compact_1.defaultPoint)(points, DEFAULT_PART)
+        : points.filter(p => p.include.length + p.exclude.length <= c.pick).pop() ?? null;
+    if (points.length && !chosen)
+        throw new ArgError(`--pick: najmniejszy punkt ma masek: ${points[0].include.length + points[0].exclude.length}`);
+    const list = chosen && (0, auto_check_1.checkMasks)(input, chosen.include, chosen.exclude, () => { });
+    let verified = null;
+    if (chosen && c.verify !== undefined) {
+        const second = read(c.verify, 'Kryteria');
+        const known = new auto_util_1.Interner();
+        for (const rows of [input.pos, input.neg]) {
+            for (let x = 0; x < rows.length; x++)
+                known.add(input.names.pool, input.names.start[rows[x]], input.names.start[rows[x]] + input.names.len[rows[x]]);
+        }
+        const isNew = (r) => known.find(second.names.pool, second.names.start[r], second.names.start[r] + second.names.len[r]) < 0;
+        verified = {
+            small: second.pos.length, large: second.neg.length,
+            list: (0, auto_check_1.checkMasks)(second, chosen.include, chosen.exclude, () => { }),
+            fresh: (0, auto_check_1.checkMasks)({ ...second, pos: second.pos.filter(isNew), neg: second.neg.filter(isNew) }, chosen.include, chosen.exclude, () => { }),
+        };
+    }
+    return { result, minCount, chosen, list, verified, input };
+}
 function load(file, scope, when, bar, warn) {
     const st = (0, auto_read_1.readStore)(file, new Set([...scope.fields, ...when.fields]), bar.stage('Czytanie CSV'));
     bar.done(`${(0, auto_util_1.thousands)(st.records)} rekordow, ${(0, auto_util_1.thousands)(st.sets)} zbiorow`);
@@ -4207,16 +4973,16 @@ function checkCsv(list, fresh, u = 'GB', exclude = []) {
         ...[...list.excludes, ...exclude].map(m => [...csvCells(m, u), '', 'exclude', ''].join(';'))].join('\n') + '\n';
 }
 function excludeReport(r, u = 'GB') {
-    const out = ['', `EXCLUDE - duze zbiory objete maskami (${r.before.large}), bez zadnego malego`, ''];
+    const out = ['', `EXCLUDE - duze zbiory objete maskami (${r.before.large})${r.total.small ? '' : ', bez zadnego malego'}`, ''];
     if (r.masks.length) {
-        out.push(wide(['Maska EXCLUDE', 'Duzych', `Duzych ${u}`]));
+        out.push(wide(['Maska EXCLUDE', 'Duzych', `Duzych ${u}`, ...(r.total.small ? ['Malych'] : [])]));
         for (const m of [...r.masks, r.total])
-            out.push(wide([m.text, String(m.large), inUnit(m.largeKb, u)]));
+            out.push(wide([m.text, String(m.large), inUnit(m.largeKb, u), ...(r.total.small ? [String(m.small)] : [])]));
         out.push('', `Masek EXCLUDE: ${r.masks.length}; wylaczaja ${part(r.total.large, r.before.large)} duzych objetych maskami`);
-        out.push(`Po EXCLUDE: malych ${r.after.small}, duzych ${r.before.large} -> ${r.after.large}, purity ${pct(r.before.purity)} -> ${pct(r.after.purity)}`);
+        out.push(`Po EXCLUDE: malych ${r.total.small ? `${r.before.small} -> ` : ''}${r.after.small}, duzych ${r.before.large} -> ${r.after.large}, purity ${pct(r.before.purity)} -> ${pct(r.after.purity)}`);
     }
     else {
-        out.push(r.before.large ? 'Brak masek EXCLUDE (--exclude-min; duze pod ta sama maska co male).' : 'Maski nie obejmuja duzych zbiorow - EXCLUDE niepotrzebny.');
+        out.push(r.before.large ? 'Brak masek EXCLUDE (--exclude-min, --exclude-gain; duze pod ta sama maska co male).' : 'Maski nie obejmuja duzych zbiorow - EXCLUDE niepotrzebny.');
     }
     return out.join('\n') + '\n';
 }
@@ -4270,6 +5036,71 @@ function qualsCsv(r, u = 'GB') {
     }
     return out.join('\n') + '\n';
 }
+const count = (p) => p.include.length + p.exclude.length;
+const limitText = (l, u) => ('kb' in l ? `${inUnit(l.kb, u)} ${u}` : `${pctOf(l.part)} alokacji objetych malych`);
+const pctOf = (x) => `${String(Math.round(x * 1e6) / 1e4).replace('.', ',')}%`;
+function compactReport(r, c, u = 'GB') {
+    const { result: res, chosen, list, verified: v } = r;
+    const out = [`Zbiorow w zakresie: ${res.small + res.large}, malych: ${res.small}, duzych: ${res.large}`,
+        `Duze w liscie: do ${limitText(c.maxLarge, u)}   male stracone przez EXCLUDE: do ${pctOf(c.loss)}   INCLUDE daje malych: od ${r.minCount}`,
+        ''];
+    if (!chosen || !list) {
+        out.push('Brak masek dla tych progow (--min-purity, --min-count, --max-large, --any-start).');
+        return out.join('\n') + '\n';
+    }
+    if (res.stopped)
+        out.push('Uwaga: przerwano po czasie --time; krzywa moze byc niepelna.', '');
+    const row = (x) => [7, 9, 9, 9, 9, 12, 9, 12, 10, 10].map((w, i) => x[i].padStart(w)).join('') + (x[10] ?? '');
+    out.push('Krzywa: liczba masek i pokrycie', '', row(['Masek', 'INCLUDE', 'EXCLUDE', 'Malych', '% mal.', `Malych ${u}`, 'Duzych', `Duzych ${u}`, 'duze/male', 'Stracone']));
+    for (const p of res.points) {
+        out.push(row([String(count(p)), String(p.include.length), String(p.exclude.length), String(p.small), part(p.small, res.small), inUnit(p.smallKb, u),
+            String(p.large), inUnit(p.largeKb, u), part(p.largeKb, p.smallKb), String(p.lost), p === chosen ? '   <- wybrany' : '']));
+    }
+    out.push('', `Wybrany punkt: masek ${count(chosen)} (INCLUDE ${chosen.include.length}, EXCLUDE ${chosen.exclude.length}); inny: --pick N`, '', line([...heads(u), 'Tylko ta']));
+    for (const m of list.rows)
+        out.push(line([...cells(m, u), String(m.only)]));
+    out.push(line(cells(list.total, u)), '', `Obejmuja ${part(list.total.small, list.small)} malych (${list.total.small} z ${list.small}), po EXCLUDE`);
+    if (list.excludes.length) {
+        out.push('', wide(['Maska EXCLUDE', 'Duzych', `Duzych ${u}`, 'Malych']));
+        for (const m of list.excludes)
+            out.push(wide([m.text, String(m.large), inUnit(m.largeKb, u), String(m.small)]));
+    }
+    if (v) {
+        out.push('', `Sprawdzenie na drugim pliku: ${c.verify}`, '', wide(['', 'Malych', 'objete', '% mal.', 'Duze w l.', `Duze ${u}`, 'duze/male']));
+        const sum = (name, l) => wide([name, String(l.small), String(l.total.small), part(l.total.small, l.small), String(l.total.large),
+            inUnit(l.total.largeKb, u), l.total.smallKb ? part(l.total.largeKb, l.total.smallKb) : '-']);
+        out.push(sum('pierwszy plik', list), sum('drugi plik', v.list), sum('w tym nazwy, ktorych w pierwszym nie bylo', v.fresh), '');
+        const cap = 'kb' in c.maxLarge ? c.maxLarge.kb : c.maxLarge.part * v.list.total.smallKb;
+        out.push(v.list.total.largeKb <= cap + 1e-6 ? 'Duze w drugim pliku mieszcza sie w granicy --max-large.'
+            : `Uwaga: duze w drugim pliku przekraczaja granice --max-large (${inUnit(v.list.total.largeKb, u)} z ${inUnit(cap, u)} ${u}).`);
+        const worse = v.list.rows.map((m, i) => ({ m, was: list.rows[i] })).filter(x => x.m.small + x.m.large > 0 && x.m.purity < x.was.purity - 0.05);
+        if (worse.length) {
+            out.push('', 'Maski o purity gorszej o ponad 5 punktow:');
+            for (const x of worse)
+                out.push(`  ${x.m.text.padEnd(44)} ${pct(x.was.purity)} -> ${pct(x.m.purity)}  (duzych ${x.m.large}, ${inUnit(x.m.largeKb, u)} ${u})`);
+        }
+        const none = v.list.rows.filter(m => m.small + m.large === 0);
+        if (none.length)
+            out.push('', `Maski bez zbiorow w drugim pliku: ${none.map(m => m.text).join('  ')}`);
+    }
+    return out.join('\n') + '\n';
+}
+function compactCsv(r, u = 'GB') {
+    return [`${csvHead(u)};tylko_ta;stan`, ...(r.list?.rows ?? []).map(m => [...csvCells(m, u), m.only, ''].join(';')),
+        ...(r.list?.excludes ?? []).map(m => [...csvCells(m, u), '', 'exclude'].join(';'))].join('\n') + '\n';
+}
+/** "5%" -> 0.05; sama liczba tez znaczy procent */
+function percent(v, name) {
+    return num(v.trim().replace(/%$/, ''), name, 0, 100, false) / 100;
+}
+function largeLimit(v) {
+    const m = /^([0-9.,]+)\s*(MB|GB|TB)$/i.exec(v.trim());
+    if (m)
+        return { kb: num(m[1], 'max-large', 0, 1e12, false) * UNITS[m[2].toUpperCase()][0] };
+    if (!/^[0-9.,]+%?$/.test(v.trim()))
+        throw new ArgError(`--max-large: niepoprawna wartosc "${v}" (np. 5% albo 200GB)`);
+    return { part: num(v.trim().replace(/%$/, ''), 'max-large', 0, 10000, false) / 100 };
+}
 function main(argv, io = STDIO) {
     let bar = null;
     const progress = (stages) => bar = new auto_util_1.Progress(stages, io.err, io.tty ?? false, () => process.stderr.columns || 80);
@@ -4282,7 +5113,7 @@ function main(argv, io = STDIO) {
                 when: { type: 'string', default: 'allocTrk=315 usedTrk<=3' },
                 prefix: { type: 'string' },
                 'min-purity': { type: 'string' },
-                'min-count': { type: 'string', default: '10' },
+                'min-count': { type: 'string' },
                 'max-masks': { type: 'string', default: '100' },
                 wild: { type: 'string', default: '3' },
                 masks: { type: 'string' },
@@ -4295,6 +5126,13 @@ function main(argv, io = STDIO) {
                 out: { type: 'string', short: 'o' },
                 exclude: { type: 'boolean', default: false },
                 'exclude-min': { type: 'string', default: '2' },
+                'exclude-gain': { type: 'string' },
+                'exclude-loss': { type: 'string' },
+                compact: { type: 'boolean', default: false },
+                'max-large': { type: 'string' },
+                pick: { type: 'string' },
+                'any-start': { type: 'boolean', default: false },
+                verify: { type: 'string' },
                 filtlist: { type: 'string' },
                 tests: { type: 'string' },
                 'per-mask': { type: 'string', default: '1' },
@@ -4314,8 +5152,8 @@ function main(argv, io = STDIO) {
         const when = parseConds(o.when, 'when');
         const combos = o.quals !== undefined || o.try !== undefined;
         const opt = {
-            minPurity: num(o['min-purity'] ?? (combos ? '0' : '0.95'), 'min-purity', 0, 1, false),
-            minCount: num(o['min-count'], 'min-count', 1, 1e9, true),
+            minPurity: num(o['min-purity'] ?? (combos ? '0' : o.compact ? '0.5' : '0.95'), 'min-purity', 0, 1, false),
+            minCount: num(o['min-count'] ?? '10', 'min-count', 1, 1e9, true),
             maxMasks: num(o['max-masks'], 'max-masks', 1, 1e6, true),
             maxWild: num(o.wild, 'wild', 0, 9, true),
             head: o.prefix === undefined ? [] : parseHead(o.prefix),
@@ -4332,10 +5170,27 @@ function main(argv, io = STDIO) {
             node_fs_1.default.writeFileSync(file, text);
             io.err(`Zapisano: ${file}${info}\n`);
         };
+        const exGain = percent(o['exclude-gain'] ?? '0.5', 'exclude-gain');
+        const loss = percent(o['exclude-loss'] ?? (o.compact ? '1' : '0'), 'exclude-loss');
+        if (o.compact) {
+            const other = o.exclude ? 'exclude' : ['masks', 'quals', 'try', 'partial', 'top'].find(x => o[x] !== undefined);
+            if (other)
+                throw new ArgError(`--${other}: nie z --compact`);
+        }
+        else {
+            const lone = o['any-start'] ? 'any-start' : ['max-large', 'pick', 'verify'].find(x => o[x] !== undefined);
+            if (lone)
+                throw new ArgError(`--${lone}: tylko z --compact`);
+            const ex = ['exclude-gain', 'exclude-loss'].find(x => o[x] !== undefined);
+            if (ex && !o.exclude)
+                throw new ArgError(`--${ex}: tylko z --exclude albo --compact`);
+        }
         if (!combos) {
-            const lone = ['partial', 'top', 'time'].find(x => o[x] !== undefined);
+            const lone = ['partial', 'top'].find(x => o[x] !== undefined);
             if (lone)
                 throw new ArgError(`--${lone}: tylko z --quals albo --try`);
+            if (o.time !== undefined && !o.compact)
+                throw new ArgError('--time: tylko z --quals albo --compact');
         }
         else {
             const other = o.exclude ? 'exclude' : ['filtlist', 'tests'].find(x => o[x] !== undefined);
@@ -4370,7 +5225,7 @@ function main(argv, io = STDIO) {
             let added = [];
             if (o.exclude) {
                 const tick = p.stage('EXCLUDE');
-                const e = (0, auto_acs_1.findExcludes)(input, include, old, { minCount: excludeMin, maxWild: opt.maxWild, head: opt.head }, tick);
+                const e = (0, auto_acs_1.findExcludes)(input, include, old, { minCount: excludeMin, maxWild: opt.maxWild, head: opt.head, gain: exGain, loss }, tick);
                 p.done(`masek EXCLUDE: ${e.masks.length}`);
                 io.out(excludeReport(e, unit));
                 added = e.masks;
@@ -4400,6 +5255,25 @@ function main(argv, io = STDIO) {
             }
             return added;
         };
+        if (o.compact) {
+            if (o.verify !== undefined)
+                node_fs_1.default.accessSync(o.verify);
+            const c = {
+                minCount: o['min-count'] === undefined ? null : opt.minCount, exMin: excludeMin, exGain, loss, anyStart: o['any-start'],
+                maxLarge: largeLimit(o['max-large'] ?? '5%'), seconds: num(o.time ?? '600', 'time', 1, 1e6, true),
+                pick: o.pick === undefined ? null : o.pick === 'max' ? Infinity : num(o.pick, 'pick', 1, 1e6, true), verify: o.verify,
+            };
+            const p = progress(5 + 2 * Number(o.verify !== undefined) + Number(o.tests !== undefined));
+            const r = compact(positionals[0], scope, when, c, { ...opt, maxMasks: Math.min(opt.maxMasks, filtlist_1.MAX_LIST) }, p, io.err);
+            io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek masek: ${opt.head.join('.')}` : ''}   min. purity przed EXCLUDE: ${pct(opt.minPurity)}\n`);
+            io.out(compactReport(r, c, unit));
+            if (r.chosen && o.filtlist === undefined)
+                io.out(`\n${(0, auto_acs_1.filtlistText)('MALE', r.chosen.include.filter(m => !(0, auto_acs_1.acsProblem)(m)), r.chosen.exclude.filter(m => !(0, auto_acs_1.acsProblem)(m))).join('\n')}\n`);
+            if (r.chosen)
+                finish(p, r.input, r.chosen.include, r.chosen.exclude);
+            save(o.out, compactCsv(r, unit));
+            return 0;
+        }
         if (o.masks !== undefined) {
             const list = (0, auto_check_1.parseMaskList)(node_fs_1.default.readFileSync(o.masks, 'latin1').replace(/^\xef\xbb\xbf/, ''), o.masks);
             for (const w of list.warnings)

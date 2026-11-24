@@ -76,10 +76,11 @@ const GROUP = 1 << 24;
 class Timeout extends Error {}
 
 /** Nazwy jako numery kwalifikatorow (za head): male, potem duze. */
-interface Names {
+export interface Names {
     /** kwalifikatory malych zbiorow */
     quals: Interner;
-    occ: Int32Array;
+    /** waga kwalifikatora: wystapienia w malych albo (byKb) suma KB */
+    occ: Float64Array;
     /** kwalifikatory tylko duzych; numer + quals.size */
     other: Interner;
     off: Int32Array;
@@ -88,13 +89,13 @@ interface Names {
     kb: Float64Array;
 }
 
-function readNames(input: CheckInput, skip: number, tick: Tick): Names {
+export function readNames(input: CheckInput, skip: number, tick: Tick, byKb = false): Names {
     const { names, allocKb, pos, neg } = input;
     const { pool } = names;
     const total = pos.length + neg.length;
     const quals = new Interner();
     const other = new Interner();
-    let occ = new Int32Array(1 << 10);
+    let occ = new Float64Array(1 << 10);
     const off = new Int32Array(total + 1);
     const ids = new IntList();
     const kb = new Float64Array(total);
@@ -103,6 +104,7 @@ function readNames(input: CheckInput, skip: number, tick: Tick): Names {
         const small = i < pos.length;
         const row = small ? pos[i] : neg[i - pos.length];
         kb[i] = allocKb[row];
+        const weight = byKb ? Math.max(1, Math.round(kb[i])) : 1;
         const e = names.start[row] + names.len[row];
         let b = names.start[row];
         for (let k = 0; k < skip; k++) {
@@ -115,7 +117,7 @@ function readNames(input: CheckInput, skip: number, tick: Tick): Names {
             if (small) {
                 id = quals.add(pool, b, p);
                 if (id >= occ.length) occ = grow(occ, id + 1);
-                occ[id]++;
+                occ[id] += weight;
             } else {
                 id = quals.find(pool, b, p);
                 if (id < 0) id = quals.size + other.add(pool, b, p);
@@ -129,7 +131,7 @@ function readNames(input: CheckInput, skip: number, tick: Tick): Names {
 }
 
 /** Czesci kwalifikatorow malych zbiorow jako ABC*, *ABC, *ABC*; liczone po dlugosci (czeste tylko z czestych krotszych). */
-function buildPartials(quals: Interner, occ: Int32Array, min: number, partial: number): string[] {
+function buildPartials(quals: Interner, occ: ArrayLike<number>, min: number, partial: number): string[] {
     const { pool, start, len } = quals;
     const out: string[] = [];
     if (partial === 0) return out;
@@ -255,8 +257,10 @@ export function narrower(a: string, b: string, i = 0, j = 0): boolean {
     return i === a.length;
 }
 
-interface Token {
+export interface Token {
     text: string;
+    /** 0 = pelny, 1 = niepelny, 2 = cyfry -> % */
+    kind: 0 | 1 | 2;
     lit: number;
     stars: number;
     /** literal z data, numerem: tylko jako pierwszy kwalifikator */
@@ -264,7 +268,7 @@ interface Token {
 }
 
 /** Nazwy jako ciagi klas kwalifikatorow; klasa = pasujace elementy: clsTok[clsOff[c]..clsOff[c + 1]). */
-interface Sequences {
+export interface Sequences {
     tokens: Token[];
     count: number;
     off: Int32Array;
@@ -277,18 +281,24 @@ interface Sequences {
     wn: Int32Array;
     kp: Float64Array;
     kn: Float64Array;
+    /** ciag nazwy (male, potem duze) */
+    rowSeq: Int32Array;
 }
 
-function buildSequences(n: Names, min: number, partial: number, hasHead: boolean, tick: Tick): Sequences {
+export function buildSequences(n: Names, min: number, partial: number, hasHead: boolean, tick: Tick): Sequences {
     const { quals, occ, other } = n;
     const texts = new Set<string>();
     for (let id = 0; id < quals.size; id++) if (occ[id] >= min) texts.add(quals.text(id));
     const literals = texts.size;
+    const patterns = new Set<string>();
     if (partial) {
-        for (const t of buildPatterns(quals, occ, min, p => tick(0.2 * p)).texts) if (literalChars(t)) texts.add(t);
+        for (const t of buildPatterns(quals, occ, min, p => tick(0.2 * p)).texts) if (literalChars(t)) patterns.add(t);
+        for (const t of patterns) texts.add(t);
         for (const t of buildPartials(quals, occ, min, partial)) texts.add(t);
     }
-    const tokens = [...texts].map((text, i): Token => ({ text, lit: literalChars(text), stars: starChars(text), dated: i < literals && DATED.test(text) }));
+    const tokens = [...texts].map((text, i): Token => ({
+        text, kind: i < literals ? 0 : patterns.has(text) ? 2 : 1, lit: literalChars(text), stars: starChars(text), dated: i < literals && DATED.test(text),
+    }));
     tick(0.4);
 
     // ---- klasy: osobno dla pierwszego miejsca (tam wolno literal z data)
@@ -333,6 +343,7 @@ function buildSequences(n: Names, min: number, partial: number, hasHead: boolean
     let kp = new Float64Array(1 << 10);
     let kn = new Float64Array(1 << 10);
     const total = n.off.length - 1;
+    const rowSeq = new Int32Array(total);
     for (let i = 0; i < total; i++) {
         if ((i & 0x3fff) === 0) tick(0.7 + 0.3 * (i / total));
         let w = 0;
@@ -343,6 +354,7 @@ function buildSequences(n: Names, min: number, partial: number, hasHead: boolean
             buf[w++] = c;
         }
         const s = seqs.add(buf, 0, w);
+        rowSeq[i] = s;
         if (s >= wp.length) {
             wp = grow(wp, s + 1);
             wn = grow(wn, s + 1);
@@ -380,7 +392,7 @@ function buildSequences(n: Names, min: number, partial: number, hasHead: boolean
         let k = clsOff[c + 1];
         for (let x = c; x > 0; x = clsParent.a[x]) clsTok[--k] = clsLast.a[x];
     }
-    return { tokens, count, off, cls, end, clsOff, clsTok, wp, wn, kp, kn };
+    return { tokens, count, off, cls, end, clsOff, clsTok, wp, wn, kp, kn, rowSeq };
 }
 
 interface Path {
