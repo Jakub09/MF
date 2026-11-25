@@ -5,11 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { check, journalText, main as autoMain, parseConds, parseHead, parseWeights, search, SearchResult } from '../src/auto';
-import { Answer, BuildOptions, Builder, buildList, enough, makeSpace, Pattern, POINTS, Points, Proposal, shapeCost, Space } from '../src/auto-build';
+import { check, journalText, main as autoMain, OPTIONS, parseConds, parseHead, parseWeights, search, SearchResult } from '../src/auto';
+import { Answer, BuildOptions, BuildResult, Builder, buildList, enough, makeSpace, Pattern, POINTS, Points, Proposal, shapeCost, Space } from '../src/auto-build';
 import { acsProblem, filtlistText, findExcludes, maskTests } from '../src/auto-acs';
 import { parseMaskList } from '../src/auto-check';
 import { MaskRow } from '../src/auto-mine';
+import { CONFIG_NAMES, mergeConfig } from '../src/auto-config';
 import { CompactOptions, defaultPoint, findCompact, Point } from '../src/auto-compact';
 import { pickExcludes } from '../src/auto-exclude';
 import { findCombos, narrower, parseTries, QualOptions, shorten, tryCombos } from '../src/auto-quals';
@@ -1490,9 +1491,10 @@ describe('--build', () => {
                             const m = { ...open, tail };
                             if (sp.text(m).length > 44) continue;
                             const list = { inc: [b.item(m)], exc: [] };
-                            const { t: tt } = b.live(list);
+                            const live = b.live(list);
+                            const tt = live.t;
                             if (tt.small < 5 || tt.small / (tt.small + tt.large) < opt.minPurity || tt.largeKb > 0.1 * tt.smallKb) continue;
-                            best = Math.max(best, b.score(list, tt));
+                            best = Math.max(best, b.score(list, live));
                         }
                         if (depth > 1 && text.length < 44) grow([...ts, t], [...gs, g], depth - 1);
                     }
@@ -1707,5 +1709,339 @@ describe('--build', () => {
         }
         assert.deepEqual(parseWeights('masks=1, large=0,5 START=3'), { ...POINTS, masks: 1, large: 0.5, start: 3 });
         assert.match(auto(['B1.CSV', '--build', '--min-count', '1000']).out, /Brak masek/);
+    });
+
+    /** niezalezne przeliczenie listy */
+    const count = (small: Set1[], large: Set1[], r: { include: string[]; exclude: string[] }) => {
+        const [inc, exc] = [hit(r.include), hit(r.exclude)];
+        const of = (l: Set1[], x: boolean) => l.filter(y => inc(y) && exc(y) === x);
+        return {
+            small: of(small, false).length, large: of(large, false).length, smallKb: sum(of(small, false)), largeKb: sum(of(large, false)),
+            lost: of(small, true).length, hiddenKb: sum(of(large, true)),
+        };
+    };
+    const steps = (small: Set1[], large: Set1[], lists: { include: string[]; exclude: string[] }, n: number, o: Partial<BuildOptions> = {}, w: Partial<Points> = {}, done: (r: BuildResult) => void = () => {}) =>
+        buildList(input(small, large), { ...base, ...o, weights: { ...POINTS, ...w }, base: lists }, { names: () => {}, build: () => () => {} }, undefined, { steps: n, done });
+
+    it('--next: kazdy przebieg jedna maska dla nieobjetych; stare zostaja, granice i liczby calej listy', () => {
+        let masks = 0;
+        let excludes = 0;
+        let open = 0;
+        for (let seed = 1; seed <= 20; seed++) {
+            const { small, large } = data(seed, 250);
+            for (const [o, w] of [[{}, {}], [{ minPurity: 0.6, maxLarge: { part: 0.05 }, loss: 0.05 }, { exclude: 0, risk: 0 }], [{ maxMasks: 3 }, { start: 0 }]] as [Partial<BuildOptions>, Partial<Points>][]) {
+                const opt = { ...base, ...o };
+                let list: { include: string[]; exclude: string[] } = { include: [], exclude: [] };
+                const texts: string[][] = [];
+                for (let n = 0; n < 40; n++) {
+                    const r = steps(small, large, list, 1, o, w);
+                    const label = `${seed} ${JSON.stringify([o, w])} ${r.include} | ${r.exclude}`;
+                    assert.deepEqual(r.totals, count(small, large, r), label);
+                    assert.deepEqual(r.before, list.include.length ? count(small, large, list) : { small: 0, large: 0, smallKb: 0, largeKb: 0, lost: 0, hiddenKb: 0 }, label);
+                    assert.deepEqual(r.old, { include: list.include.length, exclude: list.exclude.length });
+                    assert.deepEqual(r.include.slice(0, list.include.length), list.include);
+                    assert.deepEqual(r.exclude.slice(0, list.exclude.length), list.exclude);
+                    assert.ok(r.include.length <= list.include.length + 1);
+                    assert.ok(r.include.length + r.exclude.length <= opt.maxMasks, label);
+                    const t = r.totals;
+                    assert.ok(t.largeKb <= ('kb' in opt.maxLarge ? opt.maxLarge.kb : opt.maxLarge.part * t.smallKb) + 1e-6, label);
+                    assert.ok(t.lost <= opt.loss * (t.small + t.lost) + 1e-9, label);
+                    const [inc, exc] = [hit(r.include), hit(r.exclude)];
+                    assert.equal(r.left.small, small.filter(x => !inc(x)).length);
+                    assert.equal(r.left.dead, small.filter(x => !inc(x) && exc(x)).length);
+                    assert.ok(Math.abs(Object.values(r.parts).reduce((a, b) => a + b, 0) - r.points) < 0.05, label);
+                    if (r.include.length === list.include.length && r.exclude.length === list.exclude.length) {
+                        assert.equal(r.changes.length, 0);
+                        break;
+                    }
+                    if (r.include.length > list.include.length) {
+                        const m = r.include[list.include.length];
+                        const [was, dead] = [hit(list.include), hit(list.exclude)];
+                        const own = hit([m]);
+                        const fresh = small.filter(x => own(x) && !was(x) && !dead(x) && !exc(x)).length;
+                        assert.ok(fresh >= enough(small.length, { ...opt, weights: { ...POINTS, ...w } }), label);
+                        const [a, b] = [small, large].map(l => l.filter(x => own(x) && !exc(x)).length);
+                        assert.ok(a / (a + b) >= opt.minPurity, label);
+                        assert.equal(r.how[r.how.length - 1]?.text, m);
+                        if (m.startsWith('*') && w.start !== 0) open++;
+                        masks++;
+                    }
+                    for (const m of r.exclude.slice(list.exclude.length)) {
+                        // EXCLUDE nie zabiera po cichu malych, ktore moglyby objac kolejne maski
+                        const gone = small.filter(x => hit([m])(x) && !inc(x)).length;
+                        assert.ok(gone <= 0.1 * small.length, `${label} ${m} ${gone}`);
+                        excludes++;
+                    }
+                    list = { include: r.include, exclude: r.exclude };
+                    texts.push(r.include);
+                }
+                // w jednym przebiegu to samo, z zapisem po kazdej masce
+                const seen: string[][] = [];
+                const all = steps(small, large, { include: [], exclude: [] }, Infinity, o, w, r => seen.push(r.include));
+                assert.deepEqual([all.include, all.exclude], [list.include, list.exclude]);
+                assert.deepEqual(seen, texts);
+            }
+        }
+        assert.ok(masks > 100, String(masks));
+        assert.ok(excludes >= 5, String(excludes));
+        assert.ok(open < masks / 10, `${open} ${masks}`);
+    });
+
+    it('--next: lista napisana recznie - dowolne maski, EXCLUDE, przekroczone granice', () => {
+        const small = [...many(40, i => `ABC1.LOG.D${240000 + i}`), ...many(40, i => `ABC2.RPT.${letters(i)}`), ...many(40, i => `XYZ.DUMP.${letters(i)}.LIST`)];
+        const large = [...many(30, i => `ABC1.LOG.BKP${i}`, 2000), ...many(30, i => `ABC2.DATA.${letters(i)}`, 2000), ...many(5, i => `XYZ.DUMP.${letters(i)}.DATA`, 2000)];
+        // te zapisy nie maja elementow w danych
+        let r = steps(small, large, { include: ['A%C1.L*G.D24*', "ABC1.LOG.D240007"], exclude: ['**.D24003*'] }, 1);
+        assert.equal(r.before.small, 30);
+        assert.equal(r.before.lost, 10);
+        assert.equal(r.include.length, 3);
+        assert.ok(!hit([r.include[2]])(small[0]) || r.totals.small >= 70);
+        assert.deepEqual(r.totals, count(small, large, r));
+        assert.equal(r.how[0], null);
+        // dziennik tylko o nowych
+        assert.doesNotMatch(journalText(r), /A%C1/);
+        assert.match(journalText(r), /^3\. /m);
+        // lista ponad --max-large: nowe maski nie dodaja duzych, ale sa
+        r = steps(small, large, { include: ['ABC1.**'], exclude: [] }, 1, { exMin: 1000 });
+        assert.equal(r.before.largeKb, 60000);
+        assert.equal(r.include.length, 2);
+        assert.equal(r.totals.largeKb, 60000);
+        assert.deepEqual(r.exclude, []);
+        // wspolny EXCLUDE porzadkuje stara liste
+        r = steps(small, large, { include: ['ABC1.**'], exclude: [] }, Infinity);
+        assert.ok(r.totals.largeKb <= 0.1 * r.totals.smallKb, `${r.include} | ${r.exclude}`);
+        assert.equal(r.totals.small, 120);
+        // wszystko objete
+        r = steps(small, large, { include: ['**'], exclude: ['**.DATA.**', '**.BKP%.**', '**.BKP%%.**'] }, 5);
+        assert.equal(r.changes.length, 0);
+        assert.deepEqual(r.left, { small: 0, dead: 0 });
+        // limit masek liczy stare
+        assert.equal(steps(small, large, { include: ['ABC2.RPT.**'], exclude: ['**.ZZ.**'] }, 5, { maxMasks: 2 }).include.length, 1);
+        // zbiory wylaczone starym EXCLUDE nie sa szukane
+        r = steps(small, large, { include: ['ABC2.RPT.**'], exclude: ['**.LIST'] }, Infinity);
+        assert.equal(r.left.dead, 40);
+        assert.ok(!r.include.some(m => hit([m])(small[100])));
+        // --ask z lista: numer kolejny, cofanie nie rusza starej
+        const no: number[] = [];
+        const answers: Answer[] = [{ take: 0 }, { undo: true }, { undo: true }, { take: 0 }, { stop: true }];
+        r = buildList(input(small, large), { ...base, base: { include: ['ABC1.LOG.D*'], exclude: [] } }, { names: () => {}, build: () => () => {} }, (_l, n) => {
+            no.push(n);
+            return answers.shift()!;
+        });
+        assert.deepEqual(no, [2, 3, 2, 2, 3]);
+        assert.equal(r.include[0], 'ABC1.LOG.D*');
+        assert.equal(r.include.length, 2);
+        assert.equal(r.old.include, 1);
+    });
+
+    it('EXCLUDE budowany na raty zostaje pod poczatkiem maski, gdy ogolny zabralby nieobjete male', () => {
+        const small = [...many(200, i => `ABC.${letters(i)}Q.X${letters(i + 300)}`), ...many(40, i => `XYZ.${letters(i)}Q.DATA`)];
+        const large = [...many(8, i => `ABC.${letters(i)}Q.DATA`, 20000), ...many(30, i => `XYZ.${letters(i)}Q.ZZ`, 3000)];
+        const first = steps(small, large, { include: [], exclude: [] }, 1, { partial: 0 });
+        assert.deepEqual([first.include, first.exclude], [['ABC.**'], ['ABC.**.DATA.**']]);
+        assert.equal(steps(small, large, first, 1, { partial: 0 }).totals.small, 240);
+        // gdy nic nie zabiera - ogolny
+        assert.deepEqual(steps(small.slice(0, 200), large, { include: [], exclude: [] }, 1, { partial: 0 }).exclude, ['**.DATA.**']);
+    });
+
+    it('--next: EXCLUDE dla starej listy zwalnia miejsce; maska od ** dopiero na koncu', () => {
+        const old = { include: ['ABC1.**'], exclude: [] };
+        const small = [...many(60, i => `ABC1.${letters(i)}Q.A`), ...many(60, i => `XYZ.${letters(i)}Q.${letters(i + 200)}Q`)];
+        const large = [...many(20, i => `ABC1.BKP.${letters(i)}Q`, 3000), { dsn: 'XYZ.DAQ.DBQ', kb: 1000 }];
+        const r = steps(small, large, old, 1, { partial: 0 });
+        assert.deepEqual([r.include, r.exclude], [['ABC1.**', 'XYZ.**'], ['**.BKP.**']]);
+        // maska bez duzych wchodzi od razu, a EXCLUDE i tak porzadkuje liste
+        assert.deepEqual(steps(small, large.slice(0, 20), old, 1, { partial: 0 }).exclude, ['**.BKP.**']);
+        // same EXCLUDE
+        const only = steps(small.slice(0, 60), large, old, 1, { partial: 0 });
+        assert.deepEqual([only.include, only.exclude], [['ABC1.**'], ['**.BKP.**']]);
+
+        const mix = [...many(40, i => `ABC.${letters(i)}Q.LIST`), ...many(40, i => `XYZ.${letters(i)}Q.LIST`)];
+        const other = [...many(40, i => `ABC.${letters(i)}Q.R`), ...many(40, i => `XYZ.${letters(i)}Q.R`)];
+        const none = { include: [], exclude: [] };
+        assert.deepEqual(steps(mix, other, none, 1).include, ['ABC.*.LIST']);
+        assert.match(steps(mix, other, none, 1, {}, { start: 0 }).include[0], /^\*/);
+        // kazda nazwa zaczyna sie inaczej
+        const loose = many(40, i => `${letters(i)}Q.LOG.X${letters(i + 300)}`);
+        assert.match(steps(loose, many(40, i => `${letters(i)}Q.R.X${letters(i + 300)}`), none, 1).include[0], /^\*/);
+    });
+
+    it('maski z "-" nie powstaja (kontynuacja w ACS)', () => {
+        const small = [...many(40, i => `ABC.L-G.${letters(i)}`), ...many(40, i => `XYZ.LOG.${letters(i)}`)];
+        const r = run(small, many(40, i => `ABC.DATA.${letters(i)}`, 3000));
+        assert.ok(r.include.length > 0);
+        for (const m of [...r.include, ...r.exclude]) assert.equal(acsProblem(m), null, m);
+    });
+
+    it('--next z wiersza polecen: plik, kopia, komentarz, nazwa, dziennik, bledy', () => {
+        const row = (dsn: string, kb: number, small: boolean) => dline({ dsn, f1: '48', allkb: kb, usekb: small ? 40 : kb - 100 });
+        const t = kbForTrk(315);
+        write('N1.CSV', csv([
+            ...Array.from({ length: 40 }, (_, i) => row(`PAY.LOG.D${240101 + i}`, t, true)), ...Array.from({ length: 30 }, (_, i) => row(`HR.RPT.${letters(i)}Q`, t, true)),
+            ...Array.from({ length: 30 }, (_, i) => row(`PAY.DATA.${letters(i)}Q`, t, false)), ...Array.from({ length: 30 }, (_, i) => row(`HR.DATA.${letters(i)}Q`, t, false)),
+        ]));
+        const read = (f: string) => fs.readFileSync(path.join(dir, f), 'latin1');
+        const next = (...x: string[]) => auto(['N1.CSV', '--build', '--next', 'nf.txt', ...x]);
+        let r = next('--log', 'nd.txt');
+        assert.equal(r.code, 0, r.err);
+        assert.match(read('nf.txt'), /^ {2}FILTLIST MALE INCLUDE\(PAY\.LOG\.\*\*\)\n$/);
+        assert.ok(!fs.existsSync(path.join(dir, 'nf.txt.bak')));
+        assert.match(r.out, /^przed +0 +0 +0 +0,0%/m);
+        assert.match(r.out, /^po +1 +0 +40 +57,1%/m);
+        assert.match(r.out, /Zostalo nieobjetych malych: 30/);
+        r = next('--log', 'nd.txt', '--out', 'n.csv', '--tests', 'NT', '--verify', 'N1.CSV');
+        assert.match(read('nf.txt'), /INCLUDE\(PAY\.LOG\.\*\*,HR\.RPT\.\*\*\)/);
+        assert.match(read('nf.txt.bak'), /INCLUDE\(PAY\.LOG\.\*\*\)/);
+        assert.deepEqual(rowsOf('n.csv').map(x => [x[0], x[x.length - 1]]), [['PAY.LOG.**', ''], ['HR.RPT.**', 'nowa']]);
+        assert.match(read('NT'), /PAY\.LOG/);
+        assert.match(r.out, /Sprawdzenie na drugim pliku/);
+        // dziennik dopisywany
+        assert.match(read('nd.txt'), /^1\. PAY\.LOG[\s\S]*^2\. HR\.RPT/m);
+        const before = read('nf.txt');
+        r = next();
+        assert.equal(r.code, 0);
+        assert.match(r.out, /Brak kolejnej maski/);
+        assert.match(r.err, /nf\.txt: bez zmian/);
+        assert.equal(read('nf.txt'), before);
+        assert.match(read('nf.txt.bak'), /INCLUDE\(PAY\.LOG\.\*\*\)/);
+
+        // wlasna nazwa, komentarz na poczatku (bajty bez zmian), nazwa w apostrofach
+        write('nf.txt', "/* moja lista \xb3 */\r\nFILTLIST &MOJA INCLUDE(HR.RPT.**, /* x */\r\n 'A-B.C')\r\n EXCLUDE(**.STARE.**)\r\n");
+        r = next('--steps', 'max');
+        assert.equal(r.code, 0, r.err);
+        assert.match(r.err, /komentarze wewnatrz/);
+        assert.ok(read('nf.txt').startsWith('/* moja lista \xc2\xb3 */\n'));
+        assert.match(read('nf.txt'), /^\/\* moja lista .+ \*\/\n {2}FILTLIST &MOJA INCLUDE\(HR\.RPT\.\*\*,'A-B\.C',PAY\.LOG\.\*\*\)\n +EXCLUDE\(\*\*\.STARE\.\*\*\)\n$/);
+        // pusty plik i sam komentarz
+        write('nf.txt', '/* start */\n\n');
+        next('--steps', '2');
+        assert.match(read('nf.txt'), /^\/\* start \*\/\n {2}FILTLIST MALE INCLUDE\(PAY\.LOG\.\*\*,HR\.RPT\.\*\*\)\n$/);
+        assert.equal(read('nf.txt.bak'), '/* start */\n\n');
+        // za maly limit
+        assert.match(next('--max-masks', '2').out, /Brak miejsca na kolejna maske/);
+
+        // --ask: zapis na koniec
+        fs.rmSync(path.join(dir, 'nf.txt'));
+        const ask = (lines: string[]) => {
+            const queue = lines.slice();
+            let err = '';
+            const code = autoMain([path.join(dir, 'N1.CSV'), '--build', '--ask', '--next', path.join(dir, 'nf.txt')], { out: () => {}, err: x => void (err += x), line: () => queue.shift() ?? null });
+            assert.equal(code, 0, err);
+            return err;
+        };
+        ask(['k']);
+        assert.ok(!fs.existsSync(path.join(dir, 'nf.txt')));
+        ask(['', 'k']);
+        assert.match(read('nf.txt'), /INCLUDE\(PAY\.LOG\.\*\*\)/);
+        const err = ask(['HR.R-T.**', 'HR.**.R*', 'k']);
+        assert.match(err, /Maska 2 - propozycje/);
+        assert.match(err, /kontynuacji/);
+
+        write('zla.txt', 'PAY.LOG.**\n');
+        write('dwie.txt', 'FILTLIST A INCLUDE(A.**)\nFILTLIST B INCLUDE(B.**)\n');
+        write('zepsuta.txt', 'FILTLIST A INCLUDE(A..B)\n');
+        for (const x of [['--build', '--next', 'zla.txt'], ['--build', '--next', 'dwie.txt'], ['--build', '--next', 'zepsuta.txt'], ['--build', '--next', 'N1.CSV'], ['--next', 'nf.txt'], ['--build', '--steps', '2'],
+            ['--build', '--next', 'nf.txt', '--filtlist', 'x'], ['--build', '--next', 'nf.txt', '--rounds', '1'], ['--build', '--next', 'nf.txt', '--what-if'],
+            ['--build', '--next', 'nf.txt', '--ask', '--steps', '2'], ['--build', '--next', 'nf.txt', '--steps', '0'], ['--build', '--next', 'brak/nf.txt']]) {
+            const e = auto(['N1.CSV', ...x]);
+            assert.equal(e.code, 1, x.join(' '));
+            assert.doesNotMatch(e.err, /^\s+at /m, x.join(' '));
+        }
+        assert.equal(read('zla.txt'), 'PAY.LOG.**\n');
+    });
+});
+
+describe('--config, --save-config', () => {
+    const read = (f: string) => fs.readFileSync(path.join(dir, f), 'utf-8');
+    const plain = (text: string) => JSON.parse(text.replace(/^\s*\/\/.*$/gm, '')) as Record<string, unknown>;
+    const weights = (file: string) => plain(read(file)).weights as Record<string, number>;
+
+    it('plik ma kazda opcje z komentarzem; wczytany daje te same ustawienia', () => {
+        assert.deepEqual(CONFIG_NAMES.slice().sort(), ['input', ...Object.keys(OPTIONS).filter(x => !['help', 'config', 'save-config'].includes(x))].sort());
+        const r = auto(['--save-config', 'c0.json']);
+        assert.equal(r.code, 0, r.err);
+        const lines = read('c0.json').split('\n');
+        lines.forEach((l, i) => {
+            if (/^\s+"/.test(l)) assert.match(lines[i - 1], /^\s+\/\/ \S/, l);
+        });
+        assert.equal(lines.filter(l => /^ {2}"/.test(l)).length, CONFIG_NAMES.length);
+        assert.deepEqual(weights('c0.json'), POINTS);
+        // ten sam plik po wczytaniu i zapisaniu, z kopia poprzedniego
+        assert.equal(auto(['--config', 'c0.json', '--save-config', 'c1.json']).code, 0);
+        assert.equal(read('c1.json'), read('c0.json'));
+        assert.match(auto(['--config', 'c0.json']).err, /Uzycie/);
+
+        const args = ['--build', '--weights', 'masks=1 percent=0.2', '--min-count', '7', '--max-large', '200GB', '--scope', 'dsorg=PS dsn!="A.**', '--next', 'C:\\x\\f.txt', '--steps', 'max', '--ask', '--min-purity', '0.90'];
+        assert.equal(auto([...args, '--save-config', 'c2.json']).code, 0);
+        const v = plain(read('c2.json'));
+        assert.deepEqual([v.build, v['min-count'], v['max-large'], v.scope, v.next, v.ask, v['min-purity'], v.input], [true, 7, '200GB', 'dsorg=PS dsn!="A.**', 'C:\\x\\f.txt', true, '0.90', null]);
+        assert.deepEqual(weights('c2.json'), { ...POINTS, masks: 1, percent: 0.2 });
+        assert.equal(auto(['--config', 'c2.json', '--save-config', 'c3.json']).code, 0);
+        assert.equal(read('c3.json'), read('c2.json'));
+    });
+
+    it('pierwszenstwo wiersza polecen, wagi po jednej, pola spoza trybu pomijane', () => {
+        const m = (cli: Record<string, string | boolean>, file: Record<string, string | boolean>) => {
+            const { values, skipped } = mergeConfig(cli, file);
+            return { values, skipped };
+        };
+        // do zapisu ida wszystkie
+        assert.deepEqual(mergeConfig({ ask: true }, { build: true, next: 'f', steps: '3' }).all, { ask: true, build: true, next: 'f', steps: '3' });
+        assert.deepEqual(m({ 'min-count': '5' }, { 'min-count': '20', unit: 'TB' }).values, { 'min-count': '5', unit: 'TB' });
+        assert.deepEqual(m({ weights: 'large=9' }, { build: true, weights: 'masks=1 large=3' }).values, { build: true, weights: 'masks=1 large=3 large=9' });
+        assert.deepEqual(parseWeights('masks=1 large=3 large=9'), { ...POINTS, masks: 1, large: 9 });
+        // zwykle szukanie: wartosci domyslne po cichu, reszta z uwaga
+        assert.deepEqual(m({}, { beam: '8', weights: 'masks=1', pick: '3' }), { values: {}, skipped: ['pick'] });
+        // tryb z wiersza polecen zastepuje tryb z pliku
+        assert.deepEqual(m({ compact: true }, { build: true, next: 'f', pick: '3', weights: 'masks=1' }), { values: { compact: true, pick: '3' }, skipped: [] });
+        assert.deepEqual(m({ quals: '2' }, { build: true, filtlist: 'f', partial: '4' }).values, { quals: '2', partial: '4' });
+        // z next: bez rounds, what-if i filtlist; steps tylko z next i bez ask
+        assert.deepEqual(m({ next: 'f' }, { build: true, rounds: '2', 'what-if': true, filtlist: 'x', steps: '3' }).values, { next: 'f', build: true, steps: '3' });
+        assert.deepEqual(m({ ask: true }, { build: true, next: 'f', steps: '3' }).values, { ask: true, build: true, next: 'f' });
+        assert.deepEqual(m({}, { build: true, steps: '3' }).skipped, ['steps']);
+        // podane w wierszu polecen zostaje (i jest bledem)
+        assert.equal(m({ beam: '4' }, {}).values.beam, '4');
+        assert.equal(auto(['X.CSV', '--beam', '4']).code, 1);
+    });
+
+    it('przebieg z pliku, w kazdym trybie, i bledy', () => {
+        const row = (dsn: string, small: boolean) => dline({ dsn, f1: '48', allkb: kbForTrk(315), usekb: small ? 40 : kbForTrk(315) - 100 });
+        write('CF.CSV', csv([...Array.from({ length: 30 }, (_, i) => row(`PAY.LOG.D${240101 + i}`, true)), ...Array.from({ length: 30 }, (_, i) => row(`PAY.DATA.D${240101 + i}`, false))]));
+        auto(['--save-config', 'all.json']);
+        // pelny plik z kazdym trybem, bez bledow o opcjach spoza trybu
+        for (const x of [[], ['--build'], ['--compact'], ['--quals', '2'], ['--try', 'LOG'], ['--build', '--next', 'cf.txt'], ['--masks', 'cf.txt'], ['--exclude'], ['--build', '--ask']]) {
+            const r = auto(['CF.CSV', '--config', 'all.json', ...x]);
+            assert.equal(r.code, 0, `${x} ${r.err}`);
+            const same = auto(['CF.CSV', ...x.map(a => a.replace('cf.txt', 'cg.txt'))]);
+            if (!x.includes('cf.txt')) assert.equal(r.out, same.out, x.join(' '));
+        }
+        // plik wejsciowy z ustawien, komentarze, przecinek na koncu, BOM
+        write('m.json', '\ufeff/* blok */ { // linia\n "input": "CF.CSV", "build": true, "scope": "dsorg=PS dsn!=HTTP://X,}", // "pick": 3\n "weights": { "masks": 1, "start": null, }, "min-count": 5, }');
+        let r = auto(['--config', 'm.json']);
+        assert.equal(r.code, 0, r.err);
+        assert.match(r.out, /Wagi: small=1 large=2 masks=1 /);
+        assert.match(r.out, /dsn!=HTTP:\/\/X,}/);
+        r = auto(['--config', 'm.json', '--weights', 'start=1']);
+        assert.match(r.out, /masks=1 .*start=1\n/);
+        // zapis i przebieg
+        r = auto(['CF.CSV', '--config', 'm.json', '--save-config', 'm.json']);
+        assert.match(r.out, /Masek /);
+        assert.equal(plain(read('m.json')).input, 'CF.CSV');
+        assert.match(read('m.json.bak'), /blok/);
+        write('p.json', '{ "pick": 3, "input": "CF.CSV" }');
+        assert.match(auto(['--config', 'p.json']).err, /pominiete, nie dotycza tego trybu: pick/);
+
+        for (const [text, msg] of [['{"input":"C:\\dane.csv"}', /w sciezkach pisz/], ['{"input":"C:\\temp.csv"}', /w sciezkach pisz/], ['{"bild":true}', /nieznane pole "bild"/], ['{"build":"tak"}', /true albo false/],
+            ['{"build":true,"weights":{"mask":1}}', /nieznana waga/], ['{"build":true,"weights":{"masks":"1"}}', /oczekiwano liczby/], ['[1]', /oczekiwano obiektu/], ['{\n"build": tak}', /niepoprawny JSON/], ['', /niepoprawny JSON/],
+            ['{"beam":[1]}', /tekstu albo liczby/], ['{"build":true,"beam":0}', /--beam/], ['{"unit":"XB"}', /--unit/], ['{"build":true,"compact":true}', /--compact/]] as [string, RegExp][]) {
+            write('e.json', text);
+            const e = auto(['CF.CSV', '--config', 'e.json']);
+            assert.equal(e.code, 1, text);
+            assert.match(e.err, msg, text);
+            assert.doesNotMatch(e.err, /^\s+at /m, text);
+        }
+        assert.equal(auto(['CF.CSV', '--config', 'brak.json']).code, 1);
+        assert.equal(auto(['--save-config', 'x.json', '--build', '--weights', 'zle=1']).code, 1);
+        assert.ok(!fs.existsSync(path.join(dir, 'x.json')));
     });
 });

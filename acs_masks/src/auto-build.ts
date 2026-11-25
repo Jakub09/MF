@@ -15,11 +15,15 @@
  * Gdy zadna maska nie daje juz punktow: wspolne EXCLUDE dla calej listy, a potem druga runda - kazda maska jest wyjmowana
  * i budowana od nowa przy pozostalych (takze jako kilka mniejszych). Calosc dwa razy: raz z maskami od ** na starcie, raz bez;
  * zostaje lista o wiekszej liczbie punktow. To przyblizenie, nie dowod najlepszej listy.
+ *
+ * Z lista na poczatek (base, --next): jej masek skrypt nie zmienia, dobiera kolejne dla nieobjetych malych, bez drugiej rundy;
+ * granice i punkty dotycza calej listy.
  */
 import { CheckInput } from './auto-check';
 import { LargeLimit } from './auto-compact';
 import { literalChars, MAX_LEN, purityOf } from './auto-mine';
 import { buildSequences, readNames, Sequences } from './auto-quals';
+import { MaskTree } from './auto-tree';
 import { IntList, Tick } from './auto-util';
 
 export interface Points {
@@ -54,6 +58,13 @@ export interface BuildOptions {
     rounds: number;
     head?: string[];
     seconds: number;
+    /** lista, ktora juz jest: zostaje bez zmian, szukane sa dalsze maski */
+    base?: MaskLists;
+}
+
+export interface MaskLists {
+    include: string[];
+    exclude: string[];
 }
 
 /** Wynik kroku budowania. */
@@ -103,11 +114,17 @@ export interface BuildResult {
     /** skladniki punktow, juz ze znakiem */
     parts: Record<keyof Points, number>;
     points: number;
-    /** jak powstala kazda maska include; null = wpisana */
+    /** jak powstala kazda maska include; null = wpisana albo z listy na poczatek */
     how: (Proposal | null)[];
     /** zmiany listy po kolei, z punktami */
     changes: Change[];
     stopped: boolean;
+    /** ile pierwszych masek include i exclude pochodzi z listy na poczatek */
+    old: { include: number; exclude: number };
+    /** stan tej listy */
+    before: Totals;
+    /** nieobjete male, w tym wylaczone przez EXCLUDE (nie do objecia) */
+    left: { small: number; dead: number };
 }
 
 interface Gap {
@@ -136,6 +153,8 @@ const LIT = 1e-5;
 const RAW = [0.5, 0.8];
 /** na ile masek najwyzej dzielona jest jedna w drugiej rundzie */
 const SPLIT = 4;
+/** --next: kolejnosc prob; maska zostaje na stale, wiec najpierw bez ** na poczatku i prawie bez duzych */
+const STEP_RAW = [0.95, 0.8, 0.5];
 const cubed = (x: number) => x * x * x;
 
 /** Nazwy jako ciagi klas kwalifikatorow i maski z elementow tych klas. */
@@ -149,12 +168,14 @@ export class Space {
     readonly nl: number;
     readonly allKb: number;
     readonly byText: Map<string, number>;
+    /** lista na poczatek: OLD_INC, OLD_EXC */
+    readonly mark: Uint8Array;
     private readonly inClass = new Map<number, Uint8Array>();
     private readonly lists = new Map<number, Int32Array>();
 
     /** minCount: od ilu malych element; needKb: od ilu KB duzych */
     constructor(readonly input: CheckInput, readonly head: string[], readonly minCount: number, readonly needKb: number,
-        readonly partial: number, readonly extra: string[], tick: Tick) {
+        readonly partial: number, readonly extra: string[], tick: Tick, base?: MaskLists) {
         const { names, allocKb, pos, neg } = input;
         this.np = pos.length;
         this.nl = neg.length;
@@ -164,7 +185,8 @@ export class Space {
         rows.set(pos);
         rows.set(neg, this.np);
         const n = readNames({ names, allocKb: weight, pos: rows, neg: new Int32Array(0) }, head.length, p => tick(0.4 * p), true);
-        this.q = buildSequences(n, minCount, partial, head.length > 0, p => tick(0.4 + 0.6 * p), true, extra);
+        const q = buildSequences(n, minCount, partial, head.length > 0, p => tick(0.4 + 0.6 * p), true, extra);
+        [this.q, this.mark] = base?.include.length ? split(q, oldMarks(input, rows, base)) : [q, new Uint8Array(q.count)];
         const { count, rowSeq } = this.q;
         this.small = new Float64Array(count);
         this.large = new Float64Array(count);
@@ -294,6 +316,49 @@ export class Space {
     }
 }
 
+const OLD_INC = 1;
+const OLD_EXC = 2;
+
+/** Ktore zbiory obejmuje i wylacza lista na poczatek (zwykle porownanie masek z nazwami). */
+function oldMarks({ names }: CheckInput, rows: Int32Array, base: MaskLists): Uint8Array {
+    const inc = new MaskTree(base.include.map(m => m.split('.')));
+    const exc = new MaskTree(base.exclude.map(m => m.split('.')));
+    return Uint8Array.from(rows, row => {
+        const s = names.start[row];
+        const e = s + names.len[row];
+        return (inc.match(names.pool, s, e).length ? OLD_INC : 0) | (base.exclude.length && exc.match(names.pool, s, e).length ? OLD_EXC : 0);
+    });
+}
+
+/** Ciagi podzielone wg znacznikow zbiorow. */
+function split(q: Sequences, marks: Uint8Array): [Sequences, Uint8Array] {
+    const ids = new Map<number, number>();
+    const from = new IntList();
+    const rowSeq = q.rowSeq.map((s, i) => {
+        const k = 4 * s + marks[i];
+        let x = ids.get(k);
+        if (x === undefined) {
+            ids.set(k, x = from.n);
+            from.push(k);
+        }
+        return x;
+    });
+    const count = from.n;
+    const mark = new Uint8Array(count);
+    const off = new Int32Array(count + 1);
+    const end = new Uint8Array(count);
+    const sums = { wp: new Int32Array(count), wn: new Int32Array(count), kp: new Float64Array(count), kn: new Float64Array(count) };
+    for (let x = 0; x < count; x++) {
+        const s = from.a[x] >> 2;
+        mark[x] = from.a[x] & 3;
+        off[x + 1] = off[x] + q.off[s + 1] - q.off[s];
+        end[x] = q.end[s];
+    }
+    const cls = new Int32Array(off[count]);
+    for (let x = 0; x < count; x++) cls.set(q.cls.subarray(q.off[from.a[x] >> 2], q.off[(from.a[x] >> 2) + 1]), off[x]);
+    return [{ ...q, ...sums, count, off, cls, end, rowSeq }, mark];
+}
+
 /** Stan listy: ktore ciagi sa objete i wylaczone. */
 interface Live {
     /** male i duze niewylaczone */
@@ -306,6 +371,9 @@ interface Live {
     /** wylaczone duze nieobjete INCLUDE (KB) */
     dl: Float64Array;
     t: Totals;
+    /** nieobjete male, ktore wylacza EXCLUDE: wszystkie i tylko przez nowe EXCLUDE */
+    dead: number;
+    killed: number;
 }
 
 interface Item {
@@ -380,11 +448,20 @@ export class Builder {
     origin = new Map<string, Proposal>();
     /** wpisane, bez progu purity */
     free = new Set<string>();
+    private readonly base: MaskLists;
+    private readonly baseCount: number;
+    /** stan listy na poczatek */
+    readonly before: Totals;
+    /** lista powstaje na raty: EXCLUDE kosztuje tez male, ktore moglyby objac kolejne maski */
+    byStep = false;
 
     constructor(readonly space: Space, readonly opt: BuildOptions) {
         this.w = opt.weights;
         this.all = Int32Array.from({ length: space.q.count }, (_, s) => s);
         this.deadline = Date.now() + opt.seconds * 1000;
+        this.base = opt.base ?? { include: [], exclude: [] };
+        this.baseCount = this.base.include.length + this.base.exclude.length;
+        this.before = this.live({ inc: [], exc: [] }).t;
     }
 
     private late(): boolean {
@@ -420,19 +497,20 @@ export class Builder {
     }
     private valid(m: Pattern): boolean {
         const text = this.space.text(m);
-        return text.length <= MAX_LEN && (literalChars(text) > 0);
+        // "-" w masce: translator ACS bierze za znak kontynuacji
+        return text.length <= MAX_LEN && literalChars(text) > 0 && !(text.includes('-') && /[*%]/.test(text));
     }
 
     live(list: List): Live {
         const { space } = this;
         const n = space.q.count;
-        const dead = new Uint8Array(n);
-        const cov = new Uint8Array(n);
-        for (const e of list.exc) for (let x = 0; x < e.seqs.length; x++) dead[e.seqs[x]] = 1;
+        const dead = space.mark.map(m => m & OLD_EXC);
+        const cov = space.mark.map(m => m & OLD_INC);
+        for (const e of list.exc) for (let x = 0; x < e.seqs.length; x++) dead[e.seqs[x]] |= 1;
         for (const e of list.inc) for (let x = 0; x < e.seqs.length; x++) cov[e.seqs[x]] = 1;
         const l: Live = {
             ns: new Float64Array(n), nl: new Float64Array(n), us: new Float64Array(n), usKb: new Float64Array(n), ul: new Float64Array(n), dl: new Float64Array(n),
-            t: { small: 0, large: 0, smallKb: 0, largeKb: 0, lost: 0, hiddenKb: 0 },
+            t: { small: 0, large: 0, smallKb: 0, largeKb: 0, lost: 0, hiddenKb: 0 }, dead: 0, killed: 0,
         };
         for (let s = 0; s < n; s++) {
             if (dead[s]) {
@@ -441,6 +519,8 @@ export class Builder {
                     l.t.hiddenKb += space.largeKb[s];
                 } else {
                     l.dl[s] = space.largeKb[s];
+                    l.dead += space.small[s];
+                    if (dead[s] === 1) l.killed += space.small[s];
                 }
                 continue;
             }
@@ -465,18 +545,29 @@ export class Builder {
         const none = { small: 0, large: 0, masks: 0, exclude: 0, risk: 0, percent: 0, wild: 0, start: 0 };
         const only = (k: 'percent' | 'wild' | 'start') => {
             const only1 = { ...none, [k]: w[k] };
-            const sum = (l: Item[], ex: boolean) => l.reduce((a, i) => a + shapeCost(space.text(i.m), ex ? { ...only1, start: 0 } : only1, space.head.length)
-                - shapeCost(space.text(i.m), none, space.head.length), 0);
-            return -sum(list.inc, false) - sum(list.exc, true);
+            const sum = (l: string[], ex: boolean) => l.reduce((a, x) => a + shapeCost(x, ex ? { ...only1, start: 0 } : only1, space.head.length)
+                - shapeCost(x, none, space.head.length), 0);
+            return -sum(this.texts(list).include, false) - sum(this.texts(list).exclude, true);
         };
         return {
-            small: this.pSmall(t.small), large: -this.pLarge(t.largeKb), masks: -w.masks * list.inc.length, exclude: -w.exclude * list.exc.length, risk: -this.pRisk(t.hiddenKb),
+            small: this.pSmall(t.small), large: -this.pLarge(t.largeKb), masks: -w.masks * this.texts(list).include.length, exclude: -w.exclude * this.texts(list).exclude.length,
+            risk: -this.pRisk(t.hiddenKb),
             percent: only('percent'), wild: only('wild'), start: only('start'),
         };
     }
 
-    score(list: List, t = this.live(list).t): number {
+    /** cala lista: najpierw maski, od ktorych zaczeto */
+    private texts(list: List): MaskLists {
+        return {
+            include: [...this.base.include, ...list.inc.map(i => this.space.text(i.m))],
+            exclude: [...this.base.exclude, ...list.exc.map(i => this.space.text(i.m))],
+        };
+    }
+
+    /** Punkty listy, bez stalego kosztu masek, od ktorych zaczeto. */
+    score(list: List, { t, killed } = this.live(list)): number {
         let x = this.pSmall(t.small) - this.pLarge(t.largeKb) - this.pRisk(t.hiddenKb) - this.w.masks * list.inc.length - this.w.exclude * list.exc.length;
+        if (this.byStep) x -= this.pSmall(killed);
         for (const i of list.inc) x -= this.shape(i.m);
         for (const i of list.exc) x -= this.exShape(i.m);
         return x;
@@ -484,14 +575,20 @@ export class Builder {
 
     private largeOk(smallKb: number, largeKb: number): boolean {
         const { maxLarge } = this.opt;
-        return largeKb <= ('kb' in maxLarge ? maxLarge.kb : maxLarge.part * smallKb) + 1e-6;
+        // lista na poczatek moze przekraczac granice: wtedy nie moze byc gorzej
+        return largeKb <= Math.max(this.before.largeKb, 'kb' in maxLarge ? maxLarge.kb : maxLarge.part * smallKb) + 1e-6;
+    }
+
+    /** masek co najmniej tyle, ile wolno (over = 1: wiecej) */
+    private full(list: List, over = 0): boolean {
+        return this.baseCount + list.inc.length + list.exc.length >= this.opt.maxMasks + over;
     }
 
     /** granice calej listy */
     allowed(list: List, l: Live): boolean {
-        const { loss, minPurity, maxMasks } = this.opt;
+        const { loss, minPurity } = this.opt;
         const { t } = l;
-        if (list.inc.length + list.exc.length > maxMasks || !this.largeOk(t.smallKb, t.largeKb) || t.lost > loss * (t.small + t.lost) + 1e-9) return false;
+        if (this.full(list, 1) || !this.largeOk(t.smallKb, t.largeKb) || t.lost > Math.max(this.before.lost, loss * (t.small + t.lost)) + 1e-9) return false;
         return list.inc.every(i => {
             let ns = 0;
             let nl = 0;
@@ -701,7 +798,7 @@ export class Builder {
         if (st.ex.length < MAX_EX && st.nl > 0 && this.w.large > 0) {
             const best: { t: number; nl: number; ns: number; v: number; kind: number }[] = [];
             this.rank(l, { m: { toks: [], gaps: [], tail: ANY }, seqs: st.seqs }, (_slot, t, us, ns, nl, ul) => {
-                if (nl < opt.exMin || st.m.toks.includes(t) || tokens[t].dated) return;
+                if (nl < opt.exMin || st.m.toks.includes(t) || tokens[t].dated || tokens[t].text.includes('-')) return;
                 const v = this.pLarge(ul) - this.pSmall(us) - this.w.exclude;
                 const fits = st.lost + ns <= opt.loss * (st.ns + st.lost) + 1e-9;
                 // bez progu punktow: EXCLUDE moze byc potrzebny do purity
@@ -921,7 +1018,7 @@ export class Builder {
         for (const f of forms) {
             const l = this.live(f);
             if (!this.allowed(f, l)) continue;
-            const score = this.score(f, l.t);
+            const score = this.score(f, l);
             if (!best || score > best.score + 1e-9) best = { list: f, score };
         }
         return best;
@@ -940,9 +1037,9 @@ export class Builder {
 
     /** Nastepne propozycje, od najlepszej; kazda poprawia liste i miesci sie w granicach. */
     next(list: List, banned: Set<string>): { st: State; after: { list: List; score: number }; p: Proposal }[] {
-        if (list.inc.length + list.exc.length >= this.opt.maxMasks) return [];
+        if (this.full(list)) return [];
         const l = this.live(list);
-        const before = this.score(list, l.t);
+        const before = this.score(list, l);
         const out: { st: State; after: { list: List; score: number }; p: Proposal }[] = [];
         for (const st of this.search(l, banned)) {
             const after = this.apply(list, st);
@@ -956,24 +1053,24 @@ export class Builder {
         const { space, opt } = this;
         const { tokens } = space.q;
         let cur = list;
-        while (cur.inc.length + cur.exc.length < opt.maxMasks && !this.late()) {
+        while (!this.full(cur) && !this.late()) {
             const l = this.live(cur);
-            const before = this.score(cur, l.t);
-            const cov = new Uint8Array(space.q.count);
+            const before = this.score(cur, l);
+            const cov = space.mark.map(m => m & OLD_INC);
             for (const i of cur.inc) for (let x = 0; x < i.seqs.length; x++) cov[i.seqs[x]] = 1;
             const seqs = this.all.filter(s => cov[s] && (l.ns[s] || l.nl[s]));
             const kb: Live = { ...l, ul: space.largeKb };
             const cands: { t: number; v: number }[] = [];
             this.rank(kb, { m: { toks: [], gaps: [], tail: ANY }, seqs }, (_s, t, _us, ns, nl, ul) => {
                 const v = this.pLarge(ul) - this.pSmall(ns) - this.w.exclude;
-                if (nl >= opt.exMin && v > 0 && !tokens[t].dated) cands.push({ t, v });
+                if (nl >= opt.exMin && v > 0 && !tokens[t].dated && !tokens[t].text.includes('-')) cands.push({ t, v });
             });
             cands.sort((a, b) => b.v - a.v || a.t - b.t);
             let best: { list: List; score: number } | null = null;
             for (const c of cands.slice(0, 20)) {
                 const next = { inc: cur.inc, exc: [...cur.exc, this.item(this.exPattern(c.t))] };
                 const after = this.live(next);
-                const score = this.score(next, after.t);
+                const score = this.score(next, after);
                 if (score > Math.max(before, best?.score ?? -Infinity) + 1e-9 && this.allowed(next, after)) best = { list: next, score };
             }
             if (!best) break;
@@ -993,7 +1090,7 @@ export class Builder {
                 for (const i of cur[kind]) {
                     const next = { ...cur, [kind]: cur[kind].filter(x => x !== i) };
                     const l = this.live(next);
-                    const score = this.score(next, l.t);
+                    const score = this.score(next, l);
                     if (score > (best?.score ?? before) + 1e-9 && this.allowed(next, l)) best = { list: next, score, text: this.space.text(i.m) };
                 }
             }
@@ -1044,7 +1141,7 @@ export class Builder {
                 next = x.after.list;
                 steps.push(this.accept(x.p));
                 const after = this.live(next);
-                const score = this.score(next, after.t);
+                const score = this.score(next, after);
                 if (score > Math.max(before, best?.score ?? -Infinity) + 1e-9 && this.allowed(next, after)) best = { list: next, score, steps: steps.slice() };
             }
         }
@@ -1107,12 +1204,57 @@ export class Builder {
         return this.result(best.list, best.journal);
     }
 
+    /**
+     * Lista z jedna maska wiecej (kolejnosc prob: STEP_RAW; od ** dopiero gdy inne nie daja punktow) i wspolnymi EXCLUDE.
+     * Gdy nie ma maski, same EXCLUDE - i jeszcze raz maska, bo zwalniaja miejsce na duze. null = nic nie daje punktow.
+     */
+    step(list: List, journal: Change[]): List | null {
+        const one = (from: List): List | null => {
+            for (const anchored of this.w.start > 0 ? [true, false] : [false]) {
+                for (const raw of STEP_RAW) {
+                    this.anchored = anchored;
+                    this.minRaw = raw;
+                    const [best] = this.next(from, new Set());
+                    if (!best) continue;
+                    journal.push(this.accept(best.p));
+                    return this.excludes(best.after.list, journal);
+                }
+            }
+            return null;
+        };
+        const next = one(list);
+        if (next) return next;
+        const clean = this.excludes(list, journal);
+        return clean === list ? null : one(clean) ?? clean;
+    }
+
+    /** Kolejne maski (--next), najwyzej steps; done po kazdej. */
+    steps(steps: number, done: (r: BuildResult) => void, tick: Tick): BuildResult {
+        this.byStep = true;
+        const journal: Change[] = [];
+        let list: List = { inc: [], exc: [] };
+        for (let n = 0; n < steps && !this.late(); n++) {
+            tick(Math.min(0.95, Math.max(n / steps, this.live(list).t.small / Math.max(1, this.space.np))), `masek: ${list.inc.length + list.exc.length}`);
+            const next = this.step(list, journal);
+            if (!next) break;
+            list = next;
+            done(this.result(list, journal));
+        }
+        return this.result(list, journal);
+    }
+
     result(list: List, journal: Change[]): BuildResult {
-        const { t } = this.live(list);
+        const l = this.live(list);
+        const { t } = l;
+        const parts = this.parts(list, t);
+        // koszt masek, od ktorych zaczeto
+        const base = this.base.include.reduce((x, m) => x + this.w.masks + shapeCost(m, this.w, this.space.head.length), 0)
+            + this.base.exclude.reduce((x, m) => x + this.w.exclude + shapeCost(m, { ...this.w, start: 0 }, this.space.head.length), 0);
         return {
-            include: list.inc.map(i => this.space.text(i.m)), exclude: list.exc.map(i => this.space.text(i.m)),
-            how: list.inc.map(i => this.origin.get(this.space.text(i.m)) ?? null), changes: journal,
-            totals: t, parts: this.parts(list, t), points: this.score(list, t), stopped: this.stopped,
+            ...this.texts(list), how: [...this.base.include.map(() => null), ...list.inc.map(i => this.origin.get(this.space.text(i.m)) ?? null)], changes: journal,
+            totals: t, parts, points: this.score(list, { ...l, killed: 0 }) - base, stopped: this.stopped,
+            old: { include: this.base.include.length, exclude: this.base.exclude.length }, before: this.before,
+            left: { small: this.space.np - t.small - t.lost, dead: l.dead },
         };
     }
 }
@@ -1132,16 +1274,19 @@ export function enough(np: number, opt: BuildOptions): number {
 }
 
 export function makeSpace(input: CheckInput, opt: BuildOptions, tick: Tick, extra: string[] = []): Space {
-    return new Space(input, opt.head ?? [], enough(input.pos.length, opt), 0.5 * needKb(input, opt.weights), opt.partial, extra, tick);
+    return new Space(input, opt.head ?? [], enough(input.pos.length, opt), 0.5 * needKb(input, opt.weights), opt.partial, extra, tick, opt.base);
 }
 
-/** Cala lista: automatem albo z pytaniem po kazdej masce. */
-export function buildList(input: CheckInput, opt: BuildOptions, stages: { names: Tick; build: () => Tick }, ask?: Ask): BuildResult {
+/** Cala lista automatem, z pytaniem po kazdej masce (ask) albo po kilka masek (by; jak ask z base: dalszy ciag listy). */
+export function buildList(input: CheckInput, opt: BuildOptions, stages: { names: Tick; build: () => Tick }, ask?: Ask, by?: { steps: number; done: (r: BuildResult) => void }): BuildResult {
     const o = { ...opt, minCount: enough(input.pos.length, opt) };
     let space = makeSpace(input, o, stages.names);
     const tick = stages.build();
     let b = new Builder(space, o);
+    if (by) return b.steps(by.steps, by.done, tick);
     if (!ask) return b.run(tick);
+    const byStep = opt.base !== undefined;
+    b.byStep = byStep;
     b.minRaw = RAW[1];
     const banned = new Set<string>();
     const extra: string[] = [];
@@ -1162,7 +1307,7 @@ export function buildList(input: CheckInput, opt: BuildOptions, stages: { names:
     for (;;) {
         const found = b.next(list, banned);
         const last = journal[journal.length - 1];
-        const a = ask(found.map(x => x.p), list.inc.length + 1, b.live(list).t,
+        const a = ask(found.map(x => x.p), (opt.base?.include.length ?? 0) + list.inc.length + 1, b.live(list).t,
             last ?? null);
         if ('stop' in a) break;
         if ('undo' in a) {
@@ -1187,6 +1332,7 @@ export function buildList(input: CheckInput, opt: BuildOptions, stages: { names:
                 for (const x of [...banned]) if (x.startsWith('#')) banned.delete(x);
                 const { origin, free } = b;
                 b = new Builder(space, o);
+                b.byStep = byStep;
                 b.minRaw = RAW[1];
                 b.origin = origin;
                 b.free = free;

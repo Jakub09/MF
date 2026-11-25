@@ -2371,6 +2371,7 @@ exports.makeSpace = makeSpace;
 exports.buildList = buildList;
 const auto_mine_1 = require("./auto-mine");
 const auto_quals_1 = require("./auto-quals");
+const auto_tree_1 = require("./auto-tree");
 const auto_util_1 = require("./auto-util");
 exports.POINTS = { small: 1, large: 2, masks: 0.5, exclude: 0.5, risk: 0.1, percent: 0.05, wild: 0.02, start: 2 };
 const ANY = { min: 0, any: true };
@@ -2386,6 +2387,8 @@ const LIT = 1e-5;
 const RAW = [0.5, 0.8];
 /** na ile masek najwyzej dzielona jest jedna w drugiej rundzie */
 const SPLIT = 4;
+/** --next: kolejnosc prob; maska zostaje na stale, wiec najpierw bez ** na poczatku i prawie bez duzych */
+const STEP_RAW = [0.95, 0.8, 0.5];
 const cubed = (x) => x * x * x;
 /** Nazwy jako ciagi klas kwalifikatorow i maski z elementow tych klas. */
 class Space {
@@ -2404,10 +2407,12 @@ class Space {
     nl;
     allKb;
     byText;
+    /** lista na poczatek: OLD_INC, OLD_EXC */
+    mark;
     inClass = new Map();
     lists = new Map();
     /** minCount: od ilu malych element; needKb: od ilu KB duzych */
-    constructor(input, head, minCount, needKb, partial, extra, tick) {
+    constructor(input, head, minCount, needKb, partial, extra, tick, base) {
         this.input = input;
         this.head = head;
         this.minCount = minCount;
@@ -2424,7 +2429,8 @@ class Space {
         rows.set(pos);
         rows.set(neg, this.np);
         const n = (0, auto_quals_1.readNames)({ names, allocKb: weight, pos: rows, neg: new Int32Array(0) }, head.length, p => tick(0.4 * p), true);
-        this.q = (0, auto_quals_1.buildSequences)(n, minCount, partial, head.length > 0, p => tick(0.4 + 0.6 * p), true, extra);
+        const q = (0, auto_quals_1.buildSequences)(n, minCount, partial, head.length > 0, p => tick(0.4 + 0.6 * p), true, extra);
+        [this.q, this.mark] = base?.include.length ? split(q, oldMarks(input, rows, base)) : [q, new Uint8Array(q.count)];
         const { count, rowSeq } = this.q;
         this.small = new Float64Array(count);
         this.large = new Float64Array(count);
@@ -2565,6 +2571,47 @@ class Space {
     }
 }
 exports.Space = Space;
+const OLD_INC = 1;
+const OLD_EXC = 2;
+/** Ktore zbiory obejmuje i wylacza lista na poczatek (zwykle porownanie masek z nazwami). */
+function oldMarks({ names }, rows, base) {
+    const inc = new auto_tree_1.MaskTree(base.include.map(m => m.split('.')));
+    const exc = new auto_tree_1.MaskTree(base.exclude.map(m => m.split('.')));
+    return Uint8Array.from(rows, row => {
+        const s = names.start[row];
+        const e = s + names.len[row];
+        return (inc.match(names.pool, s, e).length ? OLD_INC : 0) | (base.exclude.length && exc.match(names.pool, s, e).length ? OLD_EXC : 0);
+    });
+}
+/** Ciagi podzielone wg znacznikow zbiorow. */
+function split(q, marks) {
+    const ids = new Map();
+    const from = new auto_util_1.IntList();
+    const rowSeq = q.rowSeq.map((s, i) => {
+        const k = 4 * s + marks[i];
+        let x = ids.get(k);
+        if (x === undefined) {
+            ids.set(k, x = from.n);
+            from.push(k);
+        }
+        return x;
+    });
+    const count = from.n;
+    const mark = new Uint8Array(count);
+    const off = new Int32Array(count + 1);
+    const end = new Uint8Array(count);
+    const sums = { wp: new Int32Array(count), wn: new Int32Array(count), kp: new Float64Array(count), kn: new Float64Array(count) };
+    for (let x = 0; x < count; x++) {
+        const s = from.a[x] >> 2;
+        mark[x] = from.a[x] & 3;
+        off[x + 1] = off[x] + q.off[s + 1] - q.off[s];
+        end[x] = q.end[s];
+    }
+    const cls = new Int32Array(off[count]);
+    for (let x = 0; x < count; x++)
+        cls.set(q.cls.subarray(q.off[from.a[x] >> 2], q.off[(from.a[x] >> 2) + 1]), off[x]);
+    return [{ ...q, ...sums, count, off, cls, end, rowSeq }, mark];
+}
 /** zestaw ciagow jako tekst: suma, suma wymieszanych numerow i liczba */
 function coverKey(...lists) {
     let a = 0;
@@ -2605,12 +2652,21 @@ class Builder {
     origin = new Map();
     /** wpisane, bez progu purity */
     free = new Set();
+    base;
+    baseCount;
+    /** stan listy na poczatek */
+    before;
+    /** lista powstaje na raty: EXCLUDE kosztuje tez male, ktore moglyby objac kolejne maski */
+    byStep = false;
     constructor(space, opt) {
         this.space = space;
         this.opt = opt;
         this.w = opt.weights;
         this.all = Int32Array.from({ length: space.q.count }, (_, s) => s);
         this.deadline = Date.now() + opt.seconds * 1000;
+        this.base = opt.base ?? { include: [], exclude: [] };
+        this.baseCount = this.base.include.length + this.base.exclude.length;
+        this.before = this.live({ inc: [], exc: [] }).t;
     }
     late() {
         if (Date.now() > this.deadline)
@@ -2646,22 +2702,23 @@ class Builder {
     }
     valid(m) {
         const text = this.space.text(m);
-        return text.length <= auto_mine_1.MAX_LEN && ((0, auto_mine_1.literalChars)(text) > 0);
+        // "-" w masce: translator ACS bierze za znak kontynuacji
+        return text.length <= auto_mine_1.MAX_LEN && (0, auto_mine_1.literalChars)(text) > 0 && !(text.includes('-') && /[*%]/.test(text));
     }
     live(list) {
         const { space } = this;
         const n = space.q.count;
-        const dead = new Uint8Array(n);
-        const cov = new Uint8Array(n);
+        const dead = space.mark.map(m => m & OLD_EXC);
+        const cov = space.mark.map(m => m & OLD_INC);
         for (const e of list.exc)
             for (let x = 0; x < e.seqs.length; x++)
-                dead[e.seqs[x]] = 1;
+                dead[e.seqs[x]] |= 1;
         for (const e of list.inc)
             for (let x = 0; x < e.seqs.length; x++)
                 cov[e.seqs[x]] = 1;
         const l = {
             ns: new Float64Array(n), nl: new Float64Array(n), us: new Float64Array(n), usKb: new Float64Array(n), ul: new Float64Array(n), dl: new Float64Array(n),
-            t: { small: 0, large: 0, smallKb: 0, largeKb: 0, lost: 0, hiddenKb: 0 },
+            t: { small: 0, large: 0, smallKb: 0, largeKb: 0, lost: 0, hiddenKb: 0 }, dead: 0, killed: 0,
         };
         for (let s = 0; s < n; s++) {
             if (dead[s]) {
@@ -2671,6 +2728,9 @@ class Builder {
                 }
                 else {
                     l.dl[s] = space.largeKb[s];
+                    l.dead += space.small[s];
+                    if (dead[s] === 1)
+                        l.killed += space.small[s];
                 }
                 continue;
             }
@@ -2695,17 +2755,28 @@ class Builder {
         const none = { small: 0, large: 0, masks: 0, exclude: 0, risk: 0, percent: 0, wild: 0, start: 0 };
         const only = (k) => {
             const only1 = { ...none, [k]: w[k] };
-            const sum = (l, ex) => l.reduce((a, i) => a + shapeCost(space.text(i.m), ex ? { ...only1, start: 0 } : only1, space.head.length)
-                - shapeCost(space.text(i.m), none, space.head.length), 0);
-            return -sum(list.inc, false) - sum(list.exc, true);
+            const sum = (l, ex) => l.reduce((a, x) => a + shapeCost(x, ex ? { ...only1, start: 0 } : only1, space.head.length)
+                - shapeCost(x, none, space.head.length), 0);
+            return -sum(this.texts(list).include, false) - sum(this.texts(list).exclude, true);
         };
         return {
-            small: this.pSmall(t.small), large: -this.pLarge(t.largeKb), masks: -w.masks * list.inc.length, exclude: -w.exclude * list.exc.length, risk: -this.pRisk(t.hiddenKb),
+            small: this.pSmall(t.small), large: -this.pLarge(t.largeKb), masks: -w.masks * this.texts(list).include.length, exclude: -w.exclude * this.texts(list).exclude.length,
+            risk: -this.pRisk(t.hiddenKb),
             percent: only('percent'), wild: only('wild'), start: only('start'),
         };
     }
-    score(list, t = this.live(list).t) {
+    /** cala lista: najpierw maski, od ktorych zaczeto */
+    texts(list) {
+        return {
+            include: [...this.base.include, ...list.inc.map(i => this.space.text(i.m))],
+            exclude: [...this.base.exclude, ...list.exc.map(i => this.space.text(i.m))],
+        };
+    }
+    /** Punkty listy, bez stalego kosztu masek, od ktorych zaczeto. */
+    score(list, { t, killed } = this.live(list)) {
         let x = this.pSmall(t.small) - this.pLarge(t.largeKb) - this.pRisk(t.hiddenKb) - this.w.masks * list.inc.length - this.w.exclude * list.exc.length;
+        if (this.byStep)
+            x -= this.pSmall(killed);
         for (const i of list.inc)
             x -= this.shape(i.m);
         for (const i of list.exc)
@@ -2714,13 +2785,18 @@ class Builder {
     }
     largeOk(smallKb, largeKb) {
         const { maxLarge } = this.opt;
-        return largeKb <= ('kb' in maxLarge ? maxLarge.kb : maxLarge.part * smallKb) + 1e-6;
+        // lista na poczatek moze przekraczac granice: wtedy nie moze byc gorzej
+        return largeKb <= Math.max(this.before.largeKb, 'kb' in maxLarge ? maxLarge.kb : maxLarge.part * smallKb) + 1e-6;
+    }
+    /** masek co najmniej tyle, ile wolno (over = 1: wiecej) */
+    full(list, over = 0) {
+        return this.baseCount + list.inc.length + list.exc.length >= this.opt.maxMasks + over;
     }
     /** granice calej listy */
     allowed(list, l) {
-        const { loss, minPurity, maxMasks } = this.opt;
+        const { loss, minPurity } = this.opt;
         const { t } = l;
-        if (list.inc.length + list.exc.length > maxMasks || !this.largeOk(t.smallKb, t.largeKb) || t.lost > loss * (t.small + t.lost) + 1e-9)
+        if (this.full(list, 1) || !this.largeOk(t.smallKb, t.largeKb) || t.lost > Math.max(this.before.lost, loss * (t.small + t.lost)) + 1e-9)
             return false;
         return list.inc.every(i => {
             let ns = 0;
@@ -2944,7 +3020,7 @@ class Builder {
         if (st.ex.length < MAX_EX && st.nl > 0 && this.w.large > 0) {
             const best = [];
             this.rank(l, { m: { toks: [], gaps: [], tail: ANY }, seqs: st.seqs }, (_slot, t, us, ns, nl, ul) => {
-                if (nl < opt.exMin || st.m.toks.includes(t) || tokens[t].dated)
+                if (nl < opt.exMin || st.m.toks.includes(t) || tokens[t].dated || tokens[t].text.includes('-'))
                     return;
                 const v = this.pLarge(ul) - this.pSmall(us) - this.w.exclude;
                 const fits = st.lost + ns <= opt.loss * (st.ns + st.lost) + 1e-9;
@@ -3192,7 +3268,7 @@ class Builder {
             const l = this.live(f);
             if (!this.allowed(f, l))
                 continue;
-            const score = this.score(f, l.t);
+            const score = this.score(f, l);
             if (!best || score > best.score + 1e-9)
                 best = { list: f, score };
         }
@@ -3210,10 +3286,10 @@ class Builder {
     }
     /** Nastepne propozycje, od najlepszej; kazda poprawia liste i miesci sie w granicach. */
     next(list, banned) {
-        if (list.inc.length + list.exc.length >= this.opt.maxMasks)
+        if (this.full(list))
             return [];
         const l = this.live(list);
-        const before = this.score(list, l.t);
+        const before = this.score(list, l);
         const out = [];
         for (const st of this.search(l, banned)) {
             const after = this.apply(list, st);
@@ -3227,10 +3303,10 @@ class Builder {
         const { space, opt } = this;
         const { tokens } = space.q;
         let cur = list;
-        while (cur.inc.length + cur.exc.length < opt.maxMasks && !this.late()) {
+        while (!this.full(cur) && !this.late()) {
             const l = this.live(cur);
-            const before = this.score(cur, l.t);
-            const cov = new Uint8Array(space.q.count);
+            const before = this.score(cur, l);
+            const cov = space.mark.map(m => m & OLD_INC);
             for (const i of cur.inc)
                 for (let x = 0; x < i.seqs.length; x++)
                     cov[i.seqs[x]] = 1;
@@ -3239,7 +3315,7 @@ class Builder {
             const cands = [];
             this.rank(kb, { m: { toks: [], gaps: [], tail: ANY }, seqs }, (_s, t, _us, ns, nl, ul) => {
                 const v = this.pLarge(ul) - this.pSmall(ns) - this.w.exclude;
-                if (nl >= opt.exMin && v > 0 && !tokens[t].dated)
+                if (nl >= opt.exMin && v > 0 && !tokens[t].dated && !tokens[t].text.includes('-'))
                     cands.push({ t, v });
             });
             cands.sort((a, b) => b.v - a.v || a.t - b.t);
@@ -3247,7 +3323,7 @@ class Builder {
             for (const c of cands.slice(0, 20)) {
                 const next = { inc: cur.inc, exc: [...cur.exc, this.item(this.exPattern(c.t))] };
                 const after = this.live(next);
-                const score = this.score(next, after.t);
+                const score = this.score(next, after);
                 if (score > Math.max(before, best?.score ?? -Infinity) + 1e-9 && this.allowed(next, after))
                     best = { list: next, score };
             }
@@ -3268,7 +3344,7 @@ class Builder {
                 for (const i of cur[kind]) {
                     const next = { ...cur, [kind]: cur[kind].filter(x => x !== i) };
                     const l = this.live(next);
-                    const score = this.score(next, l.t);
+                    const score = this.score(next, l);
                     if (score > (best?.score ?? before) + 1e-9 && this.allowed(next, l))
                         best = { list: next, score, text: this.space.text(i.m) };
                 }
@@ -3321,7 +3397,7 @@ class Builder {
                 next = x.after.list;
                 steps.push(this.accept(x.p));
                 const after = this.live(next);
-                const score = this.score(next, after.t);
+                const score = this.score(next, after);
                 if (score > Math.max(before, best?.score ?? -Infinity) + 1e-9 && this.allowed(next, after))
                     best = { list: next, score, steps: steps.slice() };
             }
@@ -3388,12 +3464,58 @@ class Builder {
         const best = done[1].score > done[0].score + 1e-9 ? done[1] : done[0];
         return this.result(best.list, best.journal);
     }
+    /**
+     * Lista z jedna maska wiecej (kolejnosc prob: STEP_RAW; od ** dopiero gdy inne nie daja punktow) i wspolnymi EXCLUDE.
+     * Gdy nie ma maski, same EXCLUDE - i jeszcze raz maska, bo zwalniaja miejsce na duze. null = nic nie daje punktow.
+     */
+    step(list, journal) {
+        const one = (from) => {
+            for (const anchored of this.w.start > 0 ? [true, false] : [false]) {
+                for (const raw of STEP_RAW) {
+                    this.anchored = anchored;
+                    this.minRaw = raw;
+                    const [best] = this.next(from, new Set());
+                    if (!best)
+                        continue;
+                    journal.push(this.accept(best.p));
+                    return this.excludes(best.after.list, journal);
+                }
+            }
+            return null;
+        };
+        const next = one(list);
+        if (next)
+            return next;
+        const clean = this.excludes(list, journal);
+        return clean === list ? null : one(clean) ?? clean;
+    }
+    /** Kolejne maski (--next), najwyzej steps; done po kazdej. */
+    steps(steps, done, tick) {
+        this.byStep = true;
+        const journal = [];
+        let list = { inc: [], exc: [] };
+        for (let n = 0; n < steps && !this.late(); n++) {
+            tick(Math.min(0.95, Math.max(n / steps, this.live(list).t.small / Math.max(1, this.space.np))), `masek: ${list.inc.length + list.exc.length}`);
+            const next = this.step(list, journal);
+            if (!next)
+                break;
+            list = next;
+            done(this.result(list, journal));
+        }
+        return this.result(list, journal);
+    }
     result(list, journal) {
-        const { t } = this.live(list);
+        const l = this.live(list);
+        const { t } = l;
+        const parts = this.parts(list, t);
+        // koszt masek, od ktorych zaczeto
+        const base = this.base.include.reduce((x, m) => x + this.w.masks + shapeCost(m, this.w, this.space.head.length), 0)
+            + this.base.exclude.reduce((x, m) => x + this.w.exclude + shapeCost(m, { ...this.w, start: 0 }, this.space.head.length), 0);
         return {
-            include: list.inc.map(i => this.space.text(i.m)), exclude: list.exc.map(i => this.space.text(i.m)),
-            how: list.inc.map(i => this.origin.get(this.space.text(i.m)) ?? null), changes: journal,
-            totals: t, parts: this.parts(list, t), points: this.score(list, t), stopped: this.stopped,
+            ...this.texts(list), how: [...this.base.include.map(() => null), ...list.inc.map(i => this.origin.get(this.space.text(i.m)) ?? null)], changes: journal,
+            totals: t, parts, points: this.score(list, { ...l, killed: 0 }) - base, stopped: this.stopped,
+            old: { include: this.base.include.length, exclude: this.base.exclude.length }, before: this.before,
+            left: { small: this.space.np - t.small - t.lost, dead: l.dead },
         };
     }
 }
@@ -3412,16 +3534,20 @@ function enough(np, opt) {
     return Math.max(opt.minCount, small > 0 ? Math.ceil(np * masks / (100 * small) - 1e-9) : np);
 }
 function makeSpace(input, opt, tick, extra = []) {
-    return new Space(input, opt.head ?? [], enough(input.pos.length, opt), 0.5 * needKb(input, opt.weights), opt.partial, extra, tick);
+    return new Space(input, opt.head ?? [], enough(input.pos.length, opt), 0.5 * needKb(input, opt.weights), opt.partial, extra, tick, opt.base);
 }
-/** Cala lista: automatem albo z pytaniem po kazdej masce. */
-function buildList(input, opt, stages, ask) {
+/** Cala lista automatem, z pytaniem po kazdej masce (ask) albo po kilka masek (by; jak ask z base: dalszy ciag listy). */
+function buildList(input, opt, stages, ask, by) {
     const o = { ...opt, minCount: enough(input.pos.length, opt) };
     let space = makeSpace(input, o, stages.names);
     const tick = stages.build();
     let b = new Builder(space, o);
+    if (by)
+        return b.steps(by.steps, by.done, tick);
     if (!ask)
         return b.run(tick);
+    const byStep = opt.base !== undefined;
+    b.byStep = byStep;
     b.minRaw = RAW[1];
     const banned = new Set();
     const extra = [];
@@ -3442,7 +3568,7 @@ function buildList(input, opt, stages, ask) {
     for (;;) {
         const found = b.next(list, banned);
         const last = journal[journal.length - 1];
-        const a = ask(found.map(x => x.p), list.inc.length + 1, b.live(list).t, last ?? null);
+        const a = ask(found.map(x => x.p), (opt.base?.include.length ?? 0) + list.inc.length + 1, b.live(list).t, last ?? null);
         if ('stop' in a)
             break;
         if ('undo' in a) {
@@ -3475,6 +3601,7 @@ function buildList(input, opt, stages, ask) {
                         banned.delete(x);
                 const { origin, free } = b;
                 b = new Builder(space, o);
+                b.byStep = byStep;
                 b.minRaw = RAW[1];
                 b.origin = origin;
                 b.free = free;
@@ -4775,6 +4902,219 @@ function defaultPoint(points, part) {
 }
 };
 
+// ==================== src/auto-config.ts
+MODULES["./auto-config"] = function (exports, require, module) {
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CONFIG_NAMES = exports.ConfigError = void 0;
+exports.readConfig = readConfig;
+exports.mergeConfig = mergeConfig;
+exports.configText = configText;
+/**
+ * Ustawienia acs-masks-auto w pliku JSON z komentarzami (--config, --save-config). Komentarze (jak w JS) i przecinek po
+ * ostatnim polu sa dozwolone. Pierwszenstwo: wiersz polecen, potem plik, potem wartosci domyslne.
+ *
+ * Plik zapisany przez skrypt ma wszystkie pola, wiec pole, ktore nie dotyczy trybu pracy (np. weights bez build), jest
+ * pomijane; ta sama opcja w wierszu polecen to blad. null = wartosc domyslna.
+ */
+const node_fs_1 = __importDefault(require("node:fs"));
+const auto_build_1 = require("./auto-build");
+class ConfigError extends Error {
+}
+exports.ConfigError = ConfigError;
+const search = (v) => !v.build && !v.compact && v.quals === undefined && v.try === undefined;
+const combos = (v) => !v.build && !v.compact && !search(v);
+const build = (v) => !!v.build;
+const lists = (v) => !!v.build || !!v.compact;
+const WEIGHTS = {
+    small: 'nagroda za 1% objetych malych (miara dla reszty, zwykle 1)',
+    large: 'kara za duze w liscie, za 1% alokacji wszystkich malych; wiecej = mniej duzych',
+    masks: 'kara za kazda maske INCLUDE; wiecej = krotsza lista, mniejsze pokrycie',
+    exclude: 'kara za kazda maske EXCLUDE',
+    risk: 'kara za duze, ktore maski obejmuja, a zdejmuje dopiero EXCLUDE (1% alokacji malych)',
+    percent: 'kara za kazdy znak % w masce; wiecej = czesciej D* zamiast D%%%%%%',
+    wild: 'kara za kazda * i ** w masce (bez koncowego .**)',
+    start: 'kara za maske, ktora zaczyna sie od * albo **; wiecej = rzadziej takie maski',
+};
+/** Opcje po kolei, w grupach: wszystkie poza help, config i save-config. */
+const GROUPS = [
+    ['Dane', [
+            { name: 'input', kind: 'text', value: null, doc: ['plik CSV z DCOLLECT; plik podany w wierszu polecen ma pierwszenstwo'] },
+            { name: 'scope', kind: 'text', value: 'sms=true dsorg=PS', doc: ['ktore zbiory w ogole brac pod uwage; warunki po spacji = wszystkie naraz (AND)', 'np. "sms=true dsorg=PS sg=SGEAV*"'] },
+            { name: 'when', kind: 'text', value: 'allocTrk=315 usedTrk<=3', doc: ['ktory zbior jest maly; pozostale z zakresu to duze'] },
+            { name: 'prefix', kind: 'text', value: null, doc: ['poczatek kazdej maski, np. "ABC%.**"; null = dowolny'] },
+            { name: 'unit', kind: 'text', value: 'GB', doc: ['jednostka alokacji w raportach: KB, MB, GB, TB'] },
+        ]],
+    ['Tryb pracy: build albo compact albo quals / try; wszystkie wylaczone = zwykle szukanie masek', [
+            { name: 'build', kind: 'flag', value: false, doc: ['lista budowana maska po masce wg wag (weights)'] },
+            { name: 'compact', kind: 'flag', value: false, doc: ['najmniej masek przy najwiekszym pokryciu (krzywa)'] },
+            { name: 'quals', kind: 'text', value: null, doc: ['zamiast masek: najczestsze kombinacje 1..N kwalifikatorow, N = 1-4'] },
+            { name: 'try', kind: 'text', value: null, doc: ['zamiast masek: sprawdza podane kombinacje, np. "PROD+SYSOUT, TMP*"'] },
+            { name: 'masks', kind: 'text', value: null, doc: ['plik z lista masek do sprawdzenia; nowe maski tylko dla zbiorow spoza niej'], fits: v => search(v) || combos(v) },
+        ]],
+    ['Granice', [
+            { name: 'min-purity', kind: 'text', value: null, doc: ['najmniejsza czesc malych wsrod zbiorow maski, 0-1', 'null = 0.95 (compact: 0.5 przed EXCLUDE, quals i try: bez progu)'] },
+            { name: 'min-count', kind: 'text', value: null, doc: ['ile co najmniej malych ma dac maska', 'null = 10 (compact: 0,5% malych)'] },
+            { name: 'max-masks', kind: 'text', value: 100, doc: ['najwiecej masek (build i compact: INCLUDE i EXCLUDE razem, najwyzej 255)'] },
+            { name: 'max-large', kind: 'text', value: '5%', doc: ['ile duzych moze zostac w liscie: % alokacji objetych malych albo np. "200GB" (build, compact)'], fits: lists },
+            { name: 'time', kind: 'text', value: 600, doc: ['limit czasu w sekundach; potem wynik czesciowy (build, compact, quals)'], fits: v => lists(v) || combos(v) },
+        ]],
+    ['EXCLUDE', [
+            { name: 'exclude', kind: 'flag', value: false, doc: ['maski EXCLUDE do znalezionych masek (zwykle szukanie i masks; build i compact dobieraja je same)'], fits: search },
+            { name: 'exclude-min', kind: 'text', value: 2, doc: ['ile co najmniej duzych ma wylaczyc maska EXCLUDE'] },
+            { name: 'exclude-gain', kind: 'text', value: null, doc: ['jaka czesc alokacji objetych duzych ma wylaczyc EXCLUDE; null = 0.5% (z exclude i compact)'], fits: v => !!v.compact || (search(v) && !!v.exclude) },
+            { name: 'exclude-loss', kind: 'text', value: null, doc: ['jaka czesc objetych malych moga razem zabrac EXCLUDE', 'null = 1% (build, compact) albo 0% (exclude)'], fits: v => lists(v) || (search(v) && !!v.exclude) },
+        ]],
+    ['build: maska po masce', [
+            { name: 'weights', kind: 'weights', value: null, doc: ['priorytety; 1 punkt = 1% malych przy small = 1'], fits: build },
+            { name: 'next', kind: 'text', value: null, doc: ['plik FILTLIST, do ktorego kazdy przebieg dopisuje kolejna maske dla zbiorow jeszcze nie objetych', 'null = cala lista od nowa'], fits: build },
+            { name: 'steps', kind: 'text', value: 1, doc: ['z next: ile masek w jednym przebiegu; "max" = do konca'], fits: v => build(v) && v.next !== undefined && !v.ask },
+            { name: 'beam', kind: 'text', value: 8, doc: ['ile wersji maski naraz; wiecej = dluzej'], fits: build },
+            { name: 'rounds', kind: 'text', value: 2, doc: ['ile razy najwyzej druga runda, czyli maski budowane od nowa (nie z next)'], fits: v => build(v) && v.next === undefined },
+            { name: 'ask', kind: 'flag', value: false, doc: ['pytanie po kazdej masce'], fits: build },
+            { name: 'what-if', kind: 'flag', value: false, doc: ['takze wyniki dla zmienionych wag (7 razy dluzej; nie z next)'], fits: v => build(v) && v.next === undefined },
+            { name: 'log', kind: 'text', value: null, doc: ['plik na dziennik krokow; null = na ekran'], fits: build },
+        ]],
+    ['compact', [
+            { name: 'pick', kind: 'text', value: null, doc: ['punkt krzywej: najwyzej N masek albo "max"; null = najmniej masek z pokryciem od 95% najwiekszego'], fits: v => !!v.compact },
+            { name: 'any-start', kind: 'flag', value: false, doc: ['INCLUDE moze zaczynac sie od ** i *'], fits: v => !!v.compact },
+        ]],
+    ['Ksztalt masek, quals i try', [
+            { name: 'wild', kind: 'text', value: 3, doc: ['ile * i ** w masce (nie w build)'], fits: v => !build(v) },
+            { name: 'partial', kind: 'text', value: 3, doc: ['ile znakow stalych ma miec kwalifikator niepelny (ABC*), 2-7; 0 = tylko pelne (build, quals, try)'], fits: v => build(v) || combos(v) },
+            { name: 'top', kind: 'text', value: 20, doc: ['wierszy w kazdej tabeli (quals)'], fits: combos },
+        ]],
+    ['Wyniki', [
+            { name: 'verify', kind: 'text', value: null, doc: ['drugi CSV (np. nowszy) do sprawdzenia listy (build, compact)'], fits: lists },
+            { name: 'out', kind: 'text', value: null, doc: ['CSV z maskami'] },
+            { name: 'filtlist', kind: 'text', value: null, doc: ['FILTLIST do rutyny ACS, za kazdym razem od nowa (nie z next, quals, try)'], fits: v => !combos(v) && !(build(v) && v.next !== undefined) },
+            { name: 'tests', kind: 'text', value: null, doc: ['testy ISMF do masek, wejscie IEBUPDTE (nie z quals i try)'], fits: v => !combos(v) },
+            { name: 'per-mask', kind: 'text', value: 1, doc: ['testow kazdego rodzaju na maske'] },
+            { name: 'test-prefix', kind: 'text', value: 'ACM', doc: ['prefiks memberow testow, 1-4 litery'] },
+        ]],
+];
+const FIELDS = GROUPS.flatMap(([, f]) => f);
+const MODES = ['build', 'compact', 'quals', 'try'];
+/** nazwy opcji w pliku (bez input to dokladnie opcje wiersza polecen) */
+exports.CONFIG_NAMES = FIELDS.map(f => f.name);
+/** Komentarze i przecinki przed nawiasem zamykajacym zamienione na spacje (te same pozycje). */
+function plainJson(text) {
+    const blank = (t) => t.replace(/[^\n]/g, ' ');
+    return text.replace(/"(?:[^"\\\n]|\\.)*"|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, t => (t[0] === '"' ? t : blank(t)))
+        .replace(/"(?:[^"\\\n]|\\.)*"|,(?=\s*[}\]])/g, t => (t[0] === '"' ? t : ' '));
+}
+/** Pola z pliku; null = nieustawione. */
+function readConfig(file) {
+    const text = plainJson(node_fs_1.default.readFileSync(file, 'utf-8').replace(/^\ufeff/, ' '));
+    const fail = (msg) => new ConfigError(`${file}: ${msg}`);
+    const SLASH = 'w sciezkach pisz / albo \\\\ zamiast \\';
+    let data;
+    try {
+        data = JSON.parse(text);
+    }
+    catch (e) {
+        const { message } = e;
+        const at = /position (\d+)/.exec(message);
+        const where = at ? ` (wiersz ${text.slice(0, Number(at[1])).split('\n').length})` : '';
+        throw fail(`niepoprawny JSON${where}: ${message}${/escaped character/i.test(message) ? `; ${SLASH}` : ''}`);
+    }
+    if (typeof data !== 'object' || data === null || Array.isArray(data))
+        throw fail('oczekiwano obiektu { ... }');
+    const out = {};
+    for (const [name, v] of Object.entries(data)) {
+        const f = FIELDS.find(x => x.name === name);
+        if (!f)
+            throw fail(`nieznane pole "${name}" (dozwolone: ${exports.CONFIG_NAMES.join(' ')})`);
+        if (v === null)
+            continue;
+        // "C:\temp" to tabulator i "emp"
+        if (typeof v === 'string' && /[\x00-\x1f]/.test(v))
+            throw fail(`"${name}": niedozwolony znak; ${SLASH}`);
+        if (f.kind === 'flag') {
+            if (typeof v !== 'boolean')
+                throw fail(`"${name}": oczekiwano true albo false`);
+            out[name] = v;
+        }
+        else if (f.kind === 'weights' && typeof v === 'object' && !Array.isArray(v)) {
+            const list = Object.entries(v).filter(([, x]) => x !== null);
+            for (const [k, x] of list) {
+                if (!Object.hasOwn(auto_build_1.POINTS, k))
+                    throw fail(`weights: nieznana waga "${k}" (dozwolone: ${Object.keys(auto_build_1.POINTS).join(' ')})`);
+                if (typeof x !== 'number' || x < 0)
+                    throw fail(`weights: "${k}" - oczekiwano liczby od 0`);
+            }
+            out[name] = list.map(([k, x]) => `${k}=${x}`).join(' ');
+        }
+        else if (typeof v === 'string' || typeof v === 'number') {
+            out[name] = String(v);
+        }
+        else {
+            throw fail(`"${name}": oczekiwano ${f.kind === 'weights' ? 'obiektu z wagami' : 'tekstu albo liczby'}`);
+        }
+    }
+    return out;
+}
+/**
+ * Opcje z wiersza polecen i z pliku. Tryb podany w wierszu polecen zastepuje tryb z pliku; pola z pliku, ktore nie dotycza
+ * trybu, odpadaja (skipped: ustawione inaczej niz domyslnie; all: razem z nimi, do zapisu). Wagi z wiersza polecen zmieniaja tylko podane.
+ */
+function mergeConfig(cli, file) {
+    const ownMode = MODES.some(m => cli[m] !== undefined);
+    const all = { ...file };
+    if (ownMode)
+        for (const m of MODES)
+            delete all[m];
+    for (const [k, v] of Object.entries(cli))
+        if (v !== undefined)
+            all[k] = k === 'weights' && file.weights ? `${file.weights} ${v}` : v;
+    const out = { ...all };
+    const skipped = [];
+    for (const f of FIELDS) {
+        if (all[f.name] === undefined || cli[f.name] !== undefined || !f.fits || f.fits(all))
+            continue;
+        delete out[f.name];
+        // wartosc domyslna, jak w pliku zapisanym przez skrypt, nic nie znaczy; wagi sa tam zawsze
+        if (!ownMode && f.kind !== 'weights' && String(all[f.name]) !== String(f.value))
+            skipped.push(f.name);
+    }
+    return { values: out, all, skipped };
+}
+/** Plik ustawien: kazde pole z komentarzem; v = obecne wartosci, weights = obecne wagi. */
+function configText(v, weights) {
+    const out = ['// Ustawienia acs-masks-auto.cjs.  Uruchomienie: node acs-masks-auto.cjs --config ten_plik',
+        '// Opcja w wierszu polecen ma pierwszenstwo przed plikiem. null = wartosc domyslna.',
+        '// Pola, ktore nie dotycza trybu pracy, sa pomijane. W sciezkach pisz / albo \\\\ zamiast \\.', '{'];
+    const value = (f) => {
+        const x = v[f.name];
+        if (x === undefined)
+            return f.value;
+        // liczby bez cudzyslowow
+        return typeof x === 'string' && typeof f.value !== 'string' && String(Number(x)) === x && /^[0-9.]+$/.test(x) ? Number(x) : x;
+    };
+    const last = FIELDS[FIELDS.length - 1];
+    for (const [title, fields] of GROUPS) {
+        out.push(...(out[out.length - 1] === '{' ? [] : ['']), `  // ---- ${title}`);
+        for (const f of fields) {
+            out.push('', ...f.doc.map(d => `  // ${d}`));
+            const end = f === last ? '' : ',';
+            if (f.kind !== 'weights') {
+                out.push(`  ${JSON.stringify(f.name)}: ${JSON.stringify(value(f))}${end}`);
+                continue;
+            }
+            const keys = Object.keys(auto_build_1.POINTS);
+            out.push(`  "${f.name}": {`);
+            keys.forEach((k, i) => out.push(`    // ${WEIGHTS[k]} (domyslnie ${auto_build_1.POINTS[k]})`, `    "${k}": ${weights[k]}${i < keys.length - 1 ? ',' : ''}`));
+            out.push(`  }${end}`);
+        }
+    }
+    out.push('}');
+    return out.join('\n') + '\n';
+}
+};
+
 // ==================== src/dataset.ts
 MODULES["./dataset"] = function (exports, require, module) {
 "use strict";
@@ -5622,6 +5962,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.OPTIONS = void 0;
 exports.parseConds = parseConds;
 exports.parseHead = parseHead;
 exports.search = search;
@@ -5641,6 +5982,8 @@ exports.compactReport = compactReport;
 exports.compactCsv = compactCsv;
 exports.journalText = journalText;
 exports.buildReport = buildReport;
+exports.nextReport = nextReport;
+exports.readNext = readNext;
 exports.parseWeights = parseWeights;
 exports.main = main;
 /**
@@ -5696,7 +6039,11 @@ exports.main = main;
  *   --rounds N         ile razy najwyzej druga runda (maski wyjmowane i budowane od nowa)  (domyslnie 2)
  *   --ask              pytanie po kazdej masce: przyjac, wybrac inna, odrzucic, wpisac wlasna, cofnac (bez drugiej rundy)
  *   --what-if          takze wyniki dla wag masks + exclude, large, start podzielonych i pomnozonych przez 2 (7 razy dluzej)
- *   --log PLIK         dziennik do pliku zamiast na ekran
+ *   --log PLIK         dziennik do pliku zamiast na ekran (z --next: dopisywany)
+ *   --next PLIK        kolejna maska do FILTLIST z pliku: wczytuje ja (brak pliku = zaczyna od zera), dobiera maske dla malych
+ *                      zbiorow, ktorych FILTLIST jeszcze nie obejmuje, i dopisuje INCLUDE (i EXCLUDE) do tego pliku;
+ *                      poprzednia wersja zostaje w PLIK.bak. Masek z pliku nie zmienia; granice i punkty dotycza calej listy
+ *   --steps N          z --next: ile masek w jednym przebiegu; max = do konca     (domyslnie 1)
  *                      Z --build takze: --max-large, --exclude-min, --exclude-loss (1%), --max-masks, --partial, --verify, --time
  *
  *   --quals N          zamiast masek: najczestsze kombinacje 1..N kwalifikatorow w malych zbiorach (N 1-4), osobna tabela
@@ -5707,6 +6054,11 @@ exports.main = main;
  *   --time SEK         limit czasu --quals i --compact; potem wynik czesciowy                     (domyslnie 600)
  *   --try LISTA        sprawdza podane kombinacje i ich skrocenia, np. "PROD+SYSOUT, LOGDAY, TMP*"
  *                      Z --quals i --try: --min-purity tylko, gdy podane (domyslnie bez progu); --out: CSV z maskami
+ *
+ *   --config PLIK      ustawienia z pliku JSON (z komentarzami); opcje z wiersza polecen maja pierwszenstwo, a pola, ktore nie
+ *                      dotycza trybu pracy, sa pomijane. Plik CSV mozna podac w polu input
+ *   --save-config PLIK zapisuje obecne ustawienia (plik i wiersz polecen) z komentarzem do kazdego pola; bez pliku CSV
+ *                      na tym konczy, z plikiem pracuje dalej. Istniejacy plik zostaje jako PLIK.bak
  *
  * WARUNKI: pole, operator (= != < <= > >=), wartosc; kilka warunkow po spacji = wszystkie naraz (AND).
  *   Wartosc tekstowa po = / != moze byc maska: dsn=PROD.**  sg=SGEAV*
@@ -5724,6 +6076,7 @@ const auto_acs_1 = require("./auto-acs");
 const auto_check_1 = require("./auto-check");
 const auto_compact_1 = require("./auto-compact");
 const auto_mine_1 = require("./auto-mine");
+const auto_config_1 = require("./auto-config");
 const auto_quals_1 = require("./auto-quals");
 const auto_read_1 = require("./auto-read");
 const auto_util_1 = require("./auto-util");
@@ -5767,8 +6120,12 @@ const USAGE = 'Uzycie: node acs-masks-auto.cjs DCOLLECT.CSV [--scope "sms=true d
     + '         [--filtlist filtlist.txt] (najmniej masek INCLUDE i EXCLUDE, najwieksze pokrycie)\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --build [--weights "masks=1 large=4"] [--ask] [--what-if] [--log dziennik.txt]\n'
     + '         [--verify NOWSZY.CSV] [--filtlist filtlist.txt] (maska po masce, priorytety jako wagi)\n'
+    + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --build --next filtlist.txt [--steps 1] [opcje jak wyzej]\n'
+    + '         (kazdy przebieg dopisuje do filtlist.txt kolejna maske dla zbiorow jeszcze nie objetych)\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --quals 4 [--partial 3] [--top 20] [--time 600] [--try "PROD+SYSOUT, TMP*"]\n'
     + '         (najczestsze kombinacje kwalifikatorow; sprawdzanie kwalifikatorow niepelnych)\n'
+    + '   albo: node acs-masks-auto.cjs --config ustawienia.json [DCOLLECT.CSV] [opcje]   (ustawienia z pliku)\n'
+    + '         node acs-masks-auto.cjs --save-config ustawienia.json [opcje]             (zapis ustawien z opisem pol)\n'
     + `Pola liczbowe: ${auto_read_1.NUM.join(' ')}\n     tekstowe: ${auto_read_1.STR.join(' ')}\n     true / false: ${auto_read_1.BOOL.join(' ')}\n`
     + 'Operatory: = != < <= > >=; kilka warunkow po spacji = wszystkie naraz\n';
 const HELP = USAGE + `
@@ -5788,6 +6145,10 @@ Przyklady (DC = DCOLLECT.CSV; w pliku .bat kazdy % podwojnie, w PowerShell apost
   node acs-masks-auto.cjs DC --build --weights "masks=1 large=4"                   mniej masek, jeszcze mniej duzych
   node acs-masks-auto.cjs DC --build --what-if                                     co zmieni kazda waga
   node acs-masks-auto.cjs DC --build --ask                                         kazda maska do zatwierdzenia
+  node acs-masks-auto.cjs DC --build --next f.txt                                  kolejna maska dopisana do f.txt
+  node acs-masks-auto.cjs DC --build --next f.txt --steps 5 --log dziennik.txt     piec kolejnych masek
+  node acs-masks-auto.cjs DC --build --weights "masks=1" --save-config u.json      zapis ustawien (i przebieg)
+  node acs-masks-auto.cjs --config u.json                                          przebieg z zapisanych ustawien
   node acs-masks-auto.cjs DC --quals 4                                             najczestsze kombinacje 1-4 kwalifikatorow
   node acs-masks-auto.cjs DC --quals 2 --min-purity 0.95 --top 50                  tylko czyste, do 2 kwalifikatorow
   node acs-masks-auto.cjs DC --quals 3 --masks f.txt                               w zbiorach, ktorych lista nie obejmuje
@@ -6067,7 +6428,7 @@ function build(file, scope, when, o, extra, bar, io) {
                     bar.abort();
                 return tick;
             },
-        }, ask);
+        }, ask, extra.by);
         bar.done(`masek: ${r.include.length + r.exclude.length}, punkty: ${points(r.points)}`);
         return r;
     };
@@ -6121,6 +6482,9 @@ function askMask(list, no, now, last, small, o, u, io) {
             if (!/[.*]/.test(a))
                 throw new mask_1.MaskError('nieznana odpowiedz');
             const { text, quals } = (0, mask_1.parseMask)(a);
+            const problem = (0, auto_acs_1.acsProblem)(text);
+            if (problem)
+                throw new mask_1.MaskError(problem);
             if (o.head?.some((h, i) => quals[i] !== h))
                 throw new mask_1.MaskError(`maska nie zaczyna sie od ${o.head.join('.')}`);
             return { mask: text };
@@ -6384,21 +6748,25 @@ function compactReport(r, c, u = 'GB') {
         out.push(...verifyReport(v, list, c.verify, c.maxLarge, u));
     return out.join('\n') + '\n';
 }
-function compactCsv(r, u = 'GB') {
-    return [`${csvHead(u)};tylko_ta;stan`, ...(r.list?.rows ?? []).map(m => [...csvCells(m, u), m.only, ''].join(';')),
+/** old: ile pierwszych masek juz bylo; dalsze maja stan "nowa" */
+function compactCsv(r, u = 'GB', old = Infinity) {
+    return [`${csvHead(u)};tylko_ta;stan`, ...(r.list?.rows ?? []).map((m, i) => [...csvCells(m, u), m.only, i < old ? '' : 'nowa'].join(';')),
         ...(r.list?.excludes ?? []).map(m => [...csvCells(m, u), '', 'exclude'].join(';'))].join('\n') + '\n';
 }
 /** Dziennik: kroki kazdej maski z listy, potem zmiany listy po kolei. */
 function journalText(r) {
     const out = ['Dziennik: jak powstala kazda maska (male / duze = objete maska, po jej EXCLUDE)'];
     r.include.forEach((text, i) => {
+        if (i < r.old.include)
+            return;
         const m = r.how[i];
         out.push('', `${i + 1}. ${text}${m?.exclude.length ? `   EXCLUDE ${m.exclude.join('  ')}` : ''}${m ? '' : '   (wpisana)'}`);
         for (const s of m?.steps ?? []) {
             out.push(`     ${s.text.padEnd(44)}${String(s.small).padStart(9)} /${String(s.large).padStart(8)}${pct(s.small + s.large ? s.small / (s.small + s.large) : 0).padStart(8)}   ${s.note}`);
         }
     });
-    out.push('', 'Zmiany listy po kolei', '', ...r.changes.map(c => `${points(c.points).padStart(9)}   ${c.text}`));
+    if (r.changes.length)
+        out.push('', 'Zmiany listy po kolei', '', ...r.changes.map(c => `${points(c.points).padStart(9)}   ${c.text}`));
     return out.join('\n') + '\n';
 }
 const LABELS = {
@@ -6442,6 +6810,74 @@ function buildReport(r, o, file, u = 'GB') {
         out.push(...verifyReport(r.verified, list, file, o.maxLarge, u));
     return out.join('\n') + '\n';
 }
+/** Raport jednego przebiegu --next: co doszlo do FILTLIST i co zostalo. */
+function nextReport(r, o, next, file, u = 'GB') {
+    const { result: res, list } = r;
+    const { old, before: was, totals: now } = res;
+    const out = [`Zbiorow w zakresie: ${list.small + list.large}, malych: ${list.small}, duzych: ${list.large}`,
+        `Duze w liscie: do ${limitText(o.maxLarge, u)}   male stracone przez EXCLUDE: do ${pctOf(o.loss)}`, `Wagi: ${weightsText(o.weights)}`, ''];
+    if (res.stopped)
+        out.push('Uwaga: przerwano po czasie --time.', '');
+    const fresh = list.rows.slice(old.include);
+    const freshEx = list.excludes.slice(old.exclude);
+    if (fresh.length) {
+        out.push(fresh.length === 1 ? 'Nowa maska (liczby po EXCLUDE)' : `Nowe maski: ${fresh.length} (liczby po EXCLUDE)`, '', line([...heads(u), 'Tylko ta']));
+        for (const m of fresh)
+            out.push(line([...cells(m, u), String(m.only)]));
+        out.push('');
+    }
+    if (freshEx.length) {
+        out.push(wide(['Nowy EXCLUDE', 'Duzych', `Duzych ${u}`, 'Malych']));
+        for (const m of freshEx)
+            out.push(wide([m.text, String(m.large), inUnit(m.largeKb, u), String(m.small)]));
+        out.push('');
+    }
+    if (!fresh.length) {
+        const full = res.include.length + res.exclude.length >= o.maxMasks;
+        out.push(full ? `Brak miejsca na kolejna maske: lista ma juz ${res.include.length + res.exclude.length} (--max-masks).`
+            : 'Brak kolejnej maski dla tych progow i wag. Wiecej da mniejsza waga masks albo start, mniejsze --min-count albo wieksze --max-large.', '');
+    }
+    out.push(wide([`FILTLIST ${next}`, 'INCLUDE', 'EXCLUDE', 'Malych', '% mal.', 'Duzych', `Duzych ${u}`, 'duze/male']));
+    const row = (name, inc, exc, t) => wide([name, String(inc), String(exc), String(t.small), part(t.small, list.small),
+        String(t.large), inUnit(t.largeKb, u), t.smallKb ? part(t.largeKb, t.smallKb) : '-']);
+    out.push(row('przed', old.include, old.exclude, was), row('po', res.include.length, res.exclude.length, now), '');
+    out.push(`Zostalo nieobjetych malych: ${res.left.small}${res.left.dead ? `, w tym wylaczonych przez EXCLUDE: ${res.left.dead}` : ''}`);
+    if (now.lost)
+        out.push(`Male objete INCLUDE, ale wylaczone przez EXCLUDE: ${now.lost}`);
+    const cap = 'kb' in o.maxLarge ? o.maxLarge.kb : o.maxLarge.part * now.smallKb;
+    if (now.largeKb > cap + 1e-6) {
+        out.push('', `Uwaga: duze w liscie przekraczaja --max-large (${inUnit(now.largeKb, u)} z ${inUnit(cap, u)} ${u}); do tego czasu nowe maski nie moga dodac duzych.`);
+    }
+    if (r.verified && file !== undefined)
+        out.push(...verifyReport(r.verified, list, file, o.maxLarge, u));
+    return out.join('\n') + '\n';
+}
+function readNext(file) {
+    let text = '';
+    try {
+        text = node_fs_1.default.readFileSync(file, 'latin1').replace(/^\xef\xbb\xbf/, '');
+    }
+    catch (e) {
+        if (e.code !== 'ENOENT')
+            throw e;
+    }
+    const clean = text.replace(/\/\*[\s\S]*?\*\//g, c => c.replace(/[^\n]/g, ' '));
+    if (!clean.trim())
+        return { name: 'MALE', lead: text.trim() ? `${text.trimEnd()}\n` : '', include: [], exclude: [], warnings: [] };
+    const start = /(^|\s)(FILTLIST|INCLUDE\s*\()/i.exec(clean);
+    if (!start || !/(^|\s)INCLUDE\s*\(/i.test(clean))
+        throw new ArgError(`--next: ${file} to nie FILTLIST z INCLUDE(...)`);
+    const names = [...clean.matchAll(/(?:^|\s)FILTLIST\s+([^\s(]+)/gi)].map(m => m[1].toUpperCase());
+    if (names.length > 1)
+        throw new ArgError(`--next: ${file} - jedna FILTLIST w pliku (jest ${names.length})`);
+    const list = (0, auto_check_1.parseMaskList)(text, file);
+    const at = start.index + start[1].length;
+    const lead = text.slice(0, at).trimEnd();
+    const warnings = list.warnings.slice();
+    if (text.slice(at).includes('/*'))
+        warnings.push(`${file}: komentarze wewnatrz i za FILTLIST nie zostana przepisane`);
+    return { name: names[0] ?? 'MALE', lead: lead ? `${lead}\n` : '', include: list.masks, exclude: list.excludes, warnings };
+}
 /** "masks=1 large=4" (takze po przecinku) */
 function parseWeights(text) {
     const w = { ...auto_build_1.POINTS };
@@ -6468,59 +6904,51 @@ function largeLimit(v) {
         throw new ArgError(`--max-large: niepoprawna wartosc "${v}" (np. 5% albo 200GB)`);
     return { part: num(v.trim().replace(/%$/, ''), 'max-large', 0, 10000, false) / 100 };
 }
+const text = { type: 'string' };
+const flag = { type: 'boolean' };
+exports.OPTIONS = {
+    scope: text, when: text, prefix: text, 'min-purity': text, 'min-count': text, 'max-masks': text, wild: text, masks: text, quals: text, partial: text,
+    top: text, time: text, try: text, unit: text, out: { type: 'string', short: 'o' }, exclude: flag, 'exclude-min': text, 'exclude-gain': text,
+    'exclude-loss': text, compact: flag, 'max-large': text, pick: text, 'any-start': flag, verify: text, build: flag, weights: text, beam: text, rounds: text,
+    ask: flag, 'what-if': flag, log: text, next: text, steps: text, filtlist: text, tests: text, 'per-mask': text, 'test-prefix': text,
+    config: text, 'save-config': text, help: { type: 'boolean', short: 'h' },
+};
+const DEFAULTS = {
+    scope: 'sms=true dsorg=PS', when: 'allocTrk=315 usedTrk<=3', 'max-masks': '100', unit: 'GB', 'exclude-min': '2', 'per-mask': '1', 'test-prefix': 'ACM',
+    exclude: false, compact: false, 'any-start': false, build: false, ask: false, 'what-if': false,
+};
 function main(argv, io = STDIO) {
     let bar = null;
     const progress = (stages) => bar = new auto_util_1.Progress(stages, io.err, io.tty ?? false, () => process.stderr.columns || 80);
     try {
-        const { values: o, positionals } = (0, node_util_1.parseArgs)({
+        const { values: cli, positionals: given } = (0, node_util_1.parseArgs)({
             args: argv,
             allowPositionals: true,
-            options: {
-                scope: { type: 'string', default: 'sms=true dsorg=PS' },
-                when: { type: 'string', default: 'allocTrk=315 usedTrk<=3' },
-                prefix: { type: 'string' },
-                'min-purity': { type: 'string' },
-                'min-count': { type: 'string' },
-                'max-masks': { type: 'string', default: '100' },
-                wild: { type: 'string' },
-                masks: { type: 'string' },
-                quals: { type: 'string' },
-                partial: { type: 'string' },
-                top: { type: 'string' },
-                time: { type: 'string' },
-                try: { type: 'string' },
-                unit: { type: 'string', default: 'GB' },
-                out: { type: 'string', short: 'o' },
-                exclude: { type: 'boolean', default: false },
-                'exclude-min': { type: 'string', default: '2' },
-                'exclude-gain': { type: 'string' },
-                'exclude-loss': { type: 'string' },
-                compact: { type: 'boolean', default: false },
-                'max-large': { type: 'string' },
-                pick: { type: 'string' },
-                'any-start': { type: 'boolean', default: false },
-                verify: { type: 'string' },
-                build: { type: 'boolean', default: false },
-                weights: { type: 'string' },
-                beam: { type: 'string' },
-                rounds: { type: 'string' },
-                ask: { type: 'boolean', default: false },
-                'what-if': { type: 'boolean', default: false },
-                log: { type: 'string' },
-                filtlist: { type: 'string' },
-                tests: { type: 'string' },
-                'per-mask': { type: 'string', default: '1' },
-                'test-prefix': { type: 'string', default: 'ACM' },
-                help: { type: 'boolean', short: 'h', default: false },
-            },
+            options: exports.OPTIONS,
         });
-        if (o.help) {
+        if (cli.help) {
             io.out(HELP);
             return 0;
         }
-        if (positionals.length !== 1) {
+        const { config, 'save-config': saveConfig, help: _help, ...own } = cli;
+        const merged = (0, auto_config_1.mergeConfig)(own, config === undefined ? {} : (0, auto_config_1.readConfig)(config));
+        if (merged.skipped.length)
+            io.err(`Uwaga: ${config}: pominiete, nie dotycza tego trybu: ${merged.skipped.join(' ')}\n`);
+        const { input, ...set } = merged.values;
+        const o = { ...DEFAULTS, ...set };
+        const positionals = given.length || input === undefined ? given : [input];
+        if (positionals.length > 1 || (positionals.length === 0 && saveConfig === undefined)) {
             io.err(USAGE);
             return 1;
+        }
+        if (saveConfig !== undefined) {
+            if (node_fs_1.default.existsSync(saveConfig))
+                node_fs_1.default.copyFileSync(saveConfig, `${saveConfig}.bak`);
+            node_fs_1.default.writeFileSync(saveConfig, (0, auto_config_1.configText)({ ...merged.all, input: positionals[0] }, parseWeights(String(merged.all.weights ?? ''))));
+            io.err(`Zapisano: ${saveConfig}\n`);
+            // bez pliku w wierszu polecen: sam zapis
+            if (given.length === 0)
+                return 0;
         }
         const scope = parseConds(o.scope, 'scope');
         const when = parseConds(o.when, 'when');
@@ -6546,9 +6974,21 @@ function main(argv, io = STDIO) {
         };
         const exGain = percent(o['exclude-gain'] ?? '0.5', 'exclude-gain');
         const loss = percent(o['exclude-loss'] ?? (o.compact || o.build ? '1' : '0'), 'exclude-loss');
-        const onlyBuild = ['ask', 'what-if'].find(x => o[x]) ?? ['weights', 'beam', 'rounds', 'log'].find(x => o[x] !== undefined);
+        const onlyBuild = ['ask', 'what-if'].find(x => o[x]) ?? ['weights', 'beam', 'rounds', 'log', 'next'].find(x => o[x] !== undefined);
         if (onlyBuild && !o.build)
             throw new ArgError(`--${onlyBuild}: tylko z --build`);
+        if (o.steps !== undefined && o.next === undefined)
+            throw new ArgError('--steps: tylko z --next');
+        if (o.next !== undefined) {
+            if (o.filtlist !== undefined)
+                throw new ArgError('--filtlist: nie z --next (maski trafiaja do pliku z --next)');
+            if (o['what-if'])
+                throw new ArgError('--what-if: nie z --next');
+            if (o.rounds !== undefined)
+                throw new ArgError('--rounds: nie z --next (masek z listy skrypt nie zmienia)');
+            if (o.ask && o.steps !== undefined)
+                throw new ArgError('--steps: nie z --ask');
+        }
         if (o.build) {
             const other = ['compact', 'exclude', 'any-start'].find(x => o[x])
                 ?? ['masks', 'quals', 'try', 'top', 'pick', 'wild', 'exclude-gain'].find(x => o[x] !== undefined);
@@ -6649,6 +7089,42 @@ function main(argv, io = STDIO) {
                 rounds: num(o.rounds ?? '2', 'rounds', 0, 100, true), head: opt.head, seconds: num(o.time ?? '600', 'time', 1, 1e6, true),
             };
             const p = progress(4 + 2 * VARIANTS.length * Number(o['what-if']) + 2 * Number(o.verify !== undefined) + Number(o.tests !== undefined));
+            if (o.next !== undefined) {
+                const { next } = o;
+                const list = readNext(next);
+                for (const w of list.warnings)
+                    io.err(`Uwaga: ${w}\n`);
+                b.base = { include: list.include, exclude: list.exclude };
+                const steps = o.steps === 'max' ? Infinity : num(o.steps ?? '1', 'steps', 1, 1e6, true);
+                let written = false;
+                /** po kazdej masce, zeby przerwany przebieg nic nie stracil */
+                const write = (x) => {
+                    if (!written && node_fs_1.default.existsSync(next))
+                        node_fs_1.default.copyFileSync(next, `${next}.bak`);
+                    written = true;
+                    node_fs_1.default.writeFileSync(next, list.lead + (0, auto_acs_1.filtlistText)(list.name, x.include, x.exclude).join('\n') + '\n', 'latin1');
+                };
+                const r = build(positionals[0], scope, when, b, { verify: o.verify, whatIf: false, ask: o.ask, unit, by: o.ask ? undefined : { steps, done: write } }, p, io);
+                const { result } = r;
+                const changed = result.include.length > list.include.length || result.exclude.length > list.exclude.length;
+                if (o.ask && changed)
+                    write(result);
+                io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek masek: ${opt.head.join('.')}` : ''}   min. purity: ${pct(opt.minPurity)}\n`);
+                io.out(nextReport(r, b, next, o.verify, unit));
+                if (changed) {
+                    const journal = journalText(result);
+                    if (o.log === undefined)
+                        io.out(`\n${journal}`);
+                    else
+                        node_fs_1.default.appendFileSync(o.log, `${journal}\n`);
+                }
+                if (result.include.length)
+                    finish(p, r.input, result.include, result.exclude);
+                save(o.out, compactCsv(r, unit, result.old.include));
+                io.err(changed ? `Zapisano: ${next} (INCLUDE: ${result.include.length}, EXCLUDE: ${result.exclude.length})${node_fs_1.default.existsSync(`${next}.bak`) && list.include.length ? `, poprzednia wersja: ${next}.bak` : ''}\n`
+                    : `${next}: bez zmian\n`);
+                return 0;
+            }
             const r = build(positionals[0], scope, when, b, { verify: o.verify, whatIf: o['what-if'], ask: o.ask, unit }, p, io);
             io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek masek: ${opt.head.join('.')}` : ''}   min. purity: ${pct(opt.minPurity)}\n`);
             io.out(buildReport(r, b, o.verify, unit));
@@ -6710,7 +7186,7 @@ function main(argv, io = STDIO) {
         bar?.abort();
         const e = err;
         if (e instanceof ArgError || e instanceof dataset_1.CsvError || e instanceof mask_1.MaskError || e instanceof auto_check_1.MaskListError
-            || e instanceof testcase_1.TestCaseError) {
+            || e instanceof testcase_1.TestCaseError || e instanceof auto_config_1.ConfigError) {
             io.err(`Blad: ${e.message}\n`);
         }
         else if (e.code?.startsWith('ERR_PARSE_ARGS')) {

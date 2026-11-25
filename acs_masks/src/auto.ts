@@ -51,7 +51,11 @@
  *   --rounds N         ile razy najwyzej druga runda (maski wyjmowane i budowane od nowa)  (domyslnie 2)
  *   --ask              pytanie po kazdej masce: przyjac, wybrac inna, odrzucic, wpisac wlasna, cofnac (bez drugiej rundy)
  *   --what-if          takze wyniki dla wag masks + exclude, large, start podzielonych i pomnozonych przez 2 (7 razy dluzej)
- *   --log PLIK         dziennik do pliku zamiast na ekran
+ *   --log PLIK         dziennik do pliku zamiast na ekran (z --next: dopisywany)
+ *   --next PLIK        kolejna maska do FILTLIST z pliku: wczytuje ja (brak pliku = zaczyna od zera), dobiera maske dla malych
+ *                      zbiorow, ktorych FILTLIST jeszcze nie obejmuje, i dopisuje INCLUDE (i EXCLUDE) do tego pliku;
+ *                      poprzednia wersja zostaje w PLIK.bak. Masek z pliku nie zmienia; granice i punkty dotycza calej listy
+ *   --steps N          z --next: ile masek w jednym przebiegu; max = do konca     (domyslnie 1)
  *                      Z --build takze: --max-large, --exclude-min, --exclude-loss (1%), --max-masks, --partial, --verify, --time
  *
  *   --quals N          zamiast masek: najczestsze kombinacje 1..N kwalifikatorow w malych zbiorach (N 1-4), osobna tabela
@@ -62,6 +66,11 @@
  *   --time SEK         limit czasu --quals i --compact; potem wynik czesciowy                     (domyslnie 600)
  *   --try LISTA        sprawdza podane kombinacje i ich skrocenia, np. "PROD+SYSOUT, LOGDAY, TMP*"
  *                      Z --quals i --try: --min-purity tylko, gdy podane (domyslnie bez progu); --out: CSV z maskami
+ *
+ *   --config PLIK      ustawienia z pliku JSON (z komentarzami); opcje z wiersza polecen maja pierwszenstwo, a pola, ktore nie
+ *                      dotycza trybu pracy, sa pomijane. Plik CSV mozna podac w polu input
+ *   --save-config PLIK zapisuje obecne ustawienia (plik i wiersz polecen) z komentarzem do kazdego pola; bez pliku CSV
+ *                      na tym konczy, z plikiem pracuje dalej. Istniejacy plik zostaje jako PLIK.bak
  *
  * WARUNKI: pole, operator (= != < <= > >=), wartosc; kilka warunkow po spacji = wszystkie naraz (AND).
  *   Wartosc tekstowa po = / != moze byc maska: dsn=PROD.**  sg=SGEAV*
@@ -74,11 +83,12 @@
  */
 import fs from 'node:fs';
 import { parseArgs } from 'node:util';
-import { Answer, buildList, BuildOptions, BuildResult, Change, Points, POINTS, Proposal, Totals } from './auto-build';
+import { Answer, buildList, BuildOptions, BuildResult, Change, MaskLists, Points, POINTS, Proposal, Totals } from './auto-build';
 import { acsProblem, ExcludeResult, filtlistText, findExcludes, maskTests, testFile } from './auto-acs';
 import { CheckInput, checkMasks, CheckResult, MaskListError, parseMaskList } from './auto-check';
 import { CompactResult, defaultPoint, findCompact, LargeLimit, Point } from './auto-compact';
 import { mine, MaskRow, MineOptions, MineResult } from './auto-mine';
+import { ConfigError, configText, mergeConfig, readConfig, Values } from './auto-config';
 import { Combo, findCombos, parseTries, QualResult, tryCombos, TryRow } from './auto-quals';
 import { BOOL, BoolField, Field, NUM, NumField, readStore, Store, STR, StrField } from './auto-read';
 import { Interner, Progress, thousands, Tick } from './auto-util';
@@ -130,8 +140,12 @@ const USAGE = 'Uzycie: node acs-masks-auto.cjs DCOLLECT.CSV [--scope "sms=true d
     + '         [--filtlist filtlist.txt] (najmniej masek INCLUDE i EXCLUDE, najwieksze pokrycie)\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --build [--weights "masks=1 large=4"] [--ask] [--what-if] [--log dziennik.txt]\n'
     + '         [--verify NOWSZY.CSV] [--filtlist filtlist.txt] (maska po masce, priorytety jako wagi)\n'
+    + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --build --next filtlist.txt [--steps 1] [opcje jak wyzej]\n'
+    + '         (kazdy przebieg dopisuje do filtlist.txt kolejna maske dla zbiorow jeszcze nie objetych)\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --quals 4 [--partial 3] [--top 20] [--time 600] [--try "PROD+SYSOUT, TMP*"]\n'
     + '         (najczestsze kombinacje kwalifikatorow; sprawdzanie kwalifikatorow niepelnych)\n'
+    + '   albo: node acs-masks-auto.cjs --config ustawienia.json [DCOLLECT.CSV] [opcje]   (ustawienia z pliku)\n'
+    + '         node acs-masks-auto.cjs --save-config ustawienia.json [opcje]             (zapis ustawien z opisem pol)\n'
     + `Pola liczbowe: ${NUM.join(' ')}\n     tekstowe: ${STR.join(' ')}\n     true / false: ${BOOL.join(' ')}\n`
     + 'Operatory: = != < <= > >=; kilka warunkow po spacji = wszystkie naraz\n';
 
@@ -152,6 +166,10 @@ Przyklady (DC = DCOLLECT.CSV; w pliku .bat kazdy % podwojnie, w PowerShell apost
   node acs-masks-auto.cjs DC --build --weights "masks=1 large=4"                   mniej masek, jeszcze mniej duzych
   node acs-masks-auto.cjs DC --build --what-if                                     co zmieni kazda waga
   node acs-masks-auto.cjs DC --build --ask                                         kazda maska do zatwierdzenia
+  node acs-masks-auto.cjs DC --build --next f.txt                                  kolejna maska dopisana do f.txt
+  node acs-masks-auto.cjs DC --build --next f.txt --steps 5 --log dziennik.txt     piec kolejnych masek
+  node acs-masks-auto.cjs DC --build --weights "masks=1" --save-config u.json      zapis ustawien (i przebieg)
+  node acs-masks-auto.cjs --config u.json                                          przebieg z zapisanych ustawien
   node acs-masks-auto.cjs DC --quals 4                                             najczestsze kombinacje 1-4 kwalifikatorow
   node acs-masks-auto.cjs DC --quals 2 --min-purity 0.95 --top 50                  tylko czyste, do 2 kwalifikatorow
   node acs-masks-auto.cjs DC --quals 3 --masks f.txt                               w zbiorach, ktorych lista nie obejmuje
@@ -494,7 +512,7 @@ const VARIANTS: { name: string; keys: (keyof Points)[]; by: number }[] = [
 ];
 
 /** Lista budowana po jednej masce. */
-export function build(file: string, scope: Conds, when: Conds, o: BuildOptions, extra: { verify?: string; whatIf: boolean; ask: boolean; unit: Unit }, bar: Progress, io: Io): WithInput<BuildRun> {
+export function build(file: string, scope: Conds, when: Conds, o: BuildOptions, extra: { verify?: string; whatIf: boolean; ask: boolean; unit: Unit; by?: { steps: number; done: (r: BuildResult) => void } }, bar: Progress, io: Io): WithInput<BuildRun> {
     const read = (name: string): CheckInput => {
         const st = load(name, scope, when, bar, io.err);
         const tick = bar.stage('Kryteria');
@@ -513,7 +531,7 @@ export function build(file: string, scope: Conds, when: Conds, o: BuildOptions, 
                 if (ask) bar.abort();
                 return tick;
             },
-        }, ask);
+        }, ask, extra.by);
         bar.done(`masek: ${r.include.length + r.exclude.length}, punkty: ${points(r.points)}`);
         return r;
     };
@@ -559,6 +577,8 @@ function askMask(list: Proposal[], no: number, now: Totals, last: Change | null,
         try {
             if (!/[.*]/.test(a)) throw new MaskError('nieznana odpowiedz');
             const { text, quals } = parseMask(a);
+            const problem = acsProblem(text);
+            if (problem) throw new MaskError(problem);
             if (o.head?.some((h, i) => quals[i] !== h)) throw new MaskError(`maska nie zaczyna sie od ${o.head.join('.')}`);
             return { mask: text };
         } catch (e) {
@@ -821,8 +841,9 @@ export function compactReport(r: CompactRun, c: CompactSettings, u: Unit = 'GB')
     return out.join('\n') + '\n';
 }
 
-export function compactCsv(r: { list: CheckResult | null }, u: Unit = 'GB'): string {
-    return [`${csvHead(u)};tylko_ta;stan`, ...(r.list?.rows ?? []).map(m => [...csvCells(m, u), m.only, ''].join(';')),
+/** old: ile pierwszych masek juz bylo; dalsze maja stan "nowa" */
+export function compactCsv(r: { list: CheckResult | null }, u: Unit = 'GB', old = Infinity): string {
+    return [`${csvHead(u)};tylko_ta;stan`, ...(r.list?.rows ?? []).map((m, i) => [...csvCells(m, u), m.only, i < old ? '' : 'nowa'].join(';')),
         ...(r.list?.excludes ?? []).map(m => [...csvCells(m, u), '', 'exclude'].join(';'))].join('\n') + '\n';
 }
 
@@ -830,13 +851,14 @@ export function compactCsv(r: { list: CheckResult | null }, u: Unit = 'GB'): str
 export function journalText(r: BuildResult): string {
     const out = ['Dziennik: jak powstala kazda maska (male / duze = objete maska, po jej EXCLUDE)'];
     r.include.forEach((text, i) => {
+        if (i < r.old.include) return;
         const m = r.how[i];
         out.push('', `${i + 1}. ${text}${m?.exclude.length ? `   EXCLUDE ${m.exclude.join('  ')}` : ''}${m ? '' : '   (wpisana)'}`);
         for (const s of m?.steps ?? []) {
             out.push(`     ${s.text.padEnd(44)}${String(s.small).padStart(9)} /${String(s.large).padStart(8)}${pct(s.small + s.large ? s.small / (s.small + s.large) : 0).padStart(8)}   ${s.note}`);
         }
     });
-    out.push('', 'Zmiany listy po kolei', '', ...r.changes.map(c => `${points(c.points).padStart(9)}   ${c.text}`));
+    if (r.changes.length) out.push('', 'Zmiany listy po kolei', '', ...r.changes.map(c => `${points(c.points).padStart(9)}   ${c.text}`));
     return out.join('\n') + '\n';
 }
 
@@ -877,6 +899,73 @@ export function buildReport(r: BuildRun, o: BuildOptions, file: string | undefin
     return out.join('\n') + '\n';
 }
 
+/** Raport jednego przebiegu --next: co doszlo do FILTLIST i co zostalo. */
+export function nextReport(r: BuildRun, o: BuildOptions, next: string, file: string | undefined, u: Unit = 'GB'): string {
+    const { result: res, list } = r;
+    const { old, before: was, totals: now } = res;
+    const out = [`Zbiorow w zakresie: ${list.small + list.large}, malych: ${list.small}, duzych: ${list.large}`,
+        `Duze w liscie: do ${limitText(o.maxLarge, u)}   male stracone przez EXCLUDE: do ${pctOf(o.loss)}`, `Wagi: ${weightsText(o.weights)}`, ''];
+    if (res.stopped) out.push('Uwaga: przerwano po czasie --time.', '');
+    const fresh = list.rows.slice(old.include);
+    const freshEx = list.excludes.slice(old.exclude);
+    if (fresh.length) {
+        out.push(fresh.length === 1 ? 'Nowa maska (liczby po EXCLUDE)' : `Nowe maski: ${fresh.length} (liczby po EXCLUDE)`, '', line([...heads(u), 'Tylko ta']));
+        for (const m of fresh) out.push(line([...cells(m, u), String(m.only)]));
+        out.push('');
+    }
+    if (freshEx.length) {
+        out.push(wide(['Nowy EXCLUDE', 'Duzych', `Duzych ${u}`, 'Malych']));
+        for (const m of freshEx) out.push(wide([m.text, String(m.large), inUnit(m.largeKb, u), String(m.small)]));
+        out.push('');
+    }
+    if (!fresh.length) {
+        const full = res.include.length + res.exclude.length >= o.maxMasks;
+        out.push(full ? `Brak miejsca na kolejna maske: lista ma juz ${res.include.length + res.exclude.length} (--max-masks).`
+            : 'Brak kolejnej maski dla tych progow i wag. Wiecej da mniejsza waga masks albo start, mniejsze --min-count albo wieksze --max-large.', '');
+    }
+    out.push(wide([`FILTLIST ${next}`, 'INCLUDE', 'EXCLUDE', 'Malych', '% mal.', 'Duzych', `Duzych ${u}`, 'duze/male']));
+    const row = (name: string, inc: number, exc: number, t: Totals) => wide([name, String(inc), String(exc), String(t.small), part(t.small, list.small),
+        String(t.large), inUnit(t.largeKb, u), t.smallKb ? part(t.largeKb, t.smallKb) : '-']);
+    out.push(row('przed', old.include, old.exclude, was), row('po', res.include.length, res.exclude.length, now), '');
+    out.push(`Zostalo nieobjetych malych: ${res.left.small}${res.left.dead ? `, w tym wylaczonych przez EXCLUDE: ${res.left.dead}` : ''}`);
+    if (now.lost) out.push(`Male objete INCLUDE, ale wylaczone przez EXCLUDE: ${now.lost}`);
+    const cap = 'kb' in o.maxLarge ? o.maxLarge.kb : o.maxLarge.part * now.smallKb;
+    if (now.largeKb > cap + 1e-6) {
+        out.push('', `Uwaga: duze w liscie przekraczaja --max-large (${inUnit(now.largeKb, u)} z ${inUnit(cap, u)} ${u}); do tego czasu nowe maski nie moga dodac duzych.`);
+    }
+    if (r.verified && file !== undefined) out.push(...verifyReport(r.verified, list, file, o.maxLarge, u));
+    return out.join('\n') + '\n';
+}
+
+/** Plik --next: FILTLIST (albo sam INCLUDE), przed nia komentarze. */
+export interface NextFile extends MaskLists {
+    name: string;
+    /** tekst przed FILTLIST */
+    lead: string;
+    warnings: string[];
+}
+
+export function readNext(file: string): NextFile {
+    let text = '';
+    try {
+        text = fs.readFileSync(file, 'latin1').replace(/^\xef\xbb\xbf/, '');
+    } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    }
+    const clean = text.replace(/\/\*[\s\S]*?\*\//g, c => c.replace(/[^\n]/g, ' '));
+    if (!clean.trim()) return { name: 'MALE', lead: text.trim() ? `${text.trimEnd()}\n` : '', include: [], exclude: [], warnings: [] };
+    const start = /(^|\s)(FILTLIST|INCLUDE\s*\()/i.exec(clean);
+    if (!start || !/(^|\s)INCLUDE\s*\(/i.test(clean)) throw new ArgError(`--next: ${file} to nie FILTLIST z INCLUDE(...)`);
+    const names = [...clean.matchAll(/(?:^|\s)FILTLIST\s+([^\s(]+)/gi)].map(m => m[1].toUpperCase());
+    if (names.length > 1) throw new ArgError(`--next: ${file} - jedna FILTLIST w pliku (jest ${names.length})`);
+    const list = parseMaskList(text, file);
+    const at = start.index + start[1].length;
+    const lead = text.slice(0, at).trimEnd();
+    const warnings = list.warnings.slice();
+    if (text.slice(at).includes('/*')) warnings.push(`${file}: komentarze wewnatrz i za FILTLIST nie zostana przepisane`);
+    return { name: names[0] ?? 'MALE', lead: lead ? `${lead}\n` : '', include: list.masks, exclude: list.excludes, warnings };
+}
+
 /** "masks=1 large=4" (takze po przecinku) */
 export function parseWeights(text: string): Points {
     const w = { ...POINTS };
@@ -902,59 +991,49 @@ function largeLimit(v: string): LargeLimit {
     return { part: num(v.trim().replace(/%$/, ''), 'max-large', 0, 10000, false) / 100 };
 }
 
+const text = { type: 'string' } as const;
+const flag = { type: 'boolean' } as const;
+export const OPTIONS = {
+    scope: text, when: text, prefix: text, 'min-purity': text, 'min-count': text, 'max-masks': text, wild: text, masks: text, quals: text, partial: text,
+    top: text, time: text, try: text, unit: text, out: { type: 'string', short: 'o' }, exclude: flag, 'exclude-min': text, 'exclude-gain': text,
+    'exclude-loss': text, compact: flag, 'max-large': text, pick: text, 'any-start': flag, verify: text, build: flag, weights: text, beam: text, rounds: text,
+    ask: flag, 'what-if': flag, log: text, next: text, steps: text, filtlist: text, tests: text, 'per-mask': text, 'test-prefix': text,
+    config: text, 'save-config': text, help: { type: 'boolean', short: 'h' },
+} as const;
+const DEFAULTS = {
+    scope: 'sms=true dsorg=PS', when: 'allocTrk=315 usedTrk<=3', 'max-masks': '100', unit: 'GB', 'exclude-min': '2', 'per-mask': '1', 'test-prefix': 'ACM',
+    exclude: false, compact: false, 'any-start': false, build: false, ask: false, 'what-if': false,
+};
+
 export function main(argv: string[], io: Io = STDIO): number {
     let bar: Progress | null = null;
     const progress = (stages: number) => bar = new Progress(stages, io.err, io.tty ?? false, () => process.stderr.columns || 80);
     try {
-        const { values: o, positionals } = parseArgs({
+        const { values: cli, positionals: given } = parseArgs({
             args: argv,
             allowPositionals: true,
-            options: {
-                scope: { type: 'string', default: 'sms=true dsorg=PS' },
-                when: { type: 'string', default: 'allocTrk=315 usedTrk<=3' },
-                prefix: { type: 'string' },
-                'min-purity': { type: 'string' },
-                'min-count': { type: 'string' },
-                'max-masks': { type: 'string', default: '100' },
-                wild: { type: 'string' },
-                masks: { type: 'string' },
-                quals: { type: 'string' },
-                partial: { type: 'string' },
-                top: { type: 'string' },
-                time: { type: 'string' },
-                try: { type: 'string' },
-                unit: { type: 'string', default: 'GB' },
-                out: { type: 'string', short: 'o' },
-                exclude: { type: 'boolean', default: false },
-                'exclude-min': { type: 'string', default: '2' },
-                'exclude-gain': { type: 'string' },
-                'exclude-loss': { type: 'string' },
-                compact: { type: 'boolean', default: false },
-                'max-large': { type: 'string' },
-                pick: { type: 'string' },
-                'any-start': { type: 'boolean', default: false },
-                verify: { type: 'string' },
-                build: { type: 'boolean', default: false },
-                weights: { type: 'string' },
-                beam: { type: 'string' },
-                rounds: { type: 'string' },
-                ask: { type: 'boolean', default: false },
-                'what-if': { type: 'boolean', default: false },
-                log: { type: 'string' },
-                filtlist: { type: 'string' },
-                tests: { type: 'string' },
-                'per-mask': { type: 'string', default: '1' },
-                'test-prefix': { type: 'string', default: 'ACM' },
-                help: { type: 'boolean', short: 'h', default: false },
-            },
+            options: OPTIONS,
         });
-        if (o.help) {
+        if (cli.help) {
             io.out(HELP);
             return 0;
         }
-        if (positionals.length !== 1) {
+        const { config, 'save-config': saveConfig, help: _help, ...own } = cli;
+        const merged = mergeConfig(own as Values, config === undefined ? {} : readConfig(config));
+        if (merged.skipped.length) io.err(`Uwaga: ${config}: pominiete, nie dotycza tego trybu: ${merged.skipped.join(' ')}\n`);
+        const { input, ...set } = merged.values as { input?: string } & Partial<typeof own>;
+        const o = { ...DEFAULTS, ...set };
+        const positionals = given.length || input === undefined ? given : [input];
+        if (positionals.length > 1 || (positionals.length === 0 && saveConfig === undefined)) {
             io.err(USAGE);
             return 1;
+        }
+        if (saveConfig !== undefined) {
+            if (fs.existsSync(saveConfig)) fs.copyFileSync(saveConfig, `${saveConfig}.bak`);
+            fs.writeFileSync(saveConfig, configText({ ...merged.all, input: positionals[0] }, parseWeights(String(merged.all.weights ?? ''))));
+            io.err(`Zapisano: ${saveConfig}\n`);
+            // bez pliku w wierszu polecen: sam zapis
+            if (given.length === 0) return 0;
         }
         const scope = parseConds(o.scope!, 'scope');
         const when = parseConds(o.when!, 'when');
@@ -978,8 +1057,15 @@ export function main(argv: string[], io: Io = STDIO): number {
         };
         const exGain = percent(o['exclude-gain'] ?? '0.5', 'exclude-gain');
         const loss = percent(o['exclude-loss'] ?? (o.compact || o.build ? '1' : '0'), 'exclude-loss');
-        const onlyBuild = (['ask', 'what-if'] as const).find(x => o[x]) ?? (['weights', 'beam', 'rounds', 'log'] as const).find(x => o[x] !== undefined);
+        const onlyBuild = (['ask', 'what-if'] as const).find(x => o[x]) ?? (['weights', 'beam', 'rounds', 'log', 'next'] as const).find(x => o[x] !== undefined);
         if (onlyBuild && !o.build) throw new ArgError(`--${onlyBuild}: tylko z --build`);
+        if (o.steps !== undefined && o.next === undefined) throw new ArgError('--steps: tylko z --next');
+        if (o.next !== undefined) {
+            if (o.filtlist !== undefined) throw new ArgError('--filtlist: nie z --next (maski trafiaja do pliku z --next)');
+            if (o['what-if']) throw new ArgError('--what-if: nie z --next');
+            if (o.rounds !== undefined) throw new ArgError('--rounds: nie z --next (masek z listy skrypt nie zmienia)');
+            if (o.ask && o.steps !== undefined) throw new ArgError('--steps: nie z --ask');
+        }
         if (o.build) {
             const other = (['compact', 'exclude', 'any-start'] as const).find(x => o[x])
                 ?? (['masks', 'quals', 'try', 'top', 'pick', 'wild', 'exclude-gain'] as const).find(x => o[x] !== undefined);
@@ -1060,6 +1146,36 @@ export function main(argv: string[], io: Io = STDIO): number {
                 rounds: num(o.rounds ?? '2', 'rounds', 0, 100, true), head: opt.head, seconds: num(o.time ?? '600', 'time', 1, 1e6, true),
             };
             const p = progress(4 + 2 * VARIANTS.length * Number(o['what-if']) + 2 * Number(o.verify !== undefined) + Number(o.tests !== undefined));
+            if (o.next !== undefined) {
+                const { next } = o;
+                const list = readNext(next);
+                for (const w of list.warnings) io.err(`Uwaga: ${w}\n`);
+                b.base = { include: list.include, exclude: list.exclude };
+                const steps = o.steps === 'max' ? Infinity : num(o.steps ?? '1', 'steps', 1, 1e6, true);
+                let written = false;
+                /** po kazdej masce, zeby przerwany przebieg nic nie stracil */
+                const write = (x: BuildResult) => {
+                    if (!written && fs.existsSync(next)) fs.copyFileSync(next, `${next}.bak`);
+                    written = true;
+                    fs.writeFileSync(next, list.lead + filtlistText(list.name, x.include, x.exclude).join('\n') + '\n', 'latin1');
+                };
+                const r = build(positionals[0], scope, when, b, { verify: o.verify, whatIf: false, ask: o.ask!, unit, by: o.ask ? undefined : { steps, done: write } }, p, io);
+                const { result } = r;
+                const changed = result.include.length > list.include.length || result.exclude.length > list.exclude.length;
+                if (o.ask && changed) write(result);
+                io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek masek: ${opt.head.join('.')}` : ''}   min. purity: ${pct(opt.minPurity)}\n`);
+                io.out(nextReport(r, b, next, o.verify, unit));
+                if (changed) {
+                    const journal = journalText(result);
+                    if (o.log === undefined) io.out(`\n${journal}`);
+                    else fs.appendFileSync(o.log, `${journal}\n`);
+                }
+                if (result.include.length) finish(p, r.input, result.include, result.exclude);
+                save(o.out, compactCsv(r, unit, result.old.include));
+                io.err(changed ? `Zapisano: ${next} (INCLUDE: ${result.include.length}, EXCLUDE: ${result.exclude.length})${fs.existsSync(`${next}.bak`) && list.include.length ? `, poprzednia wersja: ${next}.bak` : ''}\n`
+                    : `${next}: bez zmian\n`);
+                return 0;
+            }
             const r = build(positionals[0], scope, when, b, { verify: o.verify, whatIf: o['what-if']!, ask: o.ask!, unit }, p, io);
             io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek masek: ${opt.head.join('.')}` : ''}   min. purity: ${pct(opt.minPurity)}\n`);
             io.out(buildReport(r, b, o.verify, unit));
@@ -1112,7 +1228,7 @@ export function main(argv: string[], io: Io = STDIO): number {
         (bar as Progress | null)?.abort();
         const e = err as NodeJS.ErrnoException;
         if (e instanceof ArgError || e instanceof CsvError || e instanceof MaskError || e instanceof MaskListError
-            || e instanceof TestCaseError) {
+            || e instanceof TestCaseError || e instanceof ConfigError) {
             io.err(`Blad: ${e.message}\n`);
         } else if (e.code?.startsWith('ERR_PARSE_ARGS')) {
             io.err(`${e.message}\n${USAGE}`);
