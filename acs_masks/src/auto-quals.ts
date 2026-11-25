@@ -285,7 +285,12 @@ export interface Sequences {
     rowSeq: Int32Array;
 }
 
-export function buildSequences(n: Names, min: number, partial: number, hasHead: boolean, tick: Tick): Sequences {
+/** Ile roznych kwalifikatorow zaczyna sie od tych samych liter przed pierwsza cyfra, zeby byl to numer, nie nazwa. */
+const NUMBERS = 10;
+
+/** stars: do kazdego elementu z % takze z * zamiast grupy % (D%%%%%% i D*), bez czesci numerow (JA1*, gdy numerow JAnnn jest wiele);
+ *  extra: dodatkowe elementy */
+export function buildSequences(n: Names, min: number, partial: number, hasHead: boolean, tick: Tick, stars = false, extra: string[] = []): Sequences {
     const { quals, occ, other } = n;
     const texts = new Set<string>();
     for (let id = 0; id < quals.size; id++) if (occ[id] >= min) texts.add(quals.text(id));
@@ -295,7 +300,20 @@ export function buildSequences(n: Names, min: number, partial: number, hasHead: 
         for (const t of buildPatterns(quals, occ, min, p => tick(0.2 * p)).texts) if (literalChars(t)) patterns.add(t);
         for (const t of patterns) texts.add(t);
         for (const t of buildPartials(quals, occ, min, partial)) texts.add(t);
+        if (stars) {
+            const stems = new Map<string, number>();
+            for (let id = 0; id < quals.size; id++) {
+                const stem = /^([A-Z#@$]+)[0-9]/.exec(quals.text(id))?.[1];
+                if (stem !== undefined) stems.set(stem, (stems.get(stem) ?? 0) + 1);
+            }
+            for (const t of [...texts]) {
+                const number = /^([A-Z#@$]+)[0-9]+[%*]+$/.exec(t);
+                if (number && (stems.get(number[1]) ?? 0) >= NUMBERS) texts.delete(t);
+                else if (t.includes('%')) texts.add(t.replace(/%+\*?|\*%+/g, '*'));
+            }
+        }
     }
+    for (const t of extra) texts.add(t);
     const tokens = [...texts].map((text, i): Token => ({
         text, kind: i < literals ? 0 : patterns.has(text) ? 2 : 1, lit: literalChars(text), stars: starChars(text), dated: i < literals && DATED.test(text),
     }));

@@ -483,380 +483,6 @@ function within(a, b) {
 }
 };
 
-// ==================== src/mask.ts
-MODULES["./mask"] = function (exports, require, module) {
-"use strict";
-/**
- * Maski nazw zbiorow jak w FILTLIST rutyn ACS:
- *   %   - dokladnie jeden znak w kwalifikatorze
- *   *   - zero lub wiecej znakow w kwalifikatorze; samo "*" = dokladnie jeden kwalifikator
- *   **  - zero lub wiecej kwalifikatorow (tylko jako caly kwalifikator)
- * Np. PROD.TMP.**, *.**.LOAD, PROD.D%%%%%%.LIST, SYS1.LINKLIB (literal).
- */
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.MaskError = void 0;
-exports.parseMask = parseMask;
-exports.qualMatches = qualMatches;
-exports.matchQuals = matchQuals;
-exports.matches = matches;
-exports.digitMask = digitMask;
-const QUAL_CHARS = /^[A-Z0-9#@$*%{-]{1,8}$/;
-class MaskError extends Error {
-}
-exports.MaskError = MaskError;
-/** Sprawdza i rozbija maske; rzuca MaskError z opisem bledu. */
-function parseMask(text) {
-    const t = text.trim().toUpperCase();
-    if (t.length === 0 || t.length > 44)
-        throw new MaskError(`maska "${text}": dlugosc 1-44 znaki`);
-    const quals = t.split('.');
-    for (const q of quals) {
-        if (q === '**')
-            continue;
-        if (!QUAL_CHARS.test(q))
-            throw new MaskError(`maska "${text}": niepoprawny kwalifikator "${q}"`);
-        if (q.includes('**'))
-            throw new MaskError(`maska "${text}": "**" tylko jako caly kwalifikator`);
-    }
-    return { text: t, quals, generic: /[*%]/.test(t) };
-}
-const qualRegexCache = new Map();
-function qualRegex(q) {
-    let re = qualRegexCache.get(q);
-    if (!re) {
-        const body = q === '*' ? '.+' : q.replace(/[$#@{-]/g, c => '\\' + c).replace(/\*/g, '.*').replace(/%/g, '.');
-        re = new RegExp('^' + body + '$');
-        qualRegexCache.set(q, re);
-    }
-    return re;
-}
-/** Czy kwalifikator nazwy pasuje do kwalifikatora maski (bez '**'). */
-function qualMatches(maskQual, qual) {
-    if (!/[*%]/.test(maskQual))
-        return maskQual === qual;
-    return qualRegex(maskQual).test(qual);
-}
-/** Czy nazwa (rozbita na kwalifikatory) pasuje do maski. */
-function matchQuals(mask, dsn, mi = 0, di = 0) {
-    while (mi < mask.length) {
-        const m = mask[mi];
-        if (m === '**') {
-            // '**' = zero lub wiecej kwalifikatorow
-            for (let k = di; k <= dsn.length; k++) {
-                if (matchQuals(mask, dsn, mi + 1, k))
-                    return true;
-            }
-            return false;
-        }
-        if (di >= dsn.length || !qualMatches(m, dsn[di]))
-            return false;
-        mi++;
-        di++;
-    }
-    return di === dsn.length;
-}
-function matches(mask, dsn) {
-    return matchQuals(mask.quals, dsn.split('.'));
-}
-/** Cyfry kwalifikatora -> '%' (np. D241113 -> D%%%%%%); null, gdy brak cyfr. */
-function digitMask(qual) {
-    return /[0-9]/.test(qual) ? qual.replace(/[0-9]/g, '%') : null;
-}
-};
-
-// ==================== src/auto-check.ts
-MODULES["./auto-check"] = function (exports, require, module) {
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.MaskListError = void 0;
-exports.parseMaskList = parseMaskList;
-exports.checkMasks = checkMasks;
-const auto_tree_1 = require("./auto-tree");
-const auto_util_1 = require("./auto-util");
-const mask_1 = require("./mask");
-/** ile masek wymienia powod zbednosci */
-const MAX_NOTE = 4;
-class MaskListError extends Error {
-}
-exports.MaskListError = MaskListError;
-/**
- * Lista masek z pliku: po jednej w linii albo po przecinku (wnetrze INCLUDE), FILTLIST z INCLUDE i EXCLUDE (plik
- * z --filtlist), w CSV pierwsza kolumna (plik z --out). Pelna nazwa moze byc w apostrofach; komentarze jak w ACS.
- * Powtorzone maski sa pomijane z ostrzezeniem.
- */
-function parseMaskList(text, file) {
-    const masks = [];
-    const excludes = [];
-    const warnings = [];
-    // komentarz zamieniony na same konce linii, zeby zgadzaly sie numery wierszy
-    const clean = text.replace(/^\ufeff/, '').replace(/\/\*[\s\S]*?\*\//g, c => c.replace(/[^\n]/g, ' '));
-    const fail = (i, msg) => new MaskListError(`${file}, wiersz ${i + 1}: ${msg}`);
-    const parse = (item, i) => {
-        const quoted = /^'(.*)'$/.exec(item);
-        if (quoted && /[*%]/.test(quoted[1]))
-            throw fail(i, `${item} - w apostrofach to pelna nazwa; maske podaj bez apostrofow`);
-        let mask;
-        try {
-            mask = (0, mask_1.parseMask)(quoted ? quoted[1] : item).text;
-        }
-        catch (e) {
-            throw fail(i, e.message);
-        }
-        if (/^[0-9]/.test(mask))
-            throw fail(i, `"${mask}" - nazwa zbioru nie zaczyna sie cyfra`);
-        return mask;
-    };
-    const add = (into, mask, i) => {
-        if (into.includes(mask))
-            warnings.push(`${file}, wiersz ${i + 1}: maska ${mask} powtorzona`);
-        else
-            into.push(mask);
-    };
-    const lines = clean.split(/\r?\n/);
-    if (/(^|\s)(INCLUDE|EXCLUDE)\s*\(/i.test(clean)) {
-        parseFiltlists(lines, fail).forEach((list, k) => {
-            list.include.forEach(x => add(masks, parse(x.item, x.line), x.line));
-            // EXCLUDE dziala tylko w swojej liscie; wspolne dla calego pliku jest tylko takie samo w kazdej
-            const own = [];
-            list.exclude.forEach(x => add(own, parse(x.item, x.line), x.line));
-            if (k === 0)
-                excludes.push(...own);
-            else if (own.length !== excludes.length || own.some(x => !excludes.includes(x)))
-                throw fail(list.line, 'FILTLIST maja rozne EXCLUDE - sprawdz kazda osobno');
-        });
-    }
-    else {
-        let state = -1;
-        lines.forEach((line, i) => {
-            if (/^T;DSN;/i.test(line))
-                throw fail(i, 'to CSV z DCOLLECT, a nie lista masek');
-            if (!line.includes(';')) {
-                line.split(/[\s,]+/).filter(Boolean).forEach(item => add(masks, parse(item, i), i));
-                return;
-            }
-            const cols = line.split(';').map(x => x.trim());
-            if (cols[0].toLowerCase() === 'maska')
-                state = cols.indexOf('stan');
-            else if (cols[0])
-                add(state >= 0 && cols[state] === 'exclude' ? excludes : masks, parse(cols[0], i), i);
-        });
-    }
-    if (masks.length === 0)
-        throw new MaskListError(`${file}: brak masek`);
-    return { masks, excludes, warnings };
-}
-/** FILTLIST nazwa INCLUDE(...) EXCLUDE(...), dowolnie wiele; bez innych instrukcji rutyny. */
-function parseFiltlists(lines, fail) {
-    const lists = [];
-    let section = null;
-    let expect = null;
-    lines.forEach((text, line) => {
-        // + i - na koncu linii: kontynuacja
-        for (const tok of text.replace(/\s[+-]\s*$/, '').match(/[(),]|'[^']*'|[^\s(),]+/g) ?? []) {
-            const word = tok.toUpperCase();
-            if (expect === 'name') {
-                expect = null;
-            }
-            else if (expect === '(') {
-                if (tok !== '(')
-                    throw fail(line, `oczekiwano "(", jest "${tok}"`);
-                expect = null;
-            }
-            else if (section) {
-                if (tok === ')')
-                    section = null;
-                else if (tok === '(')
-                    throw fail(line, 'brak ")" przed "("');
-                else if (tok !== ',')
-                    section.push({ item: tok, line });
-            }
-            else if (word === 'FILTLIST') {
-                lists.push({ line, include: [], exclude: [] });
-                expect = 'name';
-            }
-            else if (word === 'INCLUDE' || word === 'EXCLUDE') {
-                // sam INCLUDE(...) bez FILTLIST
-                if (lists.length === 0)
-                    lists.push({ line, include: [], exclude: [] });
-                section = lists[lists.length - 1][word === 'INCLUDE' ? 'include' : 'exclude'];
-                expect = '(';
-            }
-            else {
-                throw fail(line, `"${tok}" - plik moze zawierac tylko FILTLIST`);
-            }
-        }
-    });
-    if (section)
-        throw fail(lines.length - 1, 'brak ")"');
-    return lists;
-}
-const purityOf = (small, large) => (small ? small / (small + large) : 0);
-function sumUp(text, groups) {
-    const r = { text, small: 0, large: 0, purity: 0, smallKb: 0, largeKb: 0 };
-    for (const g of groups) {
-        r.small += g.small;
-        r.large += g.large;
-        r.smallKb += g.smallKb;
-        r.largeKb += g.largeKb;
-    }
-    r.purity = purityOf(r.small, r.large);
-    return r;
-}
-function checkMasks(input, masks, excludes, tick) {
-    const { names, allocKb, pos, neg } = input;
-    const quals = masks.map(m => (0, mask_1.parseMask)(m).quals);
-    const tree = new auto_tree_1.MaskTree(quals);
-    const exTree = excludes.length ? new auto_tree_1.MaskTree(excludes.map(m => m.split('.'))) : null;
-    const exRows = excludes.map((text) => ({ text, small: 0, large: 0, purity: 0, smallKb: 0, largeKb: 0 }));
-    // ---- grupy zbiorow o tym samym zestawie masek
-    const single = [];
-    const multi = new Map();
-    const empty = (ids) => ({ ids, small: 0, large: 0, smallKb: 0, largeKb: 0 });
-    const groupOf = (row, isSmall) => {
-        const s = names.start[row];
-        const ids = tree.match(names.pool, s, s + names.len[row]);
-        const out = exTree?.match(names.pool, s, s + names.len[row]) ?? [];
-        if (out.length) {
-            for (const x of ids.length ? out : []) {
-                exRows[x][isSmall ? 'small' : 'large']++;
-                exRows[x][isSmall ? 'smallKb' : 'largeKb'] += allocKb[row];
-            }
-            return 'excluded';
-        }
-        if (ids.length === 0)
-            return null;
-        if (ids.length === 1)
-            return single[ids[0]] ??= empty(ids);
-        const key = ids.join();
-        let g = multi.get(key);
-        if (!g)
-            multi.set(key, g = empty(ids));
-        return g;
-    };
-    const count = pos.length + neg.length;
-    let smallKb = 0;
-    const restPos = new auto_util_1.IntList();
-    const restNeg = new auto_util_1.IntList();
-    for (let x = 0; x < pos.length; x++) {
-        if ((x & 0x3fff) === 0)
-            tick(x / count);
-        smallKb += allocKb[pos[x]];
-        const g = groupOf(pos[x], true);
-        if (g === 'excluded')
-            continue;
-        if (!g) {
-            restPos.push(pos[x]);
-            continue;
-        }
-        g.small++;
-        g.smallKb += allocKb[pos[x]];
-    }
-    for (let x = 0; x < neg.length; x++) {
-        if ((x & 0x3fff) === 0)
-            tick((pos.length + x) / count);
-        const g = groupOf(neg[x], false);
-        if (g === 'excluded')
-            continue;
-        if (!g) {
-            restNeg.push(neg[x]);
-            continue;
-        }
-        g.large++;
-        g.largeKb += allocKb[neg[x]];
-    }
-    const groups = [...single.filter(g => g !== undefined), ...multi.values()];
-    const of = masks.map(() => []);
-    for (const g of groups)
-        for (const m of g.ids)
-            of[m].push(g);
-    const rows = masks.map((text, m) => ({ ...sumUp(text, of[m]), only: single[m]?.small ?? 0, note: '', state: '' }));
-    // ---- zawieranie: w danych kazdy zbior maski m obejmuje tez b, a potem porownanie samych masek
-    const inside = masks.map((_, m) => {
-        const cand = of[m].length ? of[m].reduce((s, g) => s.filter(b => g.ids.includes(b)), of[m][0].ids) : masks.map((_x, b) => b);
-        return cand.filter(b => b !== m && (0, auto_tree_1.within)(quals[m], quals[b]));
-    });
-    // ---- zbedne: od najnizszej czystosci, przy rownej najpierw zawarte w innej, potem mniej malych, potem dalsze na liscie
-    const left = masks.map(() => true);
-    const cover = new Map(groups.map(g => [g, g.ids.length]));
-    const needed = (m) => of[m].some(g => g.small > 0 && cover.get(g) < 2);
-    const spare = masks.map((_, m) => m).filter(m => !needed(m));
-    spare.sort((a, b) => rows[a].purity - rows[b].purity || Number(inside[b].length > 0) - Number(inside[a].length > 0)
-        || rows[a].small - rows[b].small || b - a);
-    for (const m of spare) {
-        if (needed(m)) {
-            rows[m].state = 'zamiast';
-            continue;
-        }
-        rows[m].state = 'usun';
-        left[m] = false;
-        for (const g of of[m])
-            cover.set(g, cover.get(g) - 1);
-    }
-    for (const m of spare) {
-        // powod usuniecia odwoluje sie do masek, ktore zostaja; "zamiast" - do wszystkich
-        const refers = (b) => left[b] || left[m];
-        const wider = inside[m].filter(refers).sort((a, b) => rows[b].small - rows[a].small || a - b);
-        if (wider.length)
-            rows[m].note = `zawiera sie w ${masks[wider[0]]}`;
-        else if (of[m].length === 0)
-            rows[m].note = 'nie pasuje do zadnego zbioru';
-        else if (rows[m].small === 0)
-            rows[m].note = `nie obejmuje malych zbiorow (duzych: ${rows[m].large})`;
-        else {
-            const by = coveredBy(m, of[m], refers).map(b => masks[b]);
-            const more = by.length > MAX_NOTE ? ` i ${by.length - MAX_NOTE} innych` : '';
-            rows[m].note = `w danych jej male zbiory obejmuja: ${by.slice(0, MAX_NOTE).join(', ')}${more}`;
-        }
-    }
-    // ---- pary ze wspolnymi zbiorami
-    const pairs = new Map();
-    for (const g of groups) {
-        for (let i = 0; i < g.ids.length; i++) {
-            for (let j = i + 1; j < g.ids.length; j++) {
-                const key = g.ids[i] * masks.length + g.ids[j];
-                let o = pairs.get(key);
-                if (!o)
-                    pairs.set(key, o = { a: masks[g.ids[i]], b: masks[g.ids[j]], small: 0, large: 0, partA: 0, partB: 0 });
-                o.small += g.small;
-                o.large += g.large;
-            }
-        }
-    }
-    for (const [key, o] of pairs) {
-        o.partA = o.small / Math.max(1, rows[Math.floor(key / masks.length)].small);
-        o.partB = o.small / Math.max(1, rows[key % masks.length].small);
-    }
-    const overlaps = [...pairs].sort(([ka, a], [kb, b]) => b.small - a.small || b.large - a.large || ka - kb).map(([, o]) => o);
-    return {
-        small: pos.length,
-        large: neg.length,
-        smallKb,
-        rows,
-        total: sumUp('RAZEM', groups),
-        after: sumUp('RAZEM PO USUNIECIU', groups.filter(g => g.ids.some(m => left[m]))),
-        overlaps,
-        rest: { pos: restPos.a.slice(0, restPos.n), neg: restNeg.a.slice(0, restNeg.n) },
-        excludes: exRows,
-    };
-}
-/** Maski (poza m), ktore razem obejmuja male zbiory maski m - zachlannie, od obejmujacej najwiecej. */
-function coveredBy(m, groups, allowed) {
-    let open = groups.filter(g => g.small > 0);
-    const out = [];
-    while (open.length) {
-        const sum = new Map();
-        for (const g of open)
-            for (const b of g.ids)
-                if (b !== m && allowed(b))
-                    sum.set(b, (sum.get(b) ?? 0) + g.small);
-        const best = [...sum].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0][0];
-        out.push(best);
-        open = open.filter(g => !g.ids.includes(best));
-    }
-    return out;
-}
-};
-
 // ==================== src/auto-mine.ts
 MODULES["./auto-mine"] = function (exports, require, module) {
 "use strict";
@@ -1776,6 +1402,87 @@ function buildPatterns(quals, occ, min, tick) {
 }
 };
 
+// ==================== src/mask.ts
+MODULES["./mask"] = function (exports, require, module) {
+"use strict";
+/**
+ * Maski nazw zbiorow jak w FILTLIST rutyn ACS:
+ *   %   - dokladnie jeden znak w kwalifikatorze
+ *   *   - zero lub wiecej znakow w kwalifikatorze; samo "*" = dokladnie jeden kwalifikator
+ *   **  - zero lub wiecej kwalifikatorow (tylko jako caly kwalifikator)
+ * Np. PROD.TMP.**, *.**.LOAD, PROD.D%%%%%%.LIST, SYS1.LINKLIB (literal).
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MaskError = void 0;
+exports.parseMask = parseMask;
+exports.qualMatches = qualMatches;
+exports.matchQuals = matchQuals;
+exports.matches = matches;
+exports.digitMask = digitMask;
+const QUAL_CHARS = /^[A-Z0-9#@$*%{-]{1,8}$/;
+class MaskError extends Error {
+}
+exports.MaskError = MaskError;
+/** Sprawdza i rozbija maske; rzuca MaskError z opisem bledu. */
+function parseMask(text) {
+    const t = text.trim().toUpperCase();
+    if (t.length === 0 || t.length > 44)
+        throw new MaskError(`maska "${text}": dlugosc 1-44 znaki`);
+    const quals = t.split('.');
+    for (const q of quals) {
+        if (q === '**')
+            continue;
+        if (!QUAL_CHARS.test(q))
+            throw new MaskError(`maska "${text}": niepoprawny kwalifikator "${q}"`);
+        if (q.includes('**'))
+            throw new MaskError(`maska "${text}": "**" tylko jako caly kwalifikator`);
+    }
+    return { text: t, quals, generic: /[*%]/.test(t) };
+}
+const qualRegexCache = new Map();
+function qualRegex(q) {
+    let re = qualRegexCache.get(q);
+    if (!re) {
+        const body = q === '*' ? '.+' : q.replace(/[$#@{-]/g, c => '\\' + c).replace(/\*/g, '.*').replace(/%/g, '.');
+        re = new RegExp('^' + body + '$');
+        qualRegexCache.set(q, re);
+    }
+    return re;
+}
+/** Czy kwalifikator nazwy pasuje do kwalifikatora maski (bez '**'). */
+function qualMatches(maskQual, qual) {
+    if (!/[*%]/.test(maskQual))
+        return maskQual === qual;
+    return qualRegex(maskQual).test(qual);
+}
+/** Czy nazwa (rozbita na kwalifikatory) pasuje do maski. */
+function matchQuals(mask, dsn, mi = 0, di = 0) {
+    while (mi < mask.length) {
+        const m = mask[mi];
+        if (m === '**') {
+            // '**' = zero lub wiecej kwalifikatorow
+            for (let k = di; k <= dsn.length; k++) {
+                if (matchQuals(mask, dsn, mi + 1, k))
+                    return true;
+            }
+            return false;
+        }
+        if (di >= dsn.length || !qualMatches(m, dsn[di]))
+            return false;
+        mi++;
+        di++;
+    }
+    return di === dsn.length;
+}
+function matches(mask, dsn) {
+    return matchQuals(mask.quals, dsn.split('.'));
+}
+/** Cyfry kwalifikatora -> '%' (np. D241113 -> D%%%%%%); null, gdy brak cyfr. */
+function digitMask(qual) {
+    return /[0-9]/.test(qual) ? qual.replace(/[0-9]/g, '%') : null;
+}
+};
+
 // ==================== src/auto-quals.ts
 MODULES["./auto-quals"] = function (exports, require, module) {
 "use strict";
@@ -2006,7 +1713,11 @@ function narrower(a, b, i = 0, j = 0) {
     }
     return i === a.length;
 }
-function buildSequences(n, min, partial, hasHead, tick) {
+/** Ile roznych kwalifikatorow zaczyna sie od tych samych liter przed pierwsza cyfra, zeby byl to numer, nie nazwa. */
+const NUMBERS = 10;
+/** stars: do kazdego elementu z % takze z * zamiast grupy % (D%%%%%% i D*), bez czesci numerow (JA1*, gdy numerow JAnnn jest wiele);
+ *  extra: dodatkowe elementy */
+function buildSequences(n, min, partial, hasHead, tick, stars = false, extra = []) {
     const { quals, occ, other } = n;
     const texts = new Set();
     for (let id = 0; id < quals.size; id++)
@@ -2022,7 +1733,24 @@ function buildSequences(n, min, partial, hasHead, tick) {
             texts.add(t);
         for (const t of buildPartials(quals, occ, min, partial))
             texts.add(t);
+        if (stars) {
+            const stems = new Map();
+            for (let id = 0; id < quals.size; id++) {
+                const stem = /^([A-Z#@$]+)[0-9]/.exec(quals.text(id))?.[1];
+                if (stem !== undefined)
+                    stems.set(stem, (stems.get(stem) ?? 0) + 1);
+            }
+            for (const t of [...texts]) {
+                const number = /^([A-Z#@$]+)[0-9]+[%*]+$/.exec(t);
+                if (number && (stems.get(number[1]) ?? 0) >= NUMBERS)
+                    texts.delete(t);
+                else if (t.includes('%'))
+                    texts.add(t.replace(/%+\*?|\*%+/g, '*'));
+            }
+        }
     }
+    for (const t of extra)
+        texts.add(t);
     const tokens = [...texts].map((text, i) => ({
         text, kind: i < literals ? 0 : patterns.has(text) ? 2 : 1, lit: (0, auto_mine_1.literalChars)(text), stars: (0, auto_mine_1.starChars)(text), dated: i < literals && auto_mine_1.DATED.test(text),
     }));
@@ -2629,6 +2357,1431 @@ function tryCombos(input, tries, partial, head, tick) {
                 seen.push(r);
         return [base, ...seen.slice(1).sort((a, b) => b.purity - a.purity || b.small - a.small)];
     });
+}
+};
+
+// ==================== src/auto-build.ts
+MODULES["./auto-build"] = function (exports, require, module) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Builder = exports.Space = exports.POINTS = void 0;
+exports.shapeCost = shapeCost;
+exports.enough = enough;
+exports.makeSpace = makeSpace;
+exports.buildList = buildList;
+const auto_mine_1 = require("./auto-mine");
+const auto_quals_1 = require("./auto-quals");
+const auto_util_1 = require("./auto-util");
+exports.POINTS = { small: 1, large: 2, masks: 0.5, exclude: 0.5, risk: 0.1, percent: 0.05, wild: 0.02, start: 2 };
+const ANY = { min: 0, any: true };
+const NEXT = { min: 0, any: false };
+const MAX_QUALS = 30;
+/** najwiecej kwalifikatorow i EXCLUDE jednej maski */
+const MAX_TOKS = 5;
+const MAX_EX = 2;
+/** przy tych samych zbiorach przegrywa szerszy odstep, potem mniej znakow stalych */
+const EPS = 1e-4;
+const LIT = 1e-5;
+/** najmniejsza purity maski przed EXCLUDE: w drugiej rundzie i przy pierwszym budowaniu (ostroznie) */
+const RAW = [0.5, 0.8];
+/** na ile masek najwyzej dzielona jest jedna w drugiej rundzie */
+const SPLIT = 4;
+const cubed = (x) => x * x * x;
+/** Nazwy jako ciagi klas kwalifikatorow i maski z elementow tych klas. */
+class Space {
+    input;
+    head;
+    minCount;
+    needKb;
+    partial;
+    extra;
+    q;
+    small;
+    large;
+    smallKb;
+    largeKb;
+    np;
+    nl;
+    allKb;
+    byText;
+    inClass = new Map();
+    lists = new Map();
+    /** minCount: od ilu malych element; needKb: od ilu KB duzych */
+    constructor(input, head, minCount, needKb, partial, extra, tick) {
+        this.input = input;
+        this.head = head;
+        this.minCount = minCount;
+        this.needKb = needKb;
+        this.partial = partial;
+        this.extra = extra;
+        const { names, allocKb, pos, neg } = input;
+        this.np = pos.length;
+        this.nl = neg.length;
+        const weight = new Float64Array(allocKb.length);
+        for (let i = 0; i < neg.length; i++)
+            weight[neg[i]] = allocKb[neg[i]] * (minCount / needKb);
+        const rows = new Int32Array(this.np + this.nl);
+        rows.set(pos);
+        rows.set(neg, this.np);
+        const n = (0, auto_quals_1.readNames)({ names, allocKb: weight, pos: rows, neg: new Int32Array(0) }, head.length, p => tick(0.4 * p), true);
+        this.q = (0, auto_quals_1.buildSequences)(n, minCount, partial, head.length > 0, p => tick(0.4 + 0.6 * p), true, extra);
+        const { count, rowSeq } = this.q;
+        this.small = new Float64Array(count);
+        this.large = new Float64Array(count);
+        this.smallKb = new Float64Array(count);
+        this.largeKb = new Float64Array(count);
+        let kb = 0;
+        for (let i = 0; i < rows.length; i++) {
+            const s = rowSeq[i];
+            if (i < this.np) {
+                this.small[s]++;
+                this.smallKb[s] += allocKb[rows[i]];
+                kb += allocKb[rows[i]];
+            }
+            else {
+                this.large[s]++;
+                this.largeKb[s] += allocKb[rows[i]];
+            }
+        }
+        this.allKb = kb;
+        this.byText = new Map(this.q.tokens.map((t, i) => [t.text, i]));
+    }
+    /** klasa -> czy pasuje element t */
+    has(t) {
+        let h = this.inClass.get(t);
+        if (h)
+            return h;
+        const { clsOff, clsTok } = this.q;
+        h = new Uint8Array(clsOff.length - 1);
+        for (let c = 0; c < h.length; c++) {
+            for (let y = clsOff[c]; y < clsOff[c + 1]; y++)
+                if (clsTok[y] === t)
+                    h[c] = 1;
+        }
+        this.inClass.set(t, h);
+        return h;
+    }
+    /** ciagi z elementem t na jakimkolwiek miejscu */
+    seqsOf(t) {
+        let l = this.lists.get(t);
+        if (l)
+            return l;
+        const { count, off, cls } = this.q;
+        const h = this.has(t);
+        const out = new auto_util_1.IntList();
+        for (let s = 0; s < count; s++) {
+            for (let p = off[s]; p < off[s + 1]; p++) {
+                if (!h[cls[p]])
+                    continue;
+                out.push(s);
+                break;
+            }
+        }
+        this.lists.set(t, l = out.a.slice(0, out.n));
+        return l;
+    }
+    text(m) {
+        const parts = this.head.slice();
+        const gap = (g) => {
+            for (let i = 0; i < g.min; i++)
+                parts.push('*');
+            if (g.any)
+                parts.push('**');
+        };
+        m.toks.forEach((t, i) => {
+            gap(m.gaps[i]);
+            parts.push(this.q.tokens[t].text);
+        });
+        gap(m.tail);
+        return parts.join('.');
+    }
+    /** null = element, ktorego nie ma (extra) */
+    parse(text) {
+        const quals = text.split('.');
+        if (this.head.some((h, i) => quals[i] !== h))
+            return null;
+        const m = { toks: [], gaps: [], tail: NEXT };
+        let g = { min: 0, any: false };
+        for (const x of quals.slice(this.head.length)) {
+            if (x === '**') {
+                g = { ...g, any: true };
+            }
+            else if (x === '*') {
+                g = { ...g, min: g.min + 1 };
+            }
+            else {
+                const t = this.byText.get(x);
+                if (t === undefined)
+                    return null;
+                m.toks.push(t);
+                m.gaps.push(g);
+                g = { min: 0, any: false };
+            }
+        }
+        m.tail = g;
+        return m;
+    }
+    static move(m, g) {
+        m <<= g.min;
+        // od najnizszej pozycji w gore
+        return g.any && m ? -(m & -m) : m;
+    }
+    matcher(m) {
+        const { off, cls } = this.q;
+        const has = m.toks.map(t => this.has(t));
+        return s => {
+            const base = off[s];
+            const n = off[s + 1] - base;
+            if (n > MAX_QUALS)
+                return false;
+            let at = 1;
+            for (let i = 0; i < has.length; i++) {
+                at = Space.move(at, m.gaps[i]);
+                let next = 0;
+                for (let p = 0; p < n; p++)
+                    if ((at >>> p) & 1 && has[i][cls[base + p]])
+                        next |= 1 << (p + 1);
+                if (next === 0)
+                    return false;
+                at = next;
+            }
+            return ((Space.move(at, m.tail) >>> n) & 1) === 1;
+        };
+    }
+    /** ciagi objete maska */
+    select(m, from) {
+        const ok = this.matcher(m);
+        let list = from;
+        if (!list) {
+            for (const t of m.toks) {
+                const l = this.seqsOf(t);
+                if (!list || l.length < list.length)
+                    list = l;
+            }
+        }
+        if (!list)
+            return Int32Array.from({ length: this.q.count }, (_, s) => s).filter(ok);
+        return list.filter(ok);
+    }
+}
+exports.Space = Space;
+/** zestaw ciagow jako tekst: suma, suma wymieszanych numerow i liczba */
+function coverKey(...lists) {
+    let a = 0;
+    let b = 0;
+    let n = 0;
+    for (const l of lists) {
+        for (let i = 0; i < l.length; i++) {
+            const h = Math.imul(l[i] + 1, 0x9e3779b1);
+            a = (a + Math.imul(h ^ (h >>> 15), 0x85ebca6b)) | 0;
+            b = (b ^ Math.imul(h ^ (h >>> 13), 0xc2b2ae35)) | 0;
+            n++;
+        }
+    }
+    return `#${a}|${b}|${n}`;
+}
+const key = (m) => `${m.toks}|${[...m.gaps, m.tail].map(g => g.min + (g.any ? '+' : ''))}`;
+const stars = (t) => t.split('*').length - 1;
+/** Koszt wygladu maski w punktach. */
+function shapeCost(text, w, head = 0) {
+    const quals = text.split('.');
+    let cost = (/^\*/.test(text) && head === 0 ? w.start : 0) - LIT * (0, auto_mine_1.literalChars)(text);
+    quals.forEach((x, i) => {
+        if (x === '**')
+            cost += i === quals.length - 1 ? EPS : w.wild + EPS;
+        else
+            cost += w.wild * stars(x) + w.percent * (x.split('%').length - 1);
+    });
+    return cost;
+}
+class Builder {
+    space;
+    opt;
+    w;
+    all;
+    deadline;
+    stopped = false;
+    /** jak powstaly maski */
+    origin = new Map();
+    /** wpisane, bez progu purity */
+    free = new Set();
+    constructor(space, opt) {
+        this.space = space;
+        this.opt = opt;
+        this.w = opt.weights;
+        this.all = Int32Array.from({ length: space.q.count }, (_, s) => s);
+        this.deadline = Date.now() + opt.seconds * 1000;
+    }
+    late() {
+        if (Date.now() > this.deadline)
+            this.stopped = true;
+        return this.stopped;
+    }
+    pSmall(n) {
+        return this.space.np ? this.w.small * 100 * n / this.space.np : 0;
+    }
+    pLarge(kb) {
+        return this.space.allKb ? this.w.large * 100 * kb / this.space.allKb : 0;
+    }
+    pRisk(kb) {
+        return this.space.allKb ? this.w.risk * 100 * kb / this.space.allKb : 0;
+    }
+    /** odrzucona: ten sam tekst albo te same ciagi (takze szerszy zapis, np. PAY.** i **.PAY.**) */
+    isBanned(st, banned) {
+        return banned.size > 0 && (banned.has(this.space.text(st.m)) || banned.has(coverKey(st.seqs, st.gone)));
+    }
+    loose(m) {
+        return this.space.head.length === 0 && (m.gaps[0].any || m.gaps[0].min > 0);
+    }
+    shape(m) {
+        return shapeCost(this.space.text(m), this.w, this.space.head.length);
+    }
+    exShape(m) {
+        // EXCLUDE z natury zaczyna sie od **, a przy tych samych zbiorach wygrywa szerszy
+        const text = this.space.text(m);
+        return shapeCost(text, { ...this.w, start: 0 }, this.space.head.length) + 2 * LIT * (0, auto_mine_1.literalChars)(text);
+    }
+    exPattern(t) {
+        return { toks: [t], gaps: [ANY], tail: ANY };
+    }
+    valid(m) {
+        const text = this.space.text(m);
+        return text.length <= auto_mine_1.MAX_LEN && ((0, auto_mine_1.literalChars)(text) > 0);
+    }
+    live(list) {
+        const { space } = this;
+        const n = space.q.count;
+        const dead = new Uint8Array(n);
+        const cov = new Uint8Array(n);
+        for (const e of list.exc)
+            for (let x = 0; x < e.seqs.length; x++)
+                dead[e.seqs[x]] = 1;
+        for (const e of list.inc)
+            for (let x = 0; x < e.seqs.length; x++)
+                cov[e.seqs[x]] = 1;
+        const l = {
+            ns: new Float64Array(n), nl: new Float64Array(n), us: new Float64Array(n), usKb: new Float64Array(n), ul: new Float64Array(n), dl: new Float64Array(n),
+            t: { small: 0, large: 0, smallKb: 0, largeKb: 0, lost: 0, hiddenKb: 0 },
+        };
+        for (let s = 0; s < n; s++) {
+            if (dead[s]) {
+                if (cov[s]) {
+                    l.t.lost += space.small[s];
+                    l.t.hiddenKb += space.largeKb[s];
+                }
+                else {
+                    l.dl[s] = space.largeKb[s];
+                }
+                continue;
+            }
+            l.ns[s] = space.small[s];
+            l.nl[s] = space.large[s];
+            if (cov[s]) {
+                l.t.small += space.small[s];
+                l.t.large += space.large[s];
+                l.t.smallKb += space.smallKb[s];
+                l.t.largeKb += space.largeKb[s];
+            }
+            else {
+                l.us[s] = space.small[s];
+                l.usKb[s] = space.smallKb[s];
+                l.ul[s] = space.largeKb[s];
+            }
+        }
+        return l;
+    }
+    parts(list, t) {
+        const { w, space } = this;
+        const none = { small: 0, large: 0, masks: 0, exclude: 0, risk: 0, percent: 0, wild: 0, start: 0 };
+        const only = (k) => {
+            const only1 = { ...none, [k]: w[k] };
+            const sum = (l, ex) => l.reduce((a, i) => a + shapeCost(space.text(i.m), ex ? { ...only1, start: 0 } : only1, space.head.length)
+                - shapeCost(space.text(i.m), none, space.head.length), 0);
+            return -sum(list.inc, false) - sum(list.exc, true);
+        };
+        return {
+            small: this.pSmall(t.small), large: -this.pLarge(t.largeKb), masks: -w.masks * list.inc.length, exclude: -w.exclude * list.exc.length, risk: -this.pRisk(t.hiddenKb),
+            percent: only('percent'), wild: only('wild'), start: only('start'),
+        };
+    }
+    score(list, t = this.live(list).t) {
+        let x = this.pSmall(t.small) - this.pLarge(t.largeKb) - this.pRisk(t.hiddenKb) - this.w.masks * list.inc.length - this.w.exclude * list.exc.length;
+        for (const i of list.inc)
+            x -= this.shape(i.m);
+        for (const i of list.exc)
+            x -= this.exShape(i.m);
+        return x;
+    }
+    largeOk(smallKb, largeKb) {
+        const { maxLarge } = this.opt;
+        return largeKb <= ('kb' in maxLarge ? maxLarge.kb : maxLarge.part * smallKb) + 1e-6;
+    }
+    /** granice calej listy */
+    allowed(list, l) {
+        const { loss, minPurity, maxMasks } = this.opt;
+        const { t } = l;
+        if (list.inc.length + list.exc.length > maxMasks || !this.largeOk(t.smallKb, t.largeKb) || t.lost > loss * (t.small + t.lost) + 1e-9)
+            return false;
+        return list.inc.every(i => {
+            let ns = 0;
+            let nl = 0;
+            for (let x = 0; x < i.seqs.length; x++) {
+                ns += l.ns[i.seqs[x]];
+                nl += l.nl[i.seqs[x]];
+            }
+            // wpisana przez uzytkownika zostaje (minPurity nie dotyczy)
+            return this.free.has(this.space.text(i.m)) || (0, auto_mine_1.purityOf)(ns, nl) >= minPurity;
+        });
+    }
+    /** najmniejsza purity maski bez EXCLUDE */
+    minRaw = RAW[0];
+    /** maska nie zaczyna sie od * ani ** */
+    anchored = false;
+    /** maska daje mniej nowych malych */
+    cap = Infinity;
+    measure(l, m, ex, seqs, gone, parent, note) {
+        const st = { m, ex, seqs, gone, us: 0, ns: 0, nl: 0, usKb: 0, ul: 0, lost: 0, hidden: 0, raw: 0, points: 0, parent, note };
+        let rawS = 0;
+        let rawL = 0;
+        for (let x = 0; x < seqs.length; x++) {
+            const s = seqs[x];
+            rawS += this.space.small[s];
+            rawL += this.space.large[s];
+            st.us += l.us[s];
+            st.ns += l.ns[s];
+            st.nl += l.nl[s];
+            st.usKb += l.usKb[s];
+            st.ul += l.ul[s];
+            st.hidden += l.dl[s];
+        }
+        for (let x = 0; x < gone.length; x++) {
+            rawS += this.space.small[gone[x]];
+            rawL += this.space.large[gone[x]];
+            st.lost += l.ns[gone[x]];
+            st.hidden += l.ul[gone[x]] + l.dl[gone[x]];
+        }
+        st.raw = (0, auto_mine_1.purityOf)(rawS, rawL);
+        st.points = this.pSmall(st.us) - this.pLarge(st.ul) - this.pRisk(st.hidden) - this.w.masks - this.w.exclude * ex.length - this.shape(m);
+        return st;
+    }
+    child(l, p, m, note) {
+        const ok = this.space.matcher(m);
+        return this.measure(l, m, p.ex, p.seqs.filter(ok), p.gone.filter(ok), p, note);
+    }
+    fresh(l, m, ex, parent, note) {
+        let seqs = this.space.select(m);
+        const gone = new auto_util_1.IntList();
+        if (ex.length) {
+            const hit = ex.map(t => this.space.matcher(this.exPattern(t)));
+            seqs = seqs.filter(s => {
+                const out = hit.some(f => f(s));
+                if (out)
+                    gone.push(s);
+                return !out;
+            });
+        }
+        return this.measure(l, m, ex, seqs, gone.a.slice(0, gone.n), parent, note);
+    }
+    /** czy maska moze wejsc do listy */
+    good(l, st) {
+        const { opt } = this;
+        return st.points > 0 && st.raw >= this.minRaw && st.us < this.cap && !(this.anchored && this.loose(st.m)) && this.largeOk(l.t.smallKb + st.usKb, l.t.largeKb + st.ul) && st.us >= opt.minCount * (1 + st.ex.length) && (0, auto_mine_1.purityOf)(st.ns, st.nl) >= opt.minPurity
+            && st.lost <= opt.loss * (st.ns + st.lost) + 1e-9 && this.valid(st.m);
+    }
+    /**
+     * Ranking elementow w zbiorach stanu: miejsca slot = odstep przed kwalifikatorem slot (dlugosc = za ostatnim),
+     * -1 = pierwszy kwalifikator nazwy. each(slot, element, nowe male, male, duze, KB duzych).
+     */
+    rank(l, st, each) {
+        const { off, cls, clsOff, clsTok, tokens } = this.space.q;
+        const { m, seqs } = st;
+        const k = m.toks.length;
+        const has = m.toks.map(t => this.space.has(t));
+        const open = [];
+        for (let i = 0; i <= k; i++)
+            if ((i < k ? m.gaps[i] : m.tail).any)
+                open.push(i);
+        if (k > 0 && m.gaps[0].any && m.gaps[0].min === 0)
+            open.push(-1);
+        const nt = tokens.length;
+        const stamp = new Int32Array(nt);
+        const us = new Float64Array(nt);
+        const ns = new Float64Array(nt);
+        const nl = new Float64Array(nt);
+        const ul = new Float64Array(nt);
+        let round = 0;
+        const from = new Int32Array(k + 1);
+        const till = new Int32Array(k + 1);
+        for (const slot of open) {
+            const touched = [];
+            for (let x = 0; x < seqs.length; x++) {
+                const s = seqs[x];
+                if (l.us[s] === 0 && l.nl[s] === 0 && l.ns[s] === 0)
+                    continue;
+                const base = off[s];
+                const n = off[s + 1] - base;
+                let lo = 0;
+                let hi = n;
+                if (slot === -1) {
+                    hi = Math.min(1, n);
+                    // pierwszy kwalifikator maski nie moze stac na poczatku nazwy
+                    if (k) {
+                        let p = n - 1;
+                        for (let i = k - 1; i >= 0 && p >= 0; p--)
+                            if (has[i][cls[base + p]])
+                                till[i--] = p;
+                        if (till[0] < 1)
+                            continue;
+                    }
+                }
+                else if (k) {
+                    // najwczesniejsze miejsca poczatku i najpozniejsze konca (odstepy dokladne sprawdza potem maska)
+                    let i = 0;
+                    for (let p = 0; p < n && i < slot; p++)
+                        if (has[i][cls[base + p]])
+                            from[i++] = p + 1;
+                    lo = slot ? from[slot - 1] : 0;
+                    i = k - 1;
+                    for (let p = n - 1; p >= 0 && i >= slot; p--)
+                        if (has[i][cls[base + p]])
+                            till[i--] = p;
+                    hi = slot < k ? till[slot] : n;
+                }
+                if (lo >= hi)
+                    continue;
+                round++;
+                for (let p = lo; p < hi; p++) {
+                    const c = cls[base + p];
+                    for (let y = clsOff[c]; y < clsOff[c + 1]; y++) {
+                        const t = clsTok[y];
+                        if (stamp[t] === round)
+                            continue;
+                        stamp[t] = round;
+                        if (us[t] + ns[t] + nl[t] === 0)
+                            touched.push(t);
+                        us[t] += l.us[s];
+                        ns[t] += l.ns[s];
+                        nl[t] += l.nl[s];
+                        ul[t] += l.ul[s];
+                    }
+                }
+            }
+            for (const t of touched) {
+                each(slot, t, us[t], ns[t], nl[t], ul[t]);
+                us[t] = ns[t] = nl[t] = ul[t] = 0;
+            }
+        }
+    }
+    insert(m, slot, t) {
+        if (slot === -1)
+            return { toks: [t, ...m.toks], gaps: [NEXT, ...m.gaps], tail: m.tail };
+        const toks = m.toks.slice();
+        const gaps = m.gaps.slice();
+        toks.splice(slot, 0, t);
+        if (slot === m.toks.length) {
+            gaps.push(m.tail);
+            return { toks, gaps, tail: ANY };
+        }
+        gaps.splice(slot, 1, gaps[slot], ANY);
+        return { toks, gaps, tail: m.tail };
+    }
+    percent(a, b) {
+        return `${(b ? 100 * a / b : 0).toFixed(1).replace('.', ',')}%`;
+    }
+    /** wagi rankingow: roznica czesci malych i duzych; male * purity^3 */
+    static ranks(us, ns, nl, allS, allL) {
+        return [(allS ? us / allS : 0) - (allL ? nl / allL : 0), us * cubed((0, auto_mine_1.purityOf)(ns, nl))];
+    }
+    /** Dalsze wersje stanu. */
+    expand(l, st) {
+        const { opt, space } = this;
+        const { tokens } = space.q;
+        const out = [];
+        const k = st.m.toks.length;
+        const min = opt.minCount;
+        if (k < MAX_TOKS) {
+            const adds = [];
+            this.rank(l, st, (slot, t, us, ns, nl) => {
+                if (us < min)
+                    return;
+                const [a, b] = Builder.ranks(us, ns, nl, st.us, st.nl);
+                adds.push({ slot, t, us, nl, a, b });
+            });
+            const picked = new Set();
+            for (const front of [true, false]) {
+                for (const by of ['a', 'b']) {
+                    let left = opt.beam;
+                    for (const x of adds.filter(y => (y.slot === -1) === front).sort((p, q) => q[by] - p[by] || q.us - p.us || p.t - q.t || p.slot - q.slot)) {
+                        if (left-- === 0)
+                            break;
+                        const id = (x.slot + 1) * tokens.length + x.t;
+                        if (picked.has(id))
+                            continue;
+                        picked.add(id);
+                        const m = this.insert(st.m, x.slot, x.t);
+                        if (!this.valid(m))
+                            continue;
+                        out.push(this.child(l, st, m, `+ ${tokens[x.t].text}  ranking 1: ${this.percent(x.us, st.us)} malych, ${this.percent(x.nl, st.nl)} duzych`));
+                    }
+                }
+            }
+        }
+        // ---- zawezenie
+        if (st.nl > 0) {
+            for (let i = 0; i <= k; i++) {
+                const g = i < k ? st.m.gaps[i] : st.m.tail;
+                if (!g.any)
+                    continue;
+                for (const to of [0, 1, 2]) {
+                    const gap = { min: to, any: false };
+                    const m = { toks: st.m.toks, gaps: st.m.gaps.map((x, j) => (j === i ? gap : x)), tail: i === k ? gap : st.m.tail };
+                    if (this.valid(m))
+                        out.push(this.child(l, st, m, 'zawezenie'));
+                }
+            }
+        }
+        // ---- EXCLUDE
+        if (st.ex.length < MAX_EX && st.nl > 0 && this.w.large > 0) {
+            const best = [];
+            this.rank(l, { m: { toks: [], gaps: [], tail: ANY }, seqs: st.seqs }, (_slot, t, us, ns, nl, ul) => {
+                if (nl < opt.exMin || st.m.toks.includes(t) || tokens[t].dated)
+                    return;
+                const v = this.pLarge(ul) - this.pSmall(us) - this.w.exclude;
+                const fits = st.lost + ns <= opt.loss * (st.ns + st.lost) + 1e-9;
+                // bez progu punktow: EXCLUDE moze byc potrzebny do purity
+                if (fits && (v > 0 || nl >= 0.2 * st.nl))
+                    best.push({ t, nl, ns, v: this.pLarge(ul) - this.pSmall(us), kind: tokens[t].kind });
+            });
+            best.sort((a, b) => b.v - a.v || a.kind - b.kind || a.t - b.t);
+            for (const e of best.slice(0, Math.max(2, opt.beam >> 2))) {
+                const hit = space.matcher(this.exPattern(e.t));
+                const gone = [...st.gone];
+                const seqs = st.seqs.filter(s => {
+                    const x = hit(s);
+                    if (x)
+                        gone.push(s);
+                    return !x;
+                });
+                out.push(this.measure(l, st.m, [...st.ex, e.t], seqs, Int32Array.from(gone), st, `EXCLUDE ${tokens[e.t].text}  ranking 2: ${this.percent(e.nl, st.nl)} duzych, ${this.percent(e.ns, st.ns)} malych`));
+            }
+        }
+        return out;
+    }
+    /** Najlepsze maski dla nieobjetych malych, od najwiekszej liczby punktow. */
+    search(l, banned) {
+        const { opt, space } = this;
+        const { tokens } = space.q;
+        const found = new Map();
+        let bestPoints = 0;
+        const room = { allS: 0, allL: 0 };
+        for (let s = 0; s < space.q.count; s++) {
+            room.allS += l.us[s];
+            room.allL += l.nl[s];
+        }
+        if (room.allS < opt.minCount)
+            return [];
+        const id = (st) => `${st.us}|${st.ns}|${st.nl}|${Math.round(st.ul)}|${st.ex.length}`;
+        const consider = (st) => {
+            if (!this.good(l, st) || this.isBanned(st, banned))
+                return;
+            const k = id(st);
+            const old = found.get(k);
+            if (old && old.points >= st.points)
+                return;
+            found.set(k, st);
+            bestPoints = Math.max(bestPoints, st.points);
+        };
+        // ---- start: najlepsze kwalifikatory na dowolnym i na pierwszym miejscu
+        const seeds = [];
+        for (const front of [false, true]) {
+            const base = front ? { toks: [], gaps: [], tail: ANY } : { toks: [], gaps: [], tail: ANY };
+            const add = (t, us, ns, nl) => {
+                if (us < opt.minCount)
+                    return;
+                const [a, b] = Builder.ranks(us, ns, nl, room.allS, room.allL);
+                seeds.push({ front, t, us, nl, a, b });
+            };
+            if (!front)
+                this.rank(l, { m: base, seqs: this.all }, (_s, t, us, ns, nl) => add(t, us, ns, nl));
+            else
+                this.rankFirst(l, add);
+        }
+        const picked = new Set();
+        let beam = [];
+        for (const front of [false, true]) {
+            for (const by of ['a', 'b']) {
+                for (const x of seeds.filter(y => y.front === front).sort((p, q) => q[by] - p[by] || q.us - p.us || p.t - q.t).slice(0, 3 * opt.beam)) {
+                    if (picked.has(`${front}${x.t}`))
+                        continue;
+                    picked.add(`${front}${x.t}`);
+                    const m = { toks: [x.t], gaps: [front ? NEXT : ANY], tail: ANY };
+                    if (!this.valid(m))
+                        continue;
+                    beam.push(this.fresh(l, m, [], null, `start: ${tokens[x.t].text}  ranking 1: ${this.percent(x.us, room.allS)} malych, ${this.percent(x.nl, room.allL)} duzych`));
+                }
+            }
+        }
+        beam.forEach(consider);
+        const seen = new Set();
+        for (let depth = 0; depth < 2 * MAX_TOKS && beam.length && !this.late(); depth++) {
+            const next = [];
+            for (const st of beam) {
+                if (this.late())
+                    break;
+                for (const c of this.expand(l, st)) {
+                    const k = `${key(c.m)}/${c.ex.slice().sort((a, b) => a - b)}`;
+                    if (seen.has(k) || c.us < opt.minCount)
+                        continue;
+                    seen.add(k);
+                    next.push(c);
+                }
+            }
+            next.forEach(consider);
+            // szansa: gdyby odpadly wszystkie duze
+            const hope = next.filter(st => st.nl > 0 && st.points + this.pLarge(st.ul) > bestPoints);
+            beam = [];
+            const same = new Set();
+            for (const front of [true, false]) {
+                const part = hope.filter(st => !st.m.gaps[0].any && st.m.gaps[0].min === 0 === front);
+                for (const by of [0, 1]) {
+                    const v = new Map(part.map(st => [st, Builder.ranks(st.us, st.ns, st.nl, room.allS, room.allL)[by]]));
+                    let left = Math.ceil(opt.beam / 2);
+                    for (const st of part.sort((a, b) => v.get(b) - v.get(a) || b.points - a.points || (key(a.m) < key(b.m) ? -1 : 1))) {
+                        if (left === 0)
+                            break;
+                        const k = `${front}${id(st)}`;
+                        if (same.has(k))
+                            continue;
+                        same.add(k);
+                        beam.push(st);
+                        left--;
+                    }
+                }
+            }
+        }
+        const list = [...found.values()].sort((a, b) => b.points - a.points || (this.space.text(a.m) < this.space.text(b.m) ? -1 : 1)).slice(0, 6);
+        const better = new Map();
+        for (const st of list) {
+            const x = this.improve(l, st, banned);
+            const k = space.text(x.m);
+            if (!better.has(k) || better.get(k).points < x.points)
+                better.set(k, x);
+        }
+        return [...better.values()].sort((a, b) => b.points - a.points || (this.space.text(a.m) < this.space.text(b.m) ? -1 : 1));
+    }
+    rankFirst(l, add) {
+        const { count, off, cls, clsOff, clsTok, tokens } = this.space.q;
+        const [us, ns, nl] = [0, 1, 2].map(() => new Float64Array(tokens.length));
+        for (let s = 0; s < count; s++) {
+            if (off[s] === off[s + 1])
+                continue;
+            const c = cls[off[s]];
+            for (let y = clsOff[c]; y < clsOff[c + 1]; y++) {
+                us[clsTok[y]] += l.us[s];
+                ns[clsTok[y]] += l.ns[s];
+                nl[clsTok[y]] += l.nl[s];
+            }
+        }
+        for (let t = 0; t < tokens.length; t++)
+            add(t, us[t], ns[t], nl[t]);
+    }
+    /** Odejmowanie i poprawianie gotowej maski: kazdy ruch, ktory daje wiecej punktow. */
+    improve(l, start, banned) {
+        const { space } = this;
+        const { tokens, clsOff, clsTok } = space.q;
+        let st = start;
+        for (let iter = 0; iter < 12 && !this.late(); iter++) {
+            const k = st.m.toks.length;
+            const tries = [];
+            const put = (m, note, ex = st.ex) => {
+                if (m.toks.length && this.valid(m))
+                    tries.push({ m, ex, note });
+            };
+            for (let i = 0; i < k && k > 1; i++) {
+                // bez kwalifikatora i: odstep przed nim i za nim razem
+                const gaps = st.m.gaps.slice();
+                const after = i + 1 < k ? gaps[i + 1] : st.m.tail;
+                gaps.splice(i, 2, { min: i === 0 ? 0 : gaps[i].min + after.min, any: i === 0 ? after.any || gaps[0].any : true });
+                const toks = st.m.toks.filter((_, j) => j !== i);
+                const word = `- ${tokens[st.m.toks[i]].text}`;
+                if (i === k - 1)
+                    put({ toks, gaps: gaps.slice(0, k - 1), tail: ANY }, word);
+                else if (i === 0) {
+                    put({ toks, gaps: [ANY, ...gaps.slice(1)], tail: st.m.tail }, word);
+                    put({ toks, gaps: [NEXT, ...gaps.slice(1)], tail: st.m.tail }, word);
+                }
+                else {
+                    put({ toks, gaps, tail: st.m.tail }, word);
+                }
+            }
+            for (let i = 0; i < k; i++) {
+                // inny element z tych samych kwalifikatorow (LOGDAY, LOG*, D%%%%%%, D*)
+                const h = space.has(st.m.toks[i]);
+                const other = new Set();
+                for (let c = 0, n = 0; c < h.length && n < 3; c++) {
+                    if (!h[c])
+                        continue;
+                    n++;
+                    for (let y = clsOff[c]; y < clsOff[c + 1]; y++)
+                        if (clsTok[y] !== st.m.toks[i] && !tokens[clsTok[y]].dated)
+                            other.add(clsTok[y]);
+                }
+                for (const t of other)
+                    put({ ...st.m, toks: st.m.toks.map((x, j) => (j === i ? t : x)) }, `${tokens[st.m.toks[i]].text} -> ${tokens[t].text}`);
+            }
+            for (let i = 0; i <= k; i++) {
+                const g = i < k ? st.m.gaps[i] : st.m.tail;
+                const set = (gap, note) => put({ toks: st.m.toks, gaps: st.m.gaps.map((x, j) => (j === i ? gap : x)), tail: i === k ? gap : st.m.tail }, note);
+                if (!g.any)
+                    set(ANY, 'szerszy odstep');
+                for (const min of [0, 1, 2])
+                    if (g.any || g.min !== min)
+                        set({ min, any: false }, 'inny odstep');
+            }
+            if (k < MAX_TOKS) {
+                // pelny kwalifikator, ktory maja wszystkie male tej maski: wezsza, o ile wyglad nie drozszy
+                const same = [];
+                this.rank(l, st, (slot, t, _us, ns) => {
+                    if (slot >= 0 && ns === st.ns && tokens[t].kind === 0 && !tokens[t].dated)
+                        same.push({ slot, t });
+                });
+                for (const { slot, t } of same.sort((a, b) => b.slot - a.slot || a.t - b.t).slice(0, 10)) {
+                    const m = this.insert(st.m, slot, t);
+                    for (const a of [0, 1, -1]) {
+                        for (const c of [0, 1, -1]) {
+                            const gap = (x) => (x < 0 ? ANY : { min: x, any: false });
+                            const gaps = m.gaps.slice();
+                            gaps[slot] = gap(a);
+                            if (slot + 1 < gaps.length)
+                                gaps[slot + 1] = gap(c);
+                            put({ toks: m.toks, gaps, tail: slot + 1 < gaps.length ? m.tail : gap(c) }, `+ ${tokens[t].text} (maja wszystkie male)`);
+                        }
+                    }
+                }
+            }
+            for (const t of st.ex)
+                put(st.m, `bez EXCLUDE ${tokens[t].text}`, st.ex.filter(x => x !== t));
+            let best = null;
+            for (const x of tries) {
+                const c = this.fresh(l, x.m, x.ex, st, x.note);
+                if (c.points > (best ?? st).points + 1e-9 && this.good(l, c) && !this.isBanned(c, banned))
+                    best = c;
+            }
+            if (!best)
+                break;
+            st = best;
+        }
+        return st;
+    }
+    item(m) {
+        return { m, seqs: this.space.select(m) };
+    }
+    /** Lista z maska stanu i jej EXCLUDE (ogolnym albo tylko pod poczatkiem maski), w granicach; null = nie mozna. */
+    apply(list, st) {
+        let forms = [{ inc: [...list.inc, this.item(st.m)], exc: list.exc }];
+        for (const t of st.ex) {
+            const wide = this.item(this.exPattern(t));
+            const local = [];
+            if (!st.m.gaps[0].any && st.m.gaps[0].min === 0)
+                local.push({ toks: [st.m.toks[0], t], gaps: [NEXT, ANY], tail: ANY });
+            const narrow = local.filter(m => this.valid(m)).map(m => this.item(m));
+            forms = forms.flatMap(f => [wide, ...narrow].map(x => ({ inc: f.inc, exc: [...f.exc, x] })));
+        }
+        let best = null;
+        for (const f of forms) {
+            const l = this.live(f);
+            if (!this.allowed(f, l))
+                continue;
+            const score = this.score(f, l.t);
+            if (!best || score > best.score + 1e-9)
+                best = { list: f, score };
+        }
+        return best;
+    }
+    proposal(l, st, before, after, list) {
+        const steps = [];
+        for (let x = st; x; x = x.parent) {
+            steps.unshift({ text: this.space.text(x.m), exclude: x.ex.map(t => this.space.text(this.exPattern(t))), small: x.ns, large: x.nl, note: x.note });
+        }
+        return {
+            text: this.space.text(st.m), exclude: after.list.exc.slice(list.exc.length).map(i => this.space.text(i.m)),
+            gain: st.us, small: st.ns, large: st.nl, points: after.score - before, steps,
+        };
+    }
+    /** Nastepne propozycje, od najlepszej; kazda poprawia liste i miesci sie w granicach. */
+    next(list, banned) {
+        if (list.inc.length + list.exc.length >= this.opt.maxMasks)
+            return [];
+        const l = this.live(list);
+        const before = this.score(list, l.t);
+        const out = [];
+        for (const st of this.search(l, banned)) {
+            const after = this.apply(list, st);
+            if (after && after.score > before + 1e-9)
+                out.push({ st, after, p: this.proposal(l, st, before, after, list) });
+        }
+        return out.sort((a, b) => b.after.score - a.after.score);
+    }
+    /** EXCLUDE wspolne dla calej listy, dopoki daja punkty. */
+    excludes(list, journal) {
+        const { space, opt } = this;
+        const { tokens } = space.q;
+        let cur = list;
+        while (cur.inc.length + cur.exc.length < opt.maxMasks && !this.late()) {
+            const l = this.live(cur);
+            const before = this.score(cur, l.t);
+            const cov = new Uint8Array(space.q.count);
+            for (const i of cur.inc)
+                for (let x = 0; x < i.seqs.length; x++)
+                    cov[i.seqs[x]] = 1;
+            const seqs = this.all.filter(s => cov[s] && (l.ns[s] || l.nl[s]));
+            const kb = { ...l, ul: space.largeKb };
+            const cands = [];
+            this.rank(kb, { m: { toks: [], gaps: [], tail: ANY }, seqs }, (_s, t, _us, ns, nl, ul) => {
+                const v = this.pLarge(ul) - this.pSmall(ns) - this.w.exclude;
+                if (nl >= opt.exMin && v > 0 && !tokens[t].dated)
+                    cands.push({ t, v });
+            });
+            cands.sort((a, b) => b.v - a.v || a.t - b.t);
+            let best = null;
+            for (const c of cands.slice(0, 20)) {
+                const next = { inc: cur.inc, exc: [...cur.exc, this.item(this.exPattern(c.t))] };
+                const after = this.live(next);
+                const score = this.score(next, after.t);
+                if (score > Math.max(before, best?.score ?? -Infinity) + 1e-9 && this.allowed(next, after))
+                    best = { list: next, score };
+            }
+            if (!best)
+                break;
+            cur = best.list;
+            journal.push({ text: `wspolny EXCLUDE ${space.text(cur.exc[cur.exc.length - 1].m)}`, points: best.score - before });
+        }
+        return cur;
+    }
+    /** Bez masek i EXCLUDE, ktore kosztuja wiecej, niz daja. */
+    prune(list, journal) {
+        let cur = list;
+        for (;;) {
+            const before = this.score(cur);
+            let best = null;
+            for (const kind of ['inc', 'exc']) {
+                for (const i of cur[kind]) {
+                    const next = { ...cur, [kind]: cur[kind].filter(x => x !== i) };
+                    const l = this.live(next);
+                    const score = this.score(next, l.t);
+                    if (score > (best?.score ?? before) + 1e-9 && this.allowed(next, l))
+                        best = { list: next, score, text: this.space.text(i.m) };
+                }
+            }
+            if (!best)
+                return cur;
+            cur = best.list;
+            journal.push({ text: `usunieta ${best.text}`, points: best.score - before });
+        }
+    }
+    accept(p) {
+        this.origin.set(p.text, p);
+        return { text: `maska ${p.text}${p.exclude.map(e => `  EXCLUDE ${e}`).join('')}`, points: p.points };
+    }
+    grow(list, journal, tick) {
+        let cur = list;
+        while (!this.late()) {
+            const [best] = this.next(cur, new Set());
+            if (!best)
+                break;
+            cur = best.after.list;
+            journal.push(this.accept(best.p));
+            tick(cur);
+        }
+        return cur;
+    }
+    /**
+     * Lista bez masek gone, zbudowana od nowa kilkoma sposobami; null, gdy zadna nie jest lepsza:
+     *   one      najlepsza maska, potem ewentualnie druga
+     *   split    mniejsze maski (kazda daje mniej malych niz gone razem)
+     *   anchored bez ** na poczatku
+     */
+    redo(cur, gone, ways) {
+        const before = this.score(cur);
+        const without = this.prune({ inc: cur.inc.filter(x => !gone.includes(x)), exc: cur.exc }, []);
+        const l = this.live(without);
+        let gain = 0;
+        for (const s of new Set(gone.flatMap(i => [...i.seqs])))
+            gain += l.us[s];
+        let best = null;
+        for (const way of ways) {
+            this.cap = way === 'split' ? 0.95 * gain : Infinity;
+            this.anchored = way === 'anchored';
+            const steps = [];
+            let next = without;
+            for (let more = 0; more < (way === 'one' ? 2 : SPLIT) && !this.late(); more++) {
+                const [x] = this.next(next, new Set());
+                if (!x)
+                    break;
+                next = x.after.list;
+                steps.push(this.accept(x.p));
+                const after = this.live(next);
+                const score = this.score(next, after.t);
+                if (score > Math.max(before, best?.score ?? -Infinity) + 1e-9 && this.allowed(next, after))
+                    best = { list: next, score, steps: steps.slice() };
+            }
+        }
+        this.cap = Infinity;
+        this.anchored = false;
+        return best;
+    }
+    /** Druga runda: kazda maska raz wyjeta i zbudowana od nowa przy pozostalych; potem maski o wspolnym poczatku razem. */
+    rebuild(list, journal, tick) {
+        let cur = list;
+        const start = this.score(cur);
+        const take = (r, gone) => {
+            if (!r)
+                return;
+            journal.push({ text: `druga runda: zamiast ${gone.map(i => this.space.text(i.m)).join('  ')}`, points: r.score - this.score(cur) }, ...r.steps.map(x => ({ ...x, text: `  ${x.text}` })));
+            cur = r.list;
+        };
+        // od maski, ktora daje najmniej
+        const worth = cur.inc.map(i => ({ i, v: start - this.score({ inc: cur.inc.filter(x => x !== i), exc: cur.exc }) })).sort((a, b) => a.v - b.v);
+        worth.forEach(({ i }, n) => {
+            if (this.late() || !cur.inc.includes(i))
+                return;
+            tick(n / worth.length, `druga runda: ${n + 1} z ${worth.length}`);
+            take(this.redo(cur, [i], this.loose(i.m) ? ['one', 'split', 'anchored'] : ['one', 'split']), [i]);
+        });
+        const groups = new Map();
+        for (const i of cur.inc) {
+            if (this.loose(i.m))
+                continue;
+            const k = this.space.q.tokens[i.m.toks[0]].text;
+            groups.set(k, [...(groups.get(k) ?? []), i]);
+        }
+        for (const g of groups.values())
+            if (g.length > 1 && !this.late() && g.every(i => cur.inc.includes(i)))
+                take(this.redo(cur, g, ['one']), g);
+        return cur;
+    }
+    run(tick) {
+        const info = (l) => `masek: ${l.inc.length + l.exc.length}`;
+        const part = (l) => Math.min(0.95, this.live(l).t.small / Math.max(1, this.space.np));
+        // dwa starty: z maskami od ** i bez; kazdy poprawiany osobno
+        const done = [false, true].map((anchored, n) => {
+            const at = (p, t) => tick((n + p) / 2, t);
+            const journal = [];
+            this.minRaw = RAW[1];
+            this.anchored = anchored;
+            let list = this.grow({ inc: [], exc: [] }, journal, l => at(0.4 * part(l), info(l)));
+            list = this.excludes(list, journal);
+            list = this.prune(list, journal);
+            this.minRaw = RAW[0];
+            this.anchored = false;
+            for (let round = 0; round < this.opt.rounds && !this.late(); round++) {
+                const before = this.score(list);
+                list = this.rebuild(list, journal, (p, t) => at(0.4 + 0.6 * ((round + p) / this.opt.rounds), t));
+                list = this.grow(list, journal, () => { });
+                list = this.excludes(list, journal);
+                list = this.prune(list, journal);
+                if (this.score(list) <= before + 1e-6)
+                    break;
+            }
+            return { list, journal, score: this.score(list) };
+        });
+        const best = done[1].score > done[0].score + 1e-9 ? done[1] : done[0];
+        return this.result(best.list, best.journal);
+    }
+    result(list, journal) {
+        const { t } = this.live(list);
+        return {
+            include: list.inc.map(i => this.space.text(i.m)), exclude: list.exc.map(i => this.space.text(i.m)),
+            how: list.inc.map(i => this.origin.get(this.space.text(i.m)) ?? null), changes: journal,
+            totals: t, parts: this.parts(list, t), points: this.score(list, t), stopped: this.stopped,
+        };
+    }
+}
+exports.Builder = Builder;
+/** KB duzych, ktore musi wylaczyc EXCLUDE, zeby sie oplacil. */
+function needKb(input, w) {
+    let kb = 0;
+    for (let i = 0; i < input.pos.length; i++)
+        kb += input.allocKb[input.pos[i]];
+    const part = w.large > 0 ? w.exclude / (100 * w.large) : 1;
+    return Math.max(1, kb * Math.max(0.0005, part));
+}
+/** Ile malych musi dac maska, zeby sie oplacila. */
+function enough(np, opt) {
+    const { small, masks } = opt.weights;
+    return Math.max(opt.minCount, small > 0 ? Math.ceil(np * masks / (100 * small) - 1e-9) : np);
+}
+function makeSpace(input, opt, tick, extra = []) {
+    return new Space(input, opt.head ?? [], enough(input.pos.length, opt), 0.5 * needKb(input, opt.weights), opt.partial, extra, tick);
+}
+/** Cala lista: automatem albo z pytaniem po kazdej masce. */
+function buildList(input, opt, stages, ask) {
+    const o = { ...opt, minCount: enough(input.pos.length, opt) };
+    let space = makeSpace(input, o, stages.names);
+    const tick = stages.build();
+    let b = new Builder(space, o);
+    if (!ask)
+        return b.run(tick);
+    b.minRaw = RAW[1];
+    const banned = new Set();
+    const extra = [];
+    let list = { inc: [], exc: [] };
+    let journal = [];
+    /** poprzednie stany listy: maski i dlugosc dziennika */
+    const past = [];
+    const textsOf = (l) => [l.inc, l.exc].map(x => x.map(i => space.text(i.m)));
+    const restore = (texts) => {
+        const [inc, exc] = texts.map(l => l.map(t => b.item(space.parse(t))));
+        return { inc, exc };
+    };
+    const put = (next, entry) => {
+        past.push({ texts: textsOf(list), journal: journal.length });
+        list = next;
+        journal.push(entry);
+    };
+    for (;;) {
+        const found = b.next(list, banned);
+        const last = journal[journal.length - 1];
+        const a = ask(found.map(x => x.p), list.inc.length + 1, b.live(list).t, last ?? null);
+        if ('stop' in a)
+            break;
+        if ('undo' in a) {
+            const old = past.pop();
+            if (!old)
+                continue;
+            list = restore(old.texts);
+            journal = journal.slice(0, old.journal);
+        }
+        else if ('take' in a) {
+            const x = found[a.take];
+            if (x)
+                put(x.after.list, b.accept(x.p));
+        }
+        else if ('reject' in a) {
+            if (found.length === 0)
+                break;
+            banned.add(found[0].p.text);
+            banned.add(coverKey(found[0].st.seqs, found[0].st.gone));
+        }
+        else {
+            let m = space.parse(a.mask);
+            if (!m) {
+                // elementy, ktorych nie bylo: nowe klasy kwalifikatorow, ta sama lista
+                extra.push(...a.mask.split('.').filter(x => x !== '*' && x !== '**'));
+                const texts = textsOf(list);
+                space = makeSpace(input, o, () => { }, extra);
+                for (const x of [...banned])
+                    if (x.startsWith('#'))
+                        banned.delete(x);
+                const { origin, free } = b;
+                b = new Builder(space, o);
+                b.minRaw = RAW[1];
+                b.origin = origin;
+                b.free = free;
+                list = restore(texts);
+                m = space.parse(a.mask);
+            }
+            if (!m)
+                continue;
+            b.free.add(space.text(m));
+            const next = { inc: [...list.inc, b.item(m)], exc: list.exc };
+            put(next, { text: `wpisana ${a.mask}`, points: b.score(next) - b.score(list) });
+        }
+    }
+    return b.result(list, journal);
+}
+};
+
+// ==================== src/auto-check.ts
+MODULES["./auto-check"] = function (exports, require, module) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MaskListError = void 0;
+exports.parseMaskList = parseMaskList;
+exports.checkMasks = checkMasks;
+const auto_tree_1 = require("./auto-tree");
+const auto_util_1 = require("./auto-util");
+const mask_1 = require("./mask");
+/** ile masek wymienia powod zbednosci */
+const MAX_NOTE = 4;
+class MaskListError extends Error {
+}
+exports.MaskListError = MaskListError;
+/**
+ * Lista masek z pliku: po jednej w linii albo po przecinku (wnetrze INCLUDE), FILTLIST z INCLUDE i EXCLUDE (plik
+ * z --filtlist), w CSV pierwsza kolumna (plik z --out). Pelna nazwa moze byc w apostrofach; komentarze jak w ACS.
+ * Powtorzone maski sa pomijane z ostrzezeniem.
+ */
+function parseMaskList(text, file) {
+    const masks = [];
+    const excludes = [];
+    const warnings = [];
+    // komentarz zamieniony na same konce linii, zeby zgadzaly sie numery wierszy
+    const clean = text.replace(/^\ufeff/, '').replace(/\/\*[\s\S]*?\*\//g, c => c.replace(/[^\n]/g, ' '));
+    const fail = (i, msg) => new MaskListError(`${file}, wiersz ${i + 1}: ${msg}`);
+    const parse = (item, i) => {
+        const quoted = /^'(.*)'$/.exec(item);
+        if (quoted && /[*%]/.test(quoted[1]))
+            throw fail(i, `${item} - w apostrofach to pelna nazwa; maske podaj bez apostrofow`);
+        let mask;
+        try {
+            mask = (0, mask_1.parseMask)(quoted ? quoted[1] : item).text;
+        }
+        catch (e) {
+            throw fail(i, e.message);
+        }
+        if (/^[0-9]/.test(mask))
+            throw fail(i, `"${mask}" - nazwa zbioru nie zaczyna sie cyfra`);
+        return mask;
+    };
+    const add = (into, mask, i) => {
+        if (into.includes(mask))
+            warnings.push(`${file}, wiersz ${i + 1}: maska ${mask} powtorzona`);
+        else
+            into.push(mask);
+    };
+    const lines = clean.split(/\r?\n/);
+    if (/(^|\s)(INCLUDE|EXCLUDE)\s*\(/i.test(clean)) {
+        parseFiltlists(lines, fail).forEach((list, k) => {
+            list.include.forEach(x => add(masks, parse(x.item, x.line), x.line));
+            // EXCLUDE dziala tylko w swojej liscie; wspolne dla calego pliku jest tylko takie samo w kazdej
+            const own = [];
+            list.exclude.forEach(x => add(own, parse(x.item, x.line), x.line));
+            if (k === 0)
+                excludes.push(...own);
+            else if (own.length !== excludes.length || own.some(x => !excludes.includes(x)))
+                throw fail(list.line, 'FILTLIST maja rozne EXCLUDE - sprawdz kazda osobno');
+        });
+    }
+    else {
+        let state = -1;
+        lines.forEach((line, i) => {
+            if (/^T;DSN;/i.test(line))
+                throw fail(i, 'to CSV z DCOLLECT, a nie lista masek');
+            if (!line.includes(';')) {
+                line.split(/[\s,]+/).filter(Boolean).forEach(item => add(masks, parse(item, i), i));
+                return;
+            }
+            const cols = line.split(';').map(x => x.trim());
+            if (cols[0].toLowerCase() === 'maska')
+                state = cols.indexOf('stan');
+            else if (cols[0])
+                add(state >= 0 && cols[state] === 'exclude' ? excludes : masks, parse(cols[0], i), i);
+        });
+    }
+    if (masks.length === 0)
+        throw new MaskListError(`${file}: brak masek`);
+    return { masks, excludes, warnings };
+}
+/** FILTLIST nazwa INCLUDE(...) EXCLUDE(...), dowolnie wiele; bez innych instrukcji rutyny. */
+function parseFiltlists(lines, fail) {
+    const lists = [];
+    let section = null;
+    let expect = null;
+    lines.forEach((text, line) => {
+        // + i - na koncu linii: kontynuacja
+        for (const tok of text.replace(/\s[+-]\s*$/, '').match(/[(),]|'[^']*'|[^\s(),]+/g) ?? []) {
+            const word = tok.toUpperCase();
+            if (expect === 'name') {
+                expect = null;
+            }
+            else if (expect === '(') {
+                if (tok !== '(')
+                    throw fail(line, `oczekiwano "(", jest "${tok}"`);
+                expect = null;
+            }
+            else if (section) {
+                if (tok === ')')
+                    section = null;
+                else if (tok === '(')
+                    throw fail(line, 'brak ")" przed "("');
+                else if (tok !== ',')
+                    section.push({ item: tok, line });
+            }
+            else if (word === 'FILTLIST') {
+                lists.push({ line, include: [], exclude: [] });
+                expect = 'name';
+            }
+            else if (word === 'INCLUDE' || word === 'EXCLUDE') {
+                // sam INCLUDE(...) bez FILTLIST
+                if (lists.length === 0)
+                    lists.push({ line, include: [], exclude: [] });
+                section = lists[lists.length - 1][word === 'INCLUDE' ? 'include' : 'exclude'];
+                expect = '(';
+            }
+            else {
+                throw fail(line, `"${tok}" - plik moze zawierac tylko FILTLIST`);
+            }
+        }
+    });
+    if (section)
+        throw fail(lines.length - 1, 'brak ")"');
+    return lists;
+}
+const purityOf = (small, large) => (small ? small / (small + large) : 0);
+function sumUp(text, groups) {
+    const r = { text, small: 0, large: 0, purity: 0, smallKb: 0, largeKb: 0 };
+    for (const g of groups) {
+        r.small += g.small;
+        r.large += g.large;
+        r.smallKb += g.smallKb;
+        r.largeKb += g.largeKb;
+    }
+    r.purity = purityOf(r.small, r.large);
+    return r;
+}
+function checkMasks(input, masks, excludes, tick) {
+    const { names, allocKb, pos, neg } = input;
+    const quals = masks.map(m => (0, mask_1.parseMask)(m).quals);
+    const tree = new auto_tree_1.MaskTree(quals);
+    const exTree = excludes.length ? new auto_tree_1.MaskTree(excludes.map(m => m.split('.'))) : null;
+    const exRows = excludes.map((text) => ({ text, small: 0, large: 0, purity: 0, smallKb: 0, largeKb: 0 }));
+    // ---- grupy zbiorow o tym samym zestawie masek
+    const single = [];
+    const multi = new Map();
+    const empty = (ids) => ({ ids, small: 0, large: 0, smallKb: 0, largeKb: 0 });
+    const groupOf = (row, isSmall) => {
+        const s = names.start[row];
+        const ids = tree.match(names.pool, s, s + names.len[row]);
+        const out = exTree?.match(names.pool, s, s + names.len[row]) ?? [];
+        if (out.length) {
+            for (const x of ids.length ? out : []) {
+                exRows[x][isSmall ? 'small' : 'large']++;
+                exRows[x][isSmall ? 'smallKb' : 'largeKb'] += allocKb[row];
+            }
+            return 'excluded';
+        }
+        if (ids.length === 0)
+            return null;
+        if (ids.length === 1)
+            return single[ids[0]] ??= empty(ids);
+        const key = ids.join();
+        let g = multi.get(key);
+        if (!g)
+            multi.set(key, g = empty(ids));
+        return g;
+    };
+    const count = pos.length + neg.length;
+    let smallKb = 0;
+    const restPos = new auto_util_1.IntList();
+    const restNeg = new auto_util_1.IntList();
+    for (let x = 0; x < pos.length; x++) {
+        if ((x & 0x3fff) === 0)
+            tick(x / count);
+        smallKb += allocKb[pos[x]];
+        const g = groupOf(pos[x], true);
+        if (g === 'excluded')
+            continue;
+        if (!g) {
+            restPos.push(pos[x]);
+            continue;
+        }
+        g.small++;
+        g.smallKb += allocKb[pos[x]];
+    }
+    for (let x = 0; x < neg.length; x++) {
+        if ((x & 0x3fff) === 0)
+            tick((pos.length + x) / count);
+        const g = groupOf(neg[x], false);
+        if (g === 'excluded')
+            continue;
+        if (!g) {
+            restNeg.push(neg[x]);
+            continue;
+        }
+        g.large++;
+        g.largeKb += allocKb[neg[x]];
+    }
+    const groups = [...single.filter(g => g !== undefined), ...multi.values()];
+    const of = masks.map(() => []);
+    for (const g of groups)
+        for (const m of g.ids)
+            of[m].push(g);
+    const rows = masks.map((text, m) => ({ ...sumUp(text, of[m]), only: single[m]?.small ?? 0, note: '', state: '' }));
+    // ---- zawieranie: w danych kazdy zbior maski m obejmuje tez b, a potem porownanie samych masek
+    const inside = masks.map((_, m) => {
+        const cand = of[m].length ? of[m].reduce((s, g) => s.filter(b => g.ids.includes(b)), of[m][0].ids) : masks.map((_x, b) => b);
+        return cand.filter(b => b !== m && (0, auto_tree_1.within)(quals[m], quals[b]));
+    });
+    // ---- zbedne: od najnizszej czystosci, przy rownej najpierw zawarte w innej, potem mniej malych, potem dalsze na liscie
+    const left = masks.map(() => true);
+    const cover = new Map(groups.map(g => [g, g.ids.length]));
+    const needed = (m) => of[m].some(g => g.small > 0 && cover.get(g) < 2);
+    const spare = masks.map((_, m) => m).filter(m => !needed(m));
+    spare.sort((a, b) => rows[a].purity - rows[b].purity || Number(inside[b].length > 0) - Number(inside[a].length > 0)
+        || rows[a].small - rows[b].small || b - a);
+    for (const m of spare) {
+        if (needed(m)) {
+            rows[m].state = 'zamiast';
+            continue;
+        }
+        rows[m].state = 'usun';
+        left[m] = false;
+        for (const g of of[m])
+            cover.set(g, cover.get(g) - 1);
+    }
+    for (const m of spare) {
+        // powod usuniecia odwoluje sie do masek, ktore zostaja; "zamiast" - do wszystkich
+        const refers = (b) => left[b] || left[m];
+        const wider = inside[m].filter(refers).sort((a, b) => rows[b].small - rows[a].small || a - b);
+        if (wider.length)
+            rows[m].note = `zawiera sie w ${masks[wider[0]]}`;
+        else if (of[m].length === 0)
+            rows[m].note = 'nie pasuje do zadnego zbioru';
+        else if (rows[m].small === 0)
+            rows[m].note = `nie obejmuje malych zbiorow (duzych: ${rows[m].large})`;
+        else {
+            const by = coveredBy(m, of[m], refers).map(b => masks[b]);
+            const more = by.length > MAX_NOTE ? ` i ${by.length - MAX_NOTE} innych` : '';
+            rows[m].note = `w danych jej male zbiory obejmuja: ${by.slice(0, MAX_NOTE).join(', ')}${more}`;
+        }
+    }
+    // ---- pary ze wspolnymi zbiorami
+    const pairs = new Map();
+    for (const g of groups) {
+        for (let i = 0; i < g.ids.length; i++) {
+            for (let j = i + 1; j < g.ids.length; j++) {
+                const key = g.ids[i] * masks.length + g.ids[j];
+                let o = pairs.get(key);
+                if (!o)
+                    pairs.set(key, o = { a: masks[g.ids[i]], b: masks[g.ids[j]], small: 0, large: 0, partA: 0, partB: 0 });
+                o.small += g.small;
+                o.large += g.large;
+            }
+        }
+    }
+    for (const [key, o] of pairs) {
+        o.partA = o.small / Math.max(1, rows[Math.floor(key / masks.length)].small);
+        o.partB = o.small / Math.max(1, rows[key % masks.length].small);
+    }
+    const overlaps = [...pairs].sort(([ka, a], [kb, b]) => b.small - a.small || b.large - a.large || ka - kb).map(([, o]) => o);
+    return {
+        small: pos.length,
+        large: neg.length,
+        smallKb,
+        rows,
+        total: sumUp('RAZEM', groups),
+        after: sumUp('RAZEM PO USUNIECIU', groups.filter(g => g.ids.some(m => left[m]))),
+        overlaps,
+        rest: { pos: restPos.a.slice(0, restPos.n), neg: restNeg.a.slice(0, restNeg.n) },
+        excludes: exRows,
+    };
+}
+/** Maski (poza m), ktore razem obejmuja male zbiory maski m - zachlannie, od obejmujacej najwiecej. */
+function coveredBy(m, groups, allowed) {
+    let open = groups.filter(g => g.small > 0);
+    const out = [];
+    while (open.length) {
+        const sum = new Map();
+        for (const g of open)
+            for (const b of g.ids)
+                if (b !== m && allowed(b))
+                    sum.set(b, (sum.get(b) ?? 0) + g.small);
+        const best = [...sum].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0][0];
+        out.push(best);
+        open = open.filter(g => !g.ids.includes(best));
+    }
+    return out;
 }
 };
 
@@ -4475,6 +5628,7 @@ exports.search = search;
 exports.check = check;
 exports.quals = quals;
 exports.compact = compact;
+exports.build = build;
 exports.report = report;
 exports.freshReport = freshReport;
 exports.toCsv = toCsv;
@@ -4485,6 +5639,9 @@ exports.qualsReport = qualsReport;
 exports.qualsCsv = qualsCsv;
 exports.compactReport = compactReport;
 exports.compactCsv = compactCsv;
+exports.journalText = journalText;
+exports.buildReport = buildReport;
+exports.parseWeights = parseWeights;
 exports.main = main;
 /**
  * Szukanie masek DSN wg kryteriow z CSV DCOLLECT (job ACMCSV) i sprawdzanie gotowej listy masek. Wersja jednoplikowa: acs-masks-auto.cjs (bez npm).
@@ -4527,6 +5684,21 @@ exports.main = main;
  *   --any-start        INCLUDE moze zaczynac sie od ** i *
  *   --verify PLIK      sprawdza wybrany punkt na drugim CSV (np. nowszym), osobno dla nazw, ktorych w pierwszym nie bylo
  *
+ *   --build            FILTLIST budowana po jednej masce z dwoch rankingow kwalifikatorow (male / duze), z dziennikiem krokow;
+ *                      o wyborze decyduja punkty: 1 punkt = 1% malych. Domyslnie --min-purity 0.95 (po EXCLUDE), --min-count 10
+ *   --weights WAGI     priorytety, np. "masks=1 large=4"; pozostale domyslne: small=1 large=2 masks=0.5 exclude=0.5 risk=0.1
+ *                      percent=0.05 wild=0.02 start=2
+ *                        small    za 1% objetych malych          large    za duze w liscie (1% alokacji wszystkich malych)
+ *                        masks    za maske INCLUDE               exclude  za maske EXCLUDE
+ *                        risk     za duze objete maskami, ktore zdejmuje dopiero EXCLUDE (1% alokacji malych)
+ *                        percent  za kazdy %    wild  za kazda * i ** (bez koncowego .**)    start  za maske od * albo **
+ *   --beam N           ile wersji maski naraz (wiecej = dluzej)                  (domyslnie 8)
+ *   --rounds N         ile razy najwyzej druga runda (maski wyjmowane i budowane od nowa)  (domyslnie 2)
+ *   --ask              pytanie po kazdej masce: przyjac, wybrac inna, odrzucic, wpisac wlasna, cofnac (bez drugiej rundy)
+ *   --what-if          takze wyniki dla wag masks + exclude, large, start podzielonych i pomnozonych przez 2 (7 razy dluzej)
+ *   --log PLIK         dziennik do pliku zamiast na ekran
+ *                      Z --build takze: --max-large, --exclude-min, --exclude-loss (1%), --max-masks, --partial, --verify, --time
+ *
  *   --quals N          zamiast masek: najczestsze kombinacje 1..N kwalifikatorow w malych zbiorach (N 1-4), osobna tabela
  *                      dla kazdej liczby; A + B = nazwy **.A.**.B.**, obok najwezsza maska z tymi samymi malymi.
  *                      Takze kwalifikatory niepelne: ABC* *ABC *ABC* AB%% D%%%%%%. Z --masks: tylko zbiory spoza listy
@@ -4547,6 +5719,7 @@ exports.main = main;
  */
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_util_1 = require("node:util");
+const auto_build_1 = require("./auto-build");
 const auto_acs_1 = require("./auto-acs");
 const auto_check_1 = require("./auto-check");
 const auto_compact_1 = require("./auto-compact");
@@ -4558,7 +5731,32 @@ const dataset_1 = require("./dataset");
 const mask_1 = require("./mask");
 const filtlist_1 = require("./filtlist");
 const testcase_1 = require("./testcase");
-const STDIO = { out: t => process.stdout.write(t), err: t => process.stderr.write(t), tty: process.stderr.isTTY };
+/** Linia ze standardowego wejscia (synchronicznie: terminal i plik). */
+function stdinLine() {
+    const buf = Buffer.alloc(1);
+    const out = [];
+    for (;;) {
+        let n = 0;
+        try {
+            n = node_fs_1.default.readSync(0, buf, 0, 1, null);
+        }
+        catch (e) {
+            const { code } = e;
+            if (code === 'EAGAIN') {
+                Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+                continue;
+            }
+            if (code !== 'EOF')
+                throw e;
+        }
+        if (n === 0)
+            return out.length ? Buffer.from(out).toString('utf-8') : null;
+        if (buf[0] === 10)
+            return Buffer.from(out).toString('utf-8');
+        out.push(buf[0]);
+    }
+}
+const STDIO = { out: t => process.stdout.write(t), err: t => process.stderr.write(t), tty: process.stderr.isTTY, line: stdinLine };
 const USAGE = 'Uzycie: node acs-masks-auto.cjs DCOLLECT.CSV [--scope "sms=true dsorg=PS"]\n'
     + '        [--when "allocTrk=315 usedTrk<=3"] [--prefix "ABC%.**"] [--min-purity 0.95]\n'
     + '        [--min-count 10] [--max-masks 100] [--wild 3] [--unit GB] [--out maski.csv]\n'
@@ -4567,6 +5765,8 @@ const USAGE = 'Uzycie: node acs-masks-auto.cjs DCOLLECT.CSV [--scope "sms=true d
     + '         (sprawdza liste i szuka masek dla zbiorow, ktorych ona nie obejmuje)\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --compact [--max-large 5%] [--pick N] [--any-start] [--verify NOWSZY.CSV]\n'
     + '         [--filtlist filtlist.txt] (najmniej masek INCLUDE i EXCLUDE, najwieksze pokrycie)\n'
+    + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --build [--weights "masks=1 large=4"] [--ask] [--what-if] [--log dziennik.txt]\n'
+    + '         [--verify NOWSZY.CSV] [--filtlist filtlist.txt] (maska po masce, priorytety jako wagi)\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --quals 4 [--partial 3] [--top 20] [--time 600] [--try "PROD+SYSOUT, TMP*"]\n'
     + '         (najczestsze kombinacje kwalifikatorow; sprawdzanie kwalifikatorow niepelnych)\n'
     + `Pola liczbowe: ${auto_read_1.NUM.join(' ')}\n     tekstowe: ${auto_read_1.STR.join(' ')}\n     true / false: ${auto_read_1.BOOL.join(' ')}\n`
@@ -4584,6 +5784,10 @@ Przyklady (DC = DCOLLECT.CSV; w pliku .bat kazdy % podwojnie, w PowerShell apost
   node acs-masks-auto.cjs DC --masks f.txt --tests ACMTEST --per-mask 2            testy ISMF do FILTLIST
   node acs-masks-auto.cjs DC --compact --verify NOWSZY.CSV                         najmniej masek, sprawdzone na nowszych danych
   node acs-masks-auto.cjs DC --compact --max-large 200GB --pick 12 --filtlist f.txt
+  node acs-masks-auto.cjs DC --build --log dziennik.txt --filtlist f.txt           maska po masce, z dziennikiem
+  node acs-masks-auto.cjs DC --build --weights "masks=1 large=4"                   mniej masek, jeszcze mniej duzych
+  node acs-masks-auto.cjs DC --build --what-if                                     co zmieni kazda waga
+  node acs-masks-auto.cjs DC --build --ask                                         kazda maska do zatwierdzenia
   node acs-masks-auto.cjs DC --quals 4                                             najczestsze kombinacje 1-4 kwalifikatorow
   node acs-masks-auto.cjs DC --quals 2 --min-purity 0.95 --top 50                  tylko czyste, do 2 kwalifikatorow
   node acs-masks-auto.cjs DC --quals 3 --masks f.txt                               w zbiorach, ktorych lista nie obejmuje
@@ -4787,6 +5991,20 @@ function quals(file, scope, when, q, opt, bar, warn = () => { }) {
     return { skipped, small: pos.length, large: neg.length, combos, tries };
 }
 const DEFAULT_PART = 0.95;
+/** Wynikowe maski na drugim pliku: wszystkie zbiory i te, ktorych nazw nie bylo w pierwszym. */
+function verify(input, second, include, exclude) {
+    const known = new auto_util_1.Interner();
+    for (const rows of [input.pos, input.neg]) {
+        for (let x = 0; x < rows.length; x++)
+            known.add(input.names.pool, input.names.start[rows[x]], input.names.start[rows[x]] + input.names.len[rows[x]]);
+    }
+    const isNew = (r) => known.find(second.names.pool, second.names.start[r], second.names.start[r] + second.names.len[r]) < 0;
+    return {
+        small: second.pos.length, large: second.neg.length,
+        list: (0, auto_check_1.checkMasks)(second, include, exclude, () => { }),
+        fresh: (0, auto_check_1.checkMasks)({ ...second, pos: second.pos.filter(isNew), neg: second.neg.filter(isNew) }, include, exclude, () => { }),
+    };
+}
 /** Krzywa --compact, wybrany punkt i jego sprawdzenie na drugim pliku. */
 function compact(file, scope, when, c, opt, bar, warn = () => { }) {
     const read = (name, label) => {
@@ -4819,22 +6037,100 @@ function compact(file, scope, when, c, opt, bar, warn = () => { }) {
     if (points.length && !chosen)
         throw new ArgError(`--pick: najmniejszy punkt ma masek: ${points[0].include.length + points[0].exclude.length}`);
     const list = chosen && (0, auto_check_1.checkMasks)(input, chosen.include, chosen.exclude, () => { });
-    let verified = null;
-    if (chosen && c.verify !== undefined) {
-        const second = read(c.verify, 'Kryteria');
-        const known = new auto_util_1.Interner();
-        for (const rows of [input.pos, input.neg]) {
-            for (let x = 0; x < rows.length; x++)
-                known.add(input.names.pool, input.names.start[rows[x]], input.names.start[rows[x]] + input.names.len[rows[x]]);
-        }
-        const isNew = (r) => known.find(second.names.pool, second.names.start[r], second.names.start[r] + second.names.len[r]) < 0;
-        verified = {
-            small: second.pos.length, large: second.neg.length,
-            list: (0, auto_check_1.checkMasks)(second, chosen.include, chosen.exclude, () => { }),
-            fresh: (0, auto_check_1.checkMasks)({ ...second, pos: second.pos.filter(isNew), neg: second.neg.filter(isNew) }, chosen.include, chosen.exclude, () => { }),
-        };
-    }
+    const verified = chosen && c.verify !== undefined ? verify(input, read(c.verify, 'Kryteria'), chosen.include, chosen.exclude) : null;
     return { result, minCount, chosen, list, verified, input };
+}
+/** Zmiany wag w --what-if. */
+const VARIANTS = [
+    { name: 'masks, exclude', keys: ['masks', 'exclude'], by: 0.5 }, { name: 'masks, exclude', keys: ['masks', 'exclude'], by: 2 },
+    { name: 'large', keys: ['large'], by: 0.5 }, { name: 'large', keys: ['large'], by: 2 },
+    { name: 'start', keys: ['start'], by: 0.5 }, { name: 'start', keys: ['start'], by: 2 },
+];
+/** Lista budowana po jednej masce. */
+function build(file, scope, when, o, extra, bar, io) {
+    const read = (name) => {
+        const st = load(name, scope, when, bar, io.err);
+        const tick = bar.stage('Kryteria');
+        const { pos, neg } = classify(st, scope, when, o.head, p => tick(p));
+        bar.done(`malych: ${(0, auto_util_1.thousands)(pos.length)}, duzych: ${(0, auto_util_1.thousands)(neg.length)}`);
+        return { names: st.names, allocKb: st.allocKb, pos, neg };
+    };
+    const input = read(file);
+    const one = (label, opt, ask) => {
+        const r = (0, auto_build_1.buildList)(input, opt, {
+            names: bar.stage('Kwalifikatory'),
+            build: () => {
+                bar.done();
+                const tick = bar.stage(label);
+                // pytania zamiast paska
+                if (ask)
+                    bar.abort();
+                return tick;
+            },
+        }, ask);
+        bar.done(`masek: ${r.include.length + r.exclude.length}, punkty: ${points(r.points)}`);
+        return r;
+    };
+    const result = one('Budowanie', o, extra.ask ? (list, no, now, last) => askMask(list, no, now, last, input.pos.length, o, extra.unit, io) : undefined);
+    const list = (0, auto_check_1.checkMasks)(input, result.include, result.exclude, () => { });
+    const variants = extra.whatIf ? VARIANTS.map(v => {
+        const weights = { ...o.weights };
+        for (const k of v.keys)
+            weights[k] *= v.by;
+        const name = `${v.name}  x${String(v.by).replace('.', ',')}`;
+        return { name, result: one(name, { ...o, weights }) };
+    }) : [];
+    const verified = extra.verify !== undefined && result.include.length ? verify(input, read(extra.verify), result.include, result.exclude) : null;
+    return { result, list, verified, variants, input };
+}
+const points = (x) => `${x < 0 ? '' : '+'}${x.toFixed(2).replace('.', ',')}`;
+/** --ask: jedno pytanie, powtarzane do poprawnej odpowiedzi. */
+function askMask(list, no, now, last, small, o, u, io) {
+    const out = [''];
+    if (last)
+        out.push(`Przyjeta: ${last.text}   punkty ${points(last.points)}`);
+    out.push(`Lista: ${part(now.small, small)} malych (${now.small} z ${small}), duzych ${now.large} (${inUnit(now.largeKb, u)} ${u})`, '');
+    const cap = 'kb' in o.maxLarge ? o.maxLarge.kb : o.maxLarge.part * now.smallKb;
+    if (now.largeKb > cap + 1e-6)
+        out.push('Uwaga: lista przekracza --max-large, wiec nie ma dalszych propozycji (c = cofnij ostatnia).', '');
+    out.push(list.length ? `Maska ${no} - propozycje:` : `Maska ${no}: zadna nie daje punktow w tych granicach.`);
+    list.forEach((p, i) => {
+        out.push(`  ${i + 1}. ${p.text.padEnd(44)} nowych malych ${p.gain}, duzych ${p.large}, purity ${pct(p.small / (p.small + p.large))}, punkty ${points(p.points)}`);
+        for (const e of p.exclude)
+            out.push(`       EXCLUDE ${e}`);
+    });
+    io.err(`${out.join('\n')}\n`);
+    for (;;) {
+        io.err(`${list.length ? 'Enter = 1, numer = inna, n = odrzuc 1, ' : ''}maska = wpisana, c = cofnij ostatnia, k = koniec: `);
+        const a = io.line?.()?.trim();
+        if (a === undefined) {
+            io.err('\n');
+            return { stop: true };
+        }
+        if (a === '' && list.length)
+            return { take: 0 };
+        if (/^[0-9]+$/.test(a) && Number(a) >= 1 && Number(a) <= list.length)
+            return { take: Number(a) - 1 };
+        if (/^n$/i.test(a) && list.length)
+            return { reject: true };
+        if (/^c$/i.test(a))
+            return { undo: true };
+        if (/^k$/i.test(a))
+            return { stop: true };
+        try {
+            if (!/[.*]/.test(a))
+                throw new mask_1.MaskError('nieznana odpowiedz');
+            const { text, quals } = (0, mask_1.parseMask)(a);
+            if (o.head?.some((h, i) => quals[i] !== h))
+                throw new mask_1.MaskError(`maska nie zaczyna sie od ${o.head.join('.')}`);
+            return { mask: text };
+        }
+        catch (e) {
+            if (!(e instanceof mask_1.MaskError))
+                throw e;
+            io.err(`  ${e.message}\n`);
+        }
+    }
 }
 function load(file, scope, when, bar, warn) {
     const st = (0, auto_read_1.readStore)(file, new Set([...scope.fields, ...when.fields]), bar.stage('Czytanie CSV'));
@@ -5039,6 +6335,25 @@ function qualsCsv(r, u = 'GB') {
 const count = (p) => p.include.length + p.exclude.length;
 const limitText = (l, u) => ('kb' in l ? `${inUnit(l.kb, u)} ${u}` : `${pctOf(l.part)} alokacji objetych malych`);
 const pctOf = (x) => `${String(Math.round(x * 1e6) / 1e4).replace('.', ',')}%`;
+function verifyReport(v, list, file, maxLarge, u) {
+    const out = ['', `Sprawdzenie na drugim pliku: ${file}`, '', wide(['', 'Malych', 'objete', '% mal.', 'Duze w l.', `Duze ${u}`, 'duze/male'])];
+    const sum = (name, l) => wide([name, String(l.small), String(l.total.small), part(l.total.small, l.small), String(l.total.large),
+        inUnit(l.total.largeKb, u), l.total.smallKb ? part(l.total.largeKb, l.total.smallKb) : '-']);
+    out.push(sum('pierwszy plik', list), sum('drugi plik', v.list), sum('w tym nazwy, ktorych w pierwszym nie bylo', v.fresh), '');
+    const cap = 'kb' in maxLarge ? maxLarge.kb : maxLarge.part * v.list.total.smallKb;
+    out.push(v.list.total.largeKb <= cap + 1e-6 ? 'Duze w drugim pliku mieszcza sie w granicy --max-large.'
+        : `Uwaga: duze w drugim pliku przekraczaja granice --max-large (${inUnit(v.list.total.largeKb, u)} z ${inUnit(cap, u)} ${u}).`);
+    const worse = v.list.rows.map((m, i) => ({ m, was: list.rows[i] })).filter(x => x.m.small + x.m.large > 0 && x.m.purity < x.was.purity - 0.05);
+    if (worse.length) {
+        out.push('', 'Maski o purity gorszej o ponad 5 punktow:');
+        for (const x of worse)
+            out.push(`  ${x.m.text.padEnd(44)} ${pct(x.was.purity)} -> ${pct(x.m.purity)}  (duzych ${x.m.large}, ${inUnit(x.m.largeKb, u)} ${u})`);
+    }
+    const none = v.list.rows.filter(m => m.small + m.large === 0);
+    if (none.length)
+        out.push('', `Maski bez zbiorow w drugim pliku: ${none.map(m => m.text).join('  ')}`);
+    return out;
+}
 function compactReport(r, c, u = 'GB') {
     const { result: res, chosen, list, verified: v } = r;
     const out = [`Zbiorow w zakresie: ${res.small + res.large}, malych: ${res.small}, duzych: ${res.large}`,
@@ -5065,29 +6380,81 @@ function compactReport(r, c, u = 'GB') {
         for (const m of list.excludes)
             out.push(wide([m.text, String(m.large), inUnit(m.largeKb, u), String(m.small)]));
     }
-    if (v) {
-        out.push('', `Sprawdzenie na drugim pliku: ${c.verify}`, '', wide(['', 'Malych', 'objete', '% mal.', 'Duze w l.', `Duze ${u}`, 'duze/male']));
-        const sum = (name, l) => wide([name, String(l.small), String(l.total.small), part(l.total.small, l.small), String(l.total.large),
-            inUnit(l.total.largeKb, u), l.total.smallKb ? part(l.total.largeKb, l.total.smallKb) : '-']);
-        out.push(sum('pierwszy plik', list), sum('drugi plik', v.list), sum('w tym nazwy, ktorych w pierwszym nie bylo', v.fresh), '');
-        const cap = 'kb' in c.maxLarge ? c.maxLarge.kb : c.maxLarge.part * v.list.total.smallKb;
-        out.push(v.list.total.largeKb <= cap + 1e-6 ? 'Duze w drugim pliku mieszcza sie w granicy --max-large.'
-            : `Uwaga: duze w drugim pliku przekraczaja granice --max-large (${inUnit(v.list.total.largeKb, u)} z ${inUnit(cap, u)} ${u}).`);
-        const worse = v.list.rows.map((m, i) => ({ m, was: list.rows[i] })).filter(x => x.m.small + x.m.large > 0 && x.m.purity < x.was.purity - 0.05);
-        if (worse.length) {
-            out.push('', 'Maski o purity gorszej o ponad 5 punktow:');
-            for (const x of worse)
-                out.push(`  ${x.m.text.padEnd(44)} ${pct(x.was.purity)} -> ${pct(x.m.purity)}  (duzych ${x.m.large}, ${inUnit(x.m.largeKb, u)} ${u})`);
-        }
-        const none = v.list.rows.filter(m => m.small + m.large === 0);
-        if (none.length)
-            out.push('', `Maski bez zbiorow w drugim pliku: ${none.map(m => m.text).join('  ')}`);
-    }
+    if (v)
+        out.push(...verifyReport(v, list, c.verify, c.maxLarge, u));
     return out.join('\n') + '\n';
 }
 function compactCsv(r, u = 'GB') {
     return [`${csvHead(u)};tylko_ta;stan`, ...(r.list?.rows ?? []).map(m => [...csvCells(m, u), m.only, ''].join(';')),
         ...(r.list?.excludes ?? []).map(m => [...csvCells(m, u), '', 'exclude'].join(';'))].join('\n') + '\n';
+}
+/** Dziennik: kroki kazdej maski z listy, potem zmiany listy po kolei. */
+function journalText(r) {
+    const out = ['Dziennik: jak powstala kazda maska (male / duze = objete maska, po jej EXCLUDE)'];
+    r.include.forEach((text, i) => {
+        const m = r.how[i];
+        out.push('', `${i + 1}. ${text}${m?.exclude.length ? `   EXCLUDE ${m.exclude.join('  ')}` : ''}${m ? '' : '   (wpisana)'}`);
+        for (const s of m?.steps ?? []) {
+            out.push(`     ${s.text.padEnd(44)}${String(s.small).padStart(9)} /${String(s.large).padStart(8)}${pct(s.small + s.large ? s.small / (s.small + s.large) : 0).padStart(8)}   ${s.note}`);
+        }
+    });
+    out.push('', 'Zmiany listy po kolei', '', ...r.changes.map(c => `${points(c.points).padStart(9)}   ${c.text}`));
+    return out.join('\n') + '\n';
+}
+const LABELS = {
+    small: 'objete male', large: 'duze w liscie', masks: 'maski INCLUDE', exclude: 'maski EXCLUDE', risk: 'duze zdejmowane przez EXCLUDE',
+    percent: 'znaki %', wild: '* i **', start: 'maski od * albo **',
+};
+const weightsText = (w) => Object.keys(auto_build_1.POINTS).map(k => `${k}=${w[k]}`).join(' ');
+function buildReport(r, o, file, u = 'GB') {
+    const { result: res, list } = r;
+    const out = [`Zbiorow w zakresie: ${list.small + list.large}, malych: ${list.small}, duzych: ${list.large}`,
+        `Duze w liscie: do ${limitText(o.maxLarge, u)}   male stracone przez EXCLUDE: do ${pctOf(o.loss)}`, `Wagi: ${weightsText(o.weights)}`, ''];
+    if (res.stopped)
+        out.push('Uwaga: przerwano po czasie --time; lista moze byc niepelna.', '');
+    if (res.include.length === 0) {
+        out.push('Brak masek dla tych progow i wag (--min-purity, --min-count, --max-large, --weights).');
+        return out.join('\n') + '\n';
+    }
+    out.push(`Masek ${res.include.length + res.exclude.length} (INCLUDE ${res.include.length}, EXCLUDE ${res.exclude.length})`, '', line([...heads(u), 'Tylko ta']));
+    for (const m of list.rows)
+        out.push(line([...cells(m, u), String(m.only)]));
+    out.push(line(cells(list.total, u)), '', `Obejmuja ${part(list.total.small, list.small)} malych (${list.total.small} z ${list.small}), po EXCLUDE; `
+        + `duze ${part(list.total.largeKb, list.total.smallKb)} alokacji objetych malych`);
+    if (list.excludes.length) {
+        out.push('', wide(['Maska EXCLUDE', 'Duzych', `Duzych ${u}`, 'Malych']));
+        for (const m of list.excludes)
+            out.push(wide([m.text, String(m.large), inUnit(m.largeKb, u), String(m.small)]));
+    }
+    out.push('', 'Punkty (1 punkt = 1% malych przy small=1)', '');
+    for (const k of Object.keys(auto_build_1.POINTS))
+        out.push(LABELS[k].padEnd(34) + `${k}=${o.weights[k]}`.padEnd(14) + points(res.parts[k]).padStart(10));
+    out.push('RAZEM'.padEnd(48) + points(res.points).padStart(10));
+    if (r.variants.length) {
+        const row = (x) => x[0].padEnd(30) + x.slice(1).map(y => y.padStart(10)).join('');
+        const of = (name, v) => row([name, String(v.include.length), String(v.exclude.length), part(v.totals.small, list.small), part(v.totals.largeKb, v.totals.smallKb),
+            String(v.include.filter(m => m.startsWith('*')).length)]);
+        out.push('', 'Co zmieni waga', '', row(['Wagi', 'INCLUDE', 'EXCLUDE', '% mal.', 'duze/male', 'od **']), of('obecne', res));
+        for (const v of r.variants)
+            out.push(of(v.name, v.result));
+    }
+    if (r.verified && file !== undefined)
+        out.push(...verifyReport(r.verified, list, file, o.maxLarge, u));
+    return out.join('\n') + '\n';
+}
+/** "masks=1 large=4" (takze po przecinku) */
+function parseWeights(text) {
+    const w = { ...auto_build_1.POINTS };
+    for (const x of text.trim().split(/[\s,]+(?=[a-zA-Z])/).filter(Boolean)) {
+        const m = /^([a-z]+)=([0-9.,]+)$/i.exec(x);
+        const k = m?.[1].toLowerCase();
+        if (!m || !Object.hasOwn(auto_build_1.POINTS, k))
+            throw new ArgError(`--weights: "${x}" - dozwolone: ${Object.keys(auto_build_1.POINTS).join(' ')} (np. masks=1)`);
+        w[k] = num(m[2], 'weights', 0, 1e6, false);
+    }
+    if (w.small === 0)
+        throw new ArgError('--weights: small musi byc wieksze od 0');
+    return w;
 }
 /** "5%" -> 0.05; sama liczba tez znaczy procent */
 function percent(v, name) {
@@ -5115,7 +6482,7 @@ function main(argv, io = STDIO) {
                 'min-purity': { type: 'string' },
                 'min-count': { type: 'string' },
                 'max-masks': { type: 'string', default: '100' },
-                wild: { type: 'string', default: '3' },
+                wild: { type: 'string' },
                 masks: { type: 'string' },
                 quals: { type: 'string' },
                 partial: { type: 'string' },
@@ -5133,6 +6500,13 @@ function main(argv, io = STDIO) {
                 pick: { type: 'string' },
                 'any-start': { type: 'boolean', default: false },
                 verify: { type: 'string' },
+                build: { type: 'boolean', default: false },
+                weights: { type: 'string' },
+                beam: { type: 'string' },
+                rounds: { type: 'string' },
+                ask: { type: 'boolean', default: false },
+                'what-if': { type: 'boolean', default: false },
+                log: { type: 'string' },
                 filtlist: { type: 'string' },
                 tests: { type: 'string' },
                 'per-mask': { type: 'string', default: '1' },
@@ -5155,7 +6529,7 @@ function main(argv, io = STDIO) {
             minPurity: num(o['min-purity'] ?? (combos ? '0' : o.compact ? '0.5' : '0.95'), 'min-purity', 0, 1, false),
             minCount: num(o['min-count'] ?? '10', 'min-count', 1, 1e9, true),
             maxMasks: num(o['max-masks'], 'max-masks', 1, 1e6, true),
-            maxWild: num(o.wild, 'wild', 0, 9, true),
+            maxWild: num(o.wild ?? '3', 'wild', 0, 9, true),
             head: o.prefix === undefined ? [] : parseHead(o.prefix),
         };
         const unit = o.unit.toUpperCase();
@@ -5171,8 +6545,19 @@ function main(argv, io = STDIO) {
             io.err(`Zapisano: ${file}${info}\n`);
         };
         const exGain = percent(o['exclude-gain'] ?? '0.5', 'exclude-gain');
-        const loss = percent(o['exclude-loss'] ?? (o.compact ? '1' : '0'), 'exclude-loss');
-        if (o.compact) {
+        const loss = percent(o['exclude-loss'] ?? (o.compact || o.build ? '1' : '0'), 'exclude-loss');
+        const onlyBuild = ['ask', 'what-if'].find(x => o[x]) ?? ['weights', 'beam', 'rounds', 'log'].find(x => o[x] !== undefined);
+        if (onlyBuild && !o.build)
+            throw new ArgError(`--${onlyBuild}: tylko z --build`);
+        if (o.build) {
+            const other = ['compact', 'exclude', 'any-start'].find(x => o[x])
+                ?? ['masks', 'quals', 'try', 'top', 'pick', 'wild', 'exclude-gain'].find(x => o[x] !== undefined);
+            if (other)
+                throw new ArgError(`--${other}: nie z --build`);
+            if (o.ask && o['what-if'])
+                throw new ArgError('--what-if: nie z --ask');
+        }
+        else if (o.compact) {
             const other = o.exclude ? 'exclude' : ['masks', 'quals', 'try', 'partial', 'top'].find(x => o[x] !== undefined);
             if (other)
                 throw new ArgError(`--${other}: nie z --compact`);
@@ -5180,25 +6565,25 @@ function main(argv, io = STDIO) {
         else {
             const lone = o['any-start'] ? 'any-start' : ['max-large', 'pick', 'verify'].find(x => o[x] !== undefined);
             if (lone)
-                throw new ArgError(`--${lone}: tylko z --compact`);
+                throw new ArgError(`--${lone}: tylko z --compact${lone === 'max-large' || lone === 'verify' ? ' albo --build' : ''}`);
             const ex = ['exclude-gain', 'exclude-loss'].find(x => o[x] !== undefined);
             if (ex && !o.exclude)
-                throw new ArgError(`--${ex}: tylko z --exclude albo --compact`);
+                throw new ArgError(`--${ex}: tylko z --exclude, --compact${ex === 'exclude-loss' ? ', --build' : ''}`);
         }
+        const partial = num(o.partial ?? '3', 'partial', 0, 7, true);
+        if (partial === 1)
+            throw new ArgError('--partial: 2-7 albo 0 (tylko pelne kwalifikatory)');
         if (!combos) {
-            const lone = ['partial', 'top'].find(x => o[x] !== undefined);
+            const lone = o.top !== undefined ? 'top' : o.partial !== undefined && !o.build ? 'partial' : null;
             if (lone)
-                throw new ArgError(`--${lone}: tylko z --quals albo --try`);
-            if (o.time !== undefined && !o.compact)
-                throw new ArgError('--time: tylko z --quals albo --compact');
+                throw new ArgError(`--${lone}: tylko z --quals albo --try${lone === 'partial' ? ' albo --build' : ''}`);
+            if (o.time !== undefined && !o.compact && !o.build)
+                throw new ArgError('--time: tylko z --quals, --compact albo --build');
         }
         else {
             const other = o.exclude ? 'exclude' : ['filtlist', 'tests'].find(x => o[x] !== undefined);
             if (other)
                 throw new ArgError(`--${other}: nie z --quals i --try (wybrane maski zapisz w pliku i podaj w --masks)`);
-            const partial = num(o.partial ?? '3', 'partial', 0, 7, true);
-            if (partial === 1)
-                throw new ArgError('--partial: 2-7 albo 0 (tylko pelne kwalifikatory)');
             const q = {
                 quals: o.quals === undefined ? null
                     : { maxQuals: num(o.quals, 'quals', 1, 4, true), top: num(o.top ?? '20', 'top', 1, 10000, true), seconds: num(o.time ?? '600', 'time', 1, 1e6, true) },
@@ -5255,6 +6640,31 @@ function main(argv, io = STDIO) {
             }
             return added;
         };
+        if (o.build) {
+            if (o.verify !== undefined)
+                node_fs_1.default.accessSync(o.verify);
+            const b = {
+                weights: parseWeights(o.weights ?? ''), minPurity: opt.minPurity, minCount: opt.minCount, maxMasks: Math.min(opt.maxMasks, filtlist_1.MAX_LIST),
+                maxLarge: largeLimit(o['max-large'] ?? '5%'), loss, exMin: excludeMin, partial, beam: num(o.beam ?? '8', 'beam', 1, 1000, true),
+                rounds: num(o.rounds ?? '2', 'rounds', 0, 100, true), head: opt.head, seconds: num(o.time ?? '600', 'time', 1, 1e6, true),
+            };
+            const p = progress(4 + 2 * VARIANTS.length * Number(o['what-if']) + 2 * Number(o.verify !== undefined) + Number(o.tests !== undefined));
+            const r = build(positionals[0], scope, when, b, { verify: o.verify, whatIf: o['what-if'], ask: o.ask, unit }, p, io);
+            io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek masek: ${opt.head.join('.')}` : ''}   min. purity: ${pct(opt.minPurity)}\n`);
+            io.out(buildReport(r, b, o.verify, unit));
+            const journal = journalText(r.result);
+            if (o.log === undefined)
+                io.out(`\n${journal}`);
+            else
+                save(o.log, journal);
+            const ok = (l) => l.filter(m => !(0, auto_acs_1.acsProblem)(m));
+            if (ok(r.result.include).length && o.filtlist === undefined)
+                io.out(`\n${(0, auto_acs_1.filtlistText)('MALE', ok(r.result.include), ok(r.result.exclude)).join('\n')}\n`);
+            if (r.result.include.length)
+                finish(p, r.input, r.result.include, r.result.exclude);
+            save(o.out, compactCsv(r, unit));
+            return 0;
+        }
         if (o.compact) {
             if (o.verify !== undefined)
                 node_fs_1.default.accessSync(o.verify);
