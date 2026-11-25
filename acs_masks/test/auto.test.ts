@@ -7,6 +7,7 @@ import { after, before, describe, it } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { check, journalText, main as autoMain, OPTIONS, parseConds, parseHead, parseWeights, search, SearchResult } from '../src/auto';
 import { Answer, BuildOptions, BuildResult, Builder, buildList, enough, makeSpace, Pattern, POINTS, Points, Proposal, shapeCost, Space } from '../src/auto-build';
+import { audit, AuditOptions, generalize, mergeCandidates } from '../src/auto-audit';
 import { acsProblem, filtlistText, findExcludes, maskTests } from '../src/auto-acs';
 import { parseMaskList } from '../src/auto-check';
 import { MaskRow } from '../src/auto-mine';
@@ -1948,6 +1949,405 @@ describe('--build', () => {
             assert.doesNotMatch(e.err, /^\s+at /m, x.join(' '));
         }
         assert.equal(read('zla.txt'), 'PAY.LOG.**\n');
+    });
+});
+
+describe('--check', () => {
+    const OPT: AuditOptions = { weights: POINTS, maxLarge: { part: 0.05 }, minPurity: 0.95, loss: 0.01, head: 0 };
+    const pickOf = (r: () => number) => <T>(a: T[]) => a[Math.floor(r() * a.length)];
+
+    /** zbiory o krotkich nazwach z malego slownika */
+    function sample(seed: number, count: number) {
+        const r = rng(seed);
+        const pick = pickOf(r);
+        const names = new Interner();
+        const texts: string[] = [];
+        while (texts.length < count) {
+            const t = [pick(['PAY', 'PAX', 'HR']), ...Array.from({ length: 1 + Math.floor(r() * 3) }, () => pick(['LOG', 'LOGA', 'DATA', 'D1', 'D2', 'TMP', 'LIST']))].join('.');
+            const b = Buffer.from(t, 'latin1');
+            // ta sama nazwa tylko raz
+            if (names.add(b, 0, b.length) === texts.length) texts.push(t);
+        }
+        const allocKb = Float64Array.from(texts, () => 1 + Math.floor(r() * 100));
+        // male glownie pod LOG i TMP
+        const small = texts.map(t => r() < (/LOG|TMP/.test(t) ? 0.95 : 0.2));
+        const rows = (want: boolean) => Int32Array.from(texts.map((_, i) => i).filter(i => small[i] === want));
+        return { texts, small, input: { names, allocKb, pos: rows(true), neg: rows(false) } };
+    }
+    const QUALS = ['**', '**', 'LOG', 'LOG*', 'LOG%', 'DATA', 'D%', 'D*', 'TMP', 'LIST', '*', 'D1'];
+    function randomLists(r: () => number) {
+        const pick = pickOf(r);
+        const mask = (first: string[]) => [pick(first), ...Array.from({ length: Math.floor(r() * 3) }, () => pick(QUALS))].join('.').replace(/(\.\*\*)+(?=\.|$)/g, '.**');
+        const some = (n: number, first: string[]) => [...new Set(Array.from({ length: n }, () => mask(first)))];
+        return { include: some(3 + Math.floor(r() * 8), ['PAY', 'PA%', 'PAX', 'HR', 'HR']), exclude: some(Math.floor(r() * 7), ['**.DATA', '**.LIST', 'PAY.**', '**.D2', '**.NIC', 'PAY.**.DATA', 'PAX.**.DATA', 'HR.**.DATA', 'PAY.LIST', 'PAX.LIST']) };
+    }
+    type Set5 = ReturnType<typeof sample>;
+    /** liczby wprost: kazda nazwa z kazda maska */
+    function direct(s: Set5, l: { include: string[]; exclude: string[] }) {
+        const inc = l.include.map(m => parseMask(m));
+        const exc = l.exclude.map(m => parseMask(m));
+        const t = { include: l.include.length, exclude: l.exclude.length, small: 0, large: 0, smallKb: 0, largeKb: 0, lost: { small: 0, large: 0, smallKb: 0, largeKb: 0 } };
+        const on = new Set<number>();
+        s.texts.forEach((n, i) => {
+            if (!inc.some(m => matches(m, n))) return;
+            const out = exc.some(m => matches(m, n));
+            const c = out ? t.lost : t;
+            c[s.small[i] ? 'small' : 'large']++;
+            c[s.small[i] ? 'smallKb' : 'largeKb'] += s.input.allocKb[i];
+            if (!out) on.add(i);
+        });
+        return { t, on };
+    }
+    const allKb = (s: Set5) => [...s.input.pos].reduce((x, i) => x + s.input.allocKb[i], 0);
+    const scoreOf = (s: Set5, l: { include: string[]; exclude: string[] }, W: Points) => {
+        const { t } = direct(s, l);
+        return 100 * W.small * t.small / s.input.pos.length - 100 * (W.large * t.largeKb + W.risk * t.lost.largeKb) / allKb(s)
+            - l.include.reduce((x, m) => x + W.masks + shapeCost(m, W), 0) - l.exclude.reduce((x, m) => x + W.exclude + shapeCost(m, { ...W, start: 0 }), 0);
+    };
+
+    it('uogolnienie obejmuje obie maski', () => {
+        const r = rng(3);
+        const pick = pickOf(r);
+        const q = ['**', '**', '*', 'A', 'AB1', 'AB2', 'AB', 'A%2', 'A*', '*B', 'X*1', 'D%%', 'D12', 'LOG', 'LOGA', 'ABCDEFGH', 'ABCDEFG'];
+        let n = 0;
+        for (let k = 0; k < 1500; k++) {
+            const mask = () => Array.from({ length: 1 + Math.floor(r() * 4) }, () => pick(q)).join('.');
+            const [a, b] = [mask(), mask()];
+            for (const g of generalize(a, b)) {
+                parseMask(g);
+                assert.ok(within(a.split('.'), g.split('.')) && within(b.split('.'), g.split('.')), `${a} + ${b} -> ${g}`);
+                n++;
+            }
+        }
+        assert.ok(n > 2000, String(n));
+        const has = (a: string, b: string, ...want: string[]) => {
+            const g = generalize(a, b);
+            for (const w of want) assert.ok(g.includes(w), `${a} + ${b}: ${w} nie ma w ${g}`);
+        };
+        has('PAY.LOG.X', 'PAY.TMP.X', 'PAY.*.X', 'PAY.**', 'PAY.**'.replace('**', '*.**'));
+        has('PAY.LOG1.**', 'PAY.LOG2.**', 'PAY.LOG%.**', 'PAY.LOG*.**');
+        has('PAY.LOGA.**', 'PAY.LOGB.X', 'PAY.LOG*.**');
+        has('GXU.**.LIST.**', 'WTZ.LIST.**', '**.LIST.**');
+        has('A1.Q.LIST', 'B2.LIST', '**.LIST');
+        has('A.B.D241001.T1', 'A.X.D241002.T2', 'A.*.D24100%.T%', 'A.*.D24100*.T*');
+        has('A.B.C.D', 'A.X.Y.C.D', 'A.**.C.D');
+    });
+
+    it('kandydaci: bez masek z listy, z "-" i bez znaczacego poczatku', () => {
+        const c = mergeCandidates(['AB1.LOG.X', 'AB2.LOG.Y', 'XY.LOG.**', 'A-B.Z', 'A-C.Z'], new Set(['AB%.LOG.**']));
+        assert.ok(c.includes('AB*.LOG.**') && c.includes('**.LOG.**'));
+        assert.ok(!c.includes('AB%.LOG.**'));
+        for (const m of c) assert.equal(acsProblem(m), null, m);
+        assert.ok(!c.some(m => /^A[*%]/.test(m)), c.join(' '));
+        assert.deepEqual(mergeCandidates(['AB1.X'], new Set()), []);
+    });
+
+    const seen: Record<string, number> = {};
+    for (let seed = 1; seed <= 80; seed++) {
+        it(`liczby i kazdy krok = porownanie kazdej maski z kazda nazwa, ziarno ${seed}`, () => {
+            const r = rng(seed + 900);
+            const s = sample(seed, 60 + seed * 4);
+            const lists = randomLists(r);
+            const opt: AuditOptions = { ...OPT, weights: { ...POINTS, masks: pickOf(r)([0.5, 2]), exclude: pickOf(r)([0.5, 3]), large: pickOf(r)([0.5, 2]) }, maxLarge: seed % 3 ? { part: 0.1 } : { kb: 300 }, minPurity: pickOf(r)([0.5, 0.8, 0.95]), loss: pickOf(r)([0, 0.1, 0.3]) };
+            const a = audit(s.input, lists, opt, () => {});
+            const start = direct(s, lists);
+            assert.deepEqual(a.before, start.t);
+
+            // po ile masek na zbior
+            const inc = lists.include.map(m => parseMask(m));
+            const want: number[] = [];
+            for (const i of start.on) {
+                const n = inc.filter(m => matches(m, s.texts[i])).length;
+                want[n - 1] = (want[n - 1] ?? 0) + 1;
+            }
+            assert.deepEqual(a.depth.map(c => c.small + c.large), Array.from(want, x => x ?? 0));
+
+            // kazda maska: ile obejmuje i co ubywa po jej usunieciu
+            for (const row of a.include) {
+                const own = direct(s, { include: [row.text], exclude: lists.exclude }).t;
+                const rest = direct(s, { ...lists, include: lists.include.filter(m => m !== row.text) }).t;
+                assert.deepEqual([row.all.small, row.all.large, row.all.smallKb, row.all.largeKb], [own.small, own.large, own.smallKb, own.largeKb]);
+                assert.deepEqual([row.only.small, row.only.large, row.only.largeKb], [start.t.small - rest.small, start.t.large - rest.large, start.t.largeKb - rest.largeKb]);
+            }
+            for (const row of a.exclude) {
+                const own = direct(s, { include: lists.include, exclude: [row.text] }).t.lost;
+                const rest = direct(s, { ...lists, exclude: lists.exclude.filter(m => m !== row.text) }).t;
+                assert.deepEqual(row.all, own);
+                assert.deepEqual([row.only.small, row.only.large], [rest.small - start.t.small, rest.large - start.t.large]);
+            }
+            const clean = lists.include.filter(m => direct(s, { include: [m], exclude: lists.exclude }).t.large === 0);
+            assert.deepEqual(a.pure, direct(s, { include: clean, exclude: lists.exclude }).t);
+
+            // kroki
+            let cur: { include: string[]; exclude: string[] } = lists;
+            const steps = [...a.safe, ...a.trade];
+            steps.forEach((f, k) => {
+                const was = direct(s, cur);
+                const now = direct(s, f.lists);
+                const side = f.side === 'INCLUDE' ? 'include' : 'exclude';
+                const other = side === 'include' ? 'exclude' : 'include';
+                assert.deepEqual(f.lists[other], cur[other]);
+                assert.deepEqual(f.lists[side].slice().sort(), [...cur[side].filter(m => !f.remove.includes(m)), ...f.add].sort());
+                const kind = f.add.length === 0 && f.remove.length === 1 ? 'usun' : f.add.length === 1 && f.remove.length > 1 ? 'scal'
+                    : f.add.length > 0 && f.add.length <= 3 && f.remove.length === 1 && f.side === 'INCLUDE' ? 'zamien' : f.add.length === 1 && f.remove.length === 0 && f.side === 'EXCLUDE' ? 'dodaj' : '';
+                assert.ok(kind && f.remove.every(m => cur[side].includes(m)));
+                assert.deepEqual(f.after, now.t);
+                const diff = (x: Set<number>, y: Set<number>) => [...x].filter(i => !y.has(i));
+                const sum = (l: number[]) => ({
+                    small: l.filter(i => s.small[i]).length, large: l.filter(i => !s.small[i]).length,
+                    smallKb: l.filter(i => s.small[i]).reduce((t, i) => t + s.input.allocKb[i], 0), largeKb: l.filter(i => !s.small[i]).reduce((t, i) => t + s.input.allocKb[i], 0),
+                });
+                assert.deepEqual(f.out, sum(diff(was.on, now.on)));
+                assert.deepEqual(f.in, sum(diff(now.on, was.on)));
+                assert.ok(Math.abs(f.points - (scoreOf(s, f.lists, opt.weights) - scoreOf(s, cur, opt.weights))) < 1e-6, `${f.points}`);
+                if (kind === 'scal') for (const m of f.remove) assert.ok(within(m.split('.'), f.add[0].split('.')), `${m} w ${f.add}`);
+                if (k < a.safe.length) {
+                    assert.ok(f.out.small === 0 && f.in.large === 0 && f.add.length <= f.remove.length);
+                } else {
+                    assert.ok(f.points > 0);
+                    if (f.in.large) {
+                        const cap = 'kb' in opt.maxLarge ? opt.maxLarge.kb : opt.maxLarge.part * now.t.smallKb;
+                        assert.ok(now.t.largeKb <= Math.max(was.t.largeKb, cap) + 1e-6);
+                    }
+                    if (f.side === 'EXCLUDE' && f.out.small) assert.ok(now.t.lost.small <= Math.max(was.t.lost.small, opt.loss * (was.t.small + was.t.lost.small)) + 1e-9);
+                    if (f.side === 'INCLUDE' && f.in.large) {
+                        const p = (m: string) => {
+                            const t = direct(s, { include: [m], exclude: cur.exclude }).t;
+                            return t.small ? t.small / (t.small + t.large) : 0;
+                        };
+                        // liczby przed dodaniem i po sa te same: EXCLUDE sie nie zmienia
+                        for (const m of f.add) assert.ok(p(m) >= Math.min(opt.minPurity, ...f.remove.map(p)) - 1e-9);
+                    }
+                }
+                cur = f.lists;
+                const name = `${k < a.safe.length ? 'bez strat' : 'wymiana'} ${kind} ${f.side}`;
+                seen[name] = (seen[name] ?? 0) + 1;
+            });
+            seen.zablokowane = (seen.zablokowane ?? 0) + a.blocked.length;
+            seen.ukryte = (seen.ukryte ?? 0) + a.blocked.filter(b => b.hidden.large > 0).length;
+
+            // po krokach bez strat zadna maska nie jest juz zbedna
+            const end = a.safe.length ? a.safe[a.safe.length - 1].lists : lists;
+            const base = direct(s, end);
+            const same = (l: typeof end) => {
+                const d = direct(s, l);
+                return [...base.on].every(i => !s.small[i] || d.on.has(i)) && [...d.on].every(i => s.small[i] || base.on.has(i));
+            };
+            for (const m of end.include) assert.ok(!same({ ...end, include: end.include.filter(x => x !== m) }), `zbedna ${m}`);
+            for (const m of end.exclude) assert.ok(!same({ ...end, exclude: end.exclude.filter(x => x !== m) }), `zbedna ${m}`);
+
+            for (const b of a.blocked) {
+                const now = direct(s, { ...end, include: [...end.include.filter(m => !b.remove.includes(m)), b.text] });
+                assert.deepEqual([b.in.small, b.in.large, b.in.largeKb], [now.t.small - base.t.small, now.t.large - base.t.large, now.t.largeKb - base.t.largeKb]);
+                assert.deepEqual([b.hidden.small, b.hidden.large], [now.t.lost.small - base.t.lost.small, now.t.lost.large - base.t.lost.large]);
+                assert.ok(b.in.large > 0 && b.remove.length > 1);
+            }
+            const kbPer = a.blocked.map(b => b.in.largeKb / (b.remove.length - 1));
+            assert.deepEqual(kbPer, kbPer.slice().sort((x, y) => x - y));
+
+            // bez duzych: te same male, co w liscie bez EXCLUDE
+            const none = direct(s, { include: lists.include, exclude: [] }).on;
+            const free = direct(s, { include: a.noLarge.include, exclude: [] }).on;
+            assert.ok([...none].every(i => !s.small[i] || free.has(i)));
+            assert.deepEqual(a.noLarge.exclude, []);
+            assert.ok(a.noLarge.include.length <= lists.include.length);
+        });
+    }
+
+    it('dane losowe daly kazdy rodzaj kroku', () => {
+        // scalenie EXCLUDE kosztem malych: osobny test nizej
+        delete seen['wymiana scal EXCLUDE'];
+        assert.equal(Object.keys(seen).length, 12, JSON.stringify(seen));
+        for (const [k, n] of Object.entries(seen)) assert.ok(n >= 3, `${k}: ${n}`);
+    });
+
+    it('scalenia, zbedne i kolejnosc: zawarte w innej masce najpierw', () => {
+        const row = (dsn: string, small: boolean) => dline({ dsn, f1: '48', allkb: kbForTrk(315), usekb: small ? 40 : kbForTrk(315) - 100 });
+        write('CK.CSV', csv([
+            ...Array.from({ length: 20 }, (_, i) => row(`PAY.LOG${i % 2}.D${240101 + i}`, true)),
+            ...Array.from({ length: 10 }, (_, i) => row(`HR.TMP.D${240101 + i}`, true)),
+            ...Array.from({ length: 10 }, (_, i) => row(`HR.LIST.D${240101 + i}`, true)),
+            ...Array.from({ length: 30 }, (_, i) => row(`HR.DATA.D${240101 + i}`, false)),
+            ...Array.from({ length: 3 }, (_, i) => row(`PAY.LOG1.MASTER.A${i}`, false)),
+            row('FIN.STARY', true),
+        ]));
+        write('ck.txt', '/* opis */\n FILTLIST MOJA INCLUDE(PAY.LOG0.**,PAY.LOG1.**,PAY.LOG1.D%%%%%%,HR.TMP.**,HR.LIST.**,NIC.**)\n EXCLUDE(**.MASTER.**,**.MASTER.A%)\n');
+        const r = auto(['CK.CSV', '--check', 'ck.txt', '--out', 'ck.csv']);
+        assert.equal(r.code, 0, r.err);
+        assert.match(r.out, /FILTLIST ck.txt: INCLUDE 6, EXCLUDE 2/);
+        assert.match(r.out, /Male w zakresie +41 +100,0% +0,68 +100,0%\n {2}objete filtlista +40 +97,5% +0,66 +97,5%\n {2}wylaczone przez EXCLUDE +0 .*\n {2}poza INCLUDE +1 /);
+        assert.match(r.out, /Duze w zakresie +33 +100,0% .*\n {2}objete filtlista +0 +0,0% +0,00 +0,0%\n {2}wylaczone przez EXCLUDE +3 +9,0% .*\n {2}poza INCLUDE +30 /);
+        assert.match(r.out, /Zadna maska INCLUDE nie obejmuje duzych/);
+        assert.match(r.out, /obecna lista +6 +2 +8\npo propozycjach bez strat +3 +1 +4\nto samo, gdyby duzych nie bylo +2 +0 +2\n\nBez duzych lista zmniejsza sie o 2:/);
+        assert.match(r.out, /HR\.\*\* +1 +0 +30 +0,\d\d {3}HR\.TMP\.\*\* {2}HR\.LIST\.\*\*/);
+        assert.match(r.out, / 1 +30 +75,0% .*\n {2}2 +10 +25,0% /);
+        assert.match(r.out, /PAY\.LOG1\.\*\* +PAY\.LOG1\.D%%%%%% +10 +0 +100,0% +100,0% {3}2 zawiera sie w 1/);
+        const no = [...r.out.matchAll(/^ +(\d+)\. ((?:usun|scal) .*)$/gm)].map(m => m[2]);
+        // dwie zawarte w innych, potem reszta
+        assert.deepEqual(no.slice(0, 2).map(x => x.replace(/ {3}.*/, '')).sort(), ['usun EXCLUDE **.MASTER.A%', 'usun INCLUDE PAY.LOG1.D%%%%%%']);
+        assert.ok(no.slice(0, 2).every(x => x.includes('zawiera sie w')));
+        assert.ok(no.includes('usun INCLUDE NIC.**   nie pasuje do zadnego zbioru'));
+        assert.ok(no.some(x => /^scal INCLUDE PAY\.(LOG%\.)?\*\* {3}zamiast 2: PAY\.LOG0\.\*\* {2}PAY\.LOG1\.\*\*/.test(x)), no.join('\n'));
+        assert.match(r.out, /Kosztem malych albo duzych: brak/);
+        assert.match(r.out, /Nieobjete male: 1; /);
+        const out = fs.readFileSync(path.join(dir, 'ck.csv'), 'utf-8').trim().split('\n').map(l => l.split(';'));
+        assert.deepEqual(out[0].slice(-3), ['tylko_ta', 'stan', 'propozycja']);
+        const of = (m: string) => out.find(x => x[0] === m)!;
+        assert.match(of('PAY.LOG0.**')[8], /^\d: scal w PAY\./);
+        assert.deepEqual(of('HR.TMP.**').slice(-2), ['', '']);
+        assert.equal(of('**.MASTER.A%')[7], 'exclude');
+        // wynik nadaje sie na liste
+        assert.deepEqual(parseMaskList(fs.readFileSync(path.join(dir, 'ck.csv'), 'utf-8'), 'x').excludes, ['**.MASTER.**', '**.MASTER.A%']);
+
+        // ---- FILTLIST: bez strat, pierwsze N, zadna
+        const list = (f: string) => parseMaskList(fs.readFileSync(path.join(dir, f), 'utf-8'), f);
+        let w = auto(['CK.CSV', '--check', 'ck.txt', '--filtlist', 'ck2.txt']);
+        assert.match(w.err, /Wprowadzone propozycje: 4 z 4/);
+        assert.match(fs.readFileSync(path.join(dir, 'ck2.txt'), 'utf-8'), /FILTLIST MOJA INCLUDE\(/);
+        assert.deepEqual([list('ck2.txt').masks.length, list('ck2.txt').excludes], [3, ['**.MASTER.**']]);
+        w = auto(['CK.CSV', '--check', 'ck2.txt']);
+        assert.match(w.out, /Bez strat: brak\./);
+        assert.match(w.out, /objete filtlista +40 /);
+        auto(['CK.CSV', '--check', 'ck.txt', '--filtlist', 'ck3.txt', '--apply', '0']);
+        assert.deepEqual(list('ck3.txt'), list('ck.txt'));
+        auto(['CK.CSV', '--check', 'ck.txt', '--filtlist', 'ck3.txt', '--apply', '1', '--tests', 'ckt']);
+        assert.equal(list('ck3.txt').masks.length + list('ck3.txt').excludes.length, 7);
+        assert.ok(fs.existsSync(path.join(dir, 'ckt')));
+        // w to samo miejsce: poprzednia wersja w .bak
+        const was = fs.readFileSync(path.join(dir, 'ck.txt'), 'utf-8');
+        fs.writeFileSync(path.join(dir, 'ck4.txt'), was);
+        auto(['CK.CSV', '--check', 'ck4.txt', '--filtlist', 'ck4.txt', '--apply', 'safe']);
+        assert.equal(fs.readFileSync(path.join(dir, 'ck4.txt.bak'), 'utf-8'), was);
+        assert.equal(list('ck4.txt').masks.length, 3);
+    });
+
+    it('kosztem malych albo duzych: --apply all, wagi i --max-large', () => {
+        const row = (dsn: string, small: boolean) => dline({ dsn, f1: '48', allkb: kbForTrk(315), usekb: small ? 40 : kbForTrk(315) - 100 });
+        write('CT.CSV', csv([
+            ...Array.from({ length: 300 }, (_, i) => row(`PAY.LOG.D${240101 + i}`, true)),
+            ...Array.from({ length: 300 }, (_, i) => row(`PAY.TMP.D${240101 + i}`, true)),
+            row('PAY.DATA.A', false),
+            row('FIN.JEDEN', true),
+        ]));
+        write('ct.txt', 'PAY.LOG.**\nPAY.TMP.**\nFIN.**\n');
+        // FIN.** daje 1/601 = 0,17% malych za 0,5 punktu; PAY.** oszczedza maske za 1 duzy
+        const r = auto(['CT.CSV', '--check', 'ct.txt', '--filtlist', 'ct2.txt', '--apply', 'all']);
+        assert.match(r.out, /usun INCLUDE FIN\.\*\* {3}malych tylko w niej: 1\n +malych -1; punkty \+0,3/);
+        assert.match(r.out, /scal INCLUDE PAY\.\*\* {3}zamiast 2: .*\n +duzych \+1 \(\+0,02 GB\); punkty \+0,1/);
+        assert.match(r.out, /po wszystkich propozycjach +1 +0 +600 /);
+        assert.match(fs.readFileSync(path.join(dir, 'ct2.txt'), 'utf-8'), /FILTLIST MALE INCLUDE\(PAY\.\*\*\)/);
+        assert.match(r.out, /Bez duzych lista zmniejsza sie o 1:/);
+        // proponowane scalenie nie jest drugi raz na liscie zablokowanych
+        assert.doesNotMatch(r.out, /Scalenia, ktorych/);
+        // duzy drozszy albo zabroniony: scalenia nie ma
+        for (const x of [['--weights', 'large=9'], ['--max-large', '0%'], ['--min-purity', '1']]) {
+            const e = auto(['CT.CSV', '--check', 'ct.txt', ...x]);
+            assert.doesNotMatch(e.out, /scal INCLUDE/, x.join(' '));
+            assert.match(e.out, /PAY\.\*\* +1 +0 +1 +0,02 {3}PAY\.LOG\.\*\* {2}PAY\.TMP\.\*\*/, x.join(' '));
+        }
+        assert.match(auto(['CT.CSV', '--check', 'ct.txt', '--prefix', 'FIN.**']).out, /Male w zakresie +1 /);
+    });
+
+    it('scalenia: najwezsze z zablokowanych, scalanie scalonych, wagi 0', () => {
+        const row = (dsn: string, small: boolean) => dline({ dsn, f1: '48', allkb: kbForTrk(315), usekb: small ? 40 : kbForTrk(315) - 100 });
+        const some = (pre: string, small: boolean, n = 20) => Array.from({ length: n }, (_, i) => row(`${pre}.D${240101 + i}`, small));
+        write('CS.CSV', csv([...some('PAY.LOGA', true), ...some('PAY.LOGB', true), ...some('PAY.LOGC', false, 2), ...some('PAY.DATA', false), ...some('HRA.LIST', true), ...some('WTZ.LIST', true), ...some('HRA.X', false), ...some('WTZ.X', false)]));
+        write('cs.txt', 'PAY.LOGA.**, PAY.LOGB.**, HRA.LIST.**, WTZ.LIST.**');
+        let r = auto(['CS.CSV', '--check', 'cs.txt', '--weights', 'large=9']);
+        const blocked = r.out.slice(r.out.indexOf('Scalenia, ktorych'), r.out.indexOf('3. POKRYWANIE'));
+        assert.match(blocked, /^PAY\.LOG\*\.\*\* +1 +0 +2 /m);
+        assert.doesNotMatch(blocked, /^PAY\.\*\*/m);
+        // **.LIST.** nie ma duzych, wstrzymuje je waga start
+        assert.doesNotMatch(r.out, /\*\.LIST/);
+        assert.match(auto(['CS.CSV', '--check', 'cs.txt', '--weights', 'start=0']).out, /scal INCLUDE \*\*?\.LIST\.\*\*/);
+
+        // Q%%% dopiero z masek scalonych w pierwszej rundzie
+        write('CQ.CSV', csv([...['QAAA', 'QBAA', 'QABA', 'QAAB'].flatMap(q => some(`PAY.${q}`, true)), ...some('PAY.QZZZZ', false), ...some('PAY.QAZZZ', false)]));
+        write('cq.txt', 'PAY.QAAA.**\nPAY.QBAA.**\nPAY.QABA.**\nPAY.QAAB.**\n');
+        r = auto(['CQ.CSV', '--check', 'cq.txt', '--filtlist', 'cq2.txt', '--weights', 'percent=0.001']);
+        assert.match(fs.readFileSync(path.join(dir, 'cq2.txt'), 'utf-8'), /INCLUDE\(PAY\.Q%%%\.\*\*\)/, r.out);
+
+        write('cz.txt', 'PAY.LOGA.**, PAY.LOGB.**, PAY.LOGA.D%%%%%%, PAY.LOGB.D*');
+        assert.match(auto(['CS.CSV', '--check', 'cz.txt', '--weights', 'masks=0 percent=0 wild=0']).out, /usun INCLUDE PAY\.LOGA\.D%%%%%% {3}zawiera sie w PAY\.LOGA/);
+    });
+
+    it('zamiana na wezsza, nowy EXCLUDE, D%%%%%% -> D*', () => {
+        const row = (dsn: string, small: boolean) => dline({ dsn, f1: '48', allkb: kbForTrk(315), usekb: small ? 40 : kbForTrk(315) - 100 });
+        const some = (pre: string, small: boolean, n = 20, post = '') => Array.from({ length: n }, (_, i) => row(`${pre}.J${100 + i}${post}`, small));
+        // brudna PAY.BATCH.** obejmuje wszystkie male czystej PAY.**.SYSOUT; czysta ma zostac
+        write('CW.CSV', csv([...some('PAY.BATCH', true, 40, '.SYSOUT'), ...some('PAY.BATCH', true, 30, '.LIST'), ...some('PAY.BATCH', false, 30, '.DUMP'), ...some('PAY.BATCH', false, 20, '.DANE')]));
+        write('cw.txt', 'PAY.BATCH.**\nPAY.**.SYSOUT\n');
+        let r = auto(['CW.CSV', '--check', 'cw.txt']);
+        assert.match(r.out, / 1\. zamien INCLUDE PAY\.BATCH\.\*\* {3}na: PAY\.(\*\*|BATCH\.\*\*|BATCH\.\*|BATCH\.J\*)\.LIST(\.\*\*)?\n +duzych -50 \(-0,83 GB\); /, r.out);
+        assert.match(r.out, /po propozycjach bez strat +2 +0 +70 +100,0% +0 /);
+        const out = auto(['CW.CSV', '--check', 'cw.txt', '--out', 'cw.csv']);
+        assert.equal(out.code, 0);
+        assert.match(fs.readFileSync(path.join(dir, 'cw.csv'), 'utf-8'), /^PAY\.BATCH\.\*\*;.*;1: zamien na PAY\./m);
+
+        // dwie wezsze zamiast jednej (lista rosnie, wiec nie bez strat); EXCLUDE drozszy
+        const many = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH'];
+        write('C2.CSV', csv([...some('PAY.RPT', true, 40), ...some('PAY.LOG', true, 40), ...many.flatMap(q => some(`PAY.${q}`, false, 10))]));
+        write('c2.txt', 'PAY.**');
+        r = auto(['C2.CSV', '--check', 'c2.txt', '--weights', 'exclude=50']);
+        assert.match(r.out, /Bez strat: brak/);
+        // luzniejszy zapis wezszych: PAY.RPT.**, a nie PAY.RPT.J%%%.A1
+        assert.match(r.out, / 1\. zamien INCLUDE PAY\.\*\* {3}na: PAY\.(RPT|LOG)\.\*\* {2}PAY\.(RPT|LOG)\.\*\*\n +duzych -80 /, r.out);
+        // sam kwalifikator, a nie cala nazwa
+        write('C3.CSV', csv([...some('PAY.TEMP', true, 40, '.OUT'), ...some('PAY.X', false, 40, '.OUT'), ...some('PAY.Y', false, 40, '.OUT')]));
+        assert.match(auto(['C3.CSV', '--check', 'c2.txt']).out, / 1\. zamien INCLUDE PAY\.\*\* {3}na: PAY\.TEMP\.\*\*\n/);
+        // koniec bez zmian, srodek dowolny
+        write('C4.CSV', csv([...some('PAY.A', true, 9, '.OUT'), ...some('PAY.B.X', true, 9, '.OUT'), ...some('PAY.A', false, 9, '.DANE'), ...some('PAY.B.X', false, 9, '.DANE'), ...some('PAY', true, 9, '.OUT')]));
+        assert.match(auto(['C4.CSV', '--check', 'c2.txt']).out, / 1\. zamien INCLUDE PAY\.\*\* {3}na: PAY\.\*\*\.OUT\n/);
+
+        // male pod wieloma nazwami, duze pod jedna: EXCLUDE
+        const names = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH'];
+        write('CE.CSV', csv([...names.flatMap(q => some(`PAY.${q}X`, true, 20)), ...some('PAY.DUMPX', false, 30)]));
+        write('ce.txt', 'PAY.**');
+        r = auto(['CE.CSV', '--check', 'ce.txt']);
+        assert.match(r.out, /Bez strat: brak/);
+        assert.match(r.out, / 1\. dodaj EXCLUDE \*\*\.DUMPX\.\*\*\n +duzych -30 \(-0,50 GB\); punkty \+3/);
+        assert.match(r.out, /po wszystkich propozycjach +1 +1 +160 +100,0% +0 /);
+        assert.doesNotMatch(auto(['CE.CSV', '--check', 'ce.txt', '--weights', 'large=0']).out, /dodaj EXCLUDE/);
+
+        // prostszy zapis tylko wtedy, gdy nie wchodza duze
+        const dates = (q: string, small: boolean) => Array.from({ length: 20 }, (_, i) => row(`PAY.${q}${240101 + i}`, small));
+        write('CD.CSV', csv([...dates('D', true), ...dates('T', true), row('PAY.TEMP', false)]));
+        write('cd.txt', 'PAY.D%%%%%%, PAY.T%%%%%%');
+        r = auto(['CD.CSV', '--check', 'cd.txt', '--weights', 'large=9 masks=0']);
+        assert.match(r.out, /zamien INCLUDE PAY\.D%%%%%% {3}na: PAY\.D\*\n +pokrycie bez zmian; punkty \+0,28/);
+        assert.doesNotMatch(r.out, /na: PAY\.T\*/);
+    });
+
+    it('scalenie EXCLUDE kosztem malych: --exclude-loss', () => {
+        const row = (dsn: string, small: boolean) => dline({ dsn, f1: '48', allkb: kbForTrk(315), usekb: small ? 40 : kbForTrk(315) - 100 });
+        write('CX.CSV', csv([
+            ...['PAY', 'PAX', 'HRX'].flatMap(h => Array.from({ length: 200 }, (_, i) => row(`${h}.LOG.D${240101 + i}`, true))),
+            ...['PAY', 'HRX'].flatMap(h => Array.from({ length: 50 }, (_, i) => row(`${h}.DATA.D${240101 + i}`, false))),
+            row('PAX.DATA.A', true),
+            row('PAX.KOPIA.A', false),
+        ]));
+        write('cx.txt', 'FILTLIST X INCLUDE(PAY.**,PAX.LOG.**,PAX.DATA.**,HRX.**) EXCLUDE(PAY.DATA.**,HRX.DATA.**)');
+        const r = auto(['CX.CSV', '--check', 'cx.txt', '--weights', 'masks=0.1']);
+        assert.match(r.out, /scal EXCLUDE \*\.DATA\.\*\* {3}zamiast 2: PAY\.DATA\.\*\* {2}HRX\.DATA\.\*\*\n +malych -1; punkty \+0,3/);
+        assert.doesNotMatch(auto(['CX.CSV', '--check', 'cx.txt', '--weights', 'masks=0.1', '--exclude-loss', '0.1%']).out, /scal EXCLUDE/);
+    });
+
+    it('bledy i ustawienia z pliku', () => {
+        for (const x of [['--build'], ['--compact'], ['--masks', 'ct.txt'], ['--quals', '2'], ['--exclude'], ['--wild', '1'], ['--min-count', '5'], ['--time', '5'], ['--verify', 'CT.CSV'], ['--next', 'f.txt'],
+            ['--apply', 'all'], ['--filtlist', 'ckn.txt', '--apply', '99'], ['--filtlist', 'ckn.txt', '--apply', 'x']]) {
+            const r = auto(['CT.CSV', '--check', 'ct.txt', ...x]);
+            assert.equal(r.code, 1, x.join(' '));
+            assert.match(r.err, /Blad: /, x.join(' '));
+        }
+        assert.ok(!fs.existsSync(path.join(dir, 'ckn.txt')));
+        assert.equal(auto(['CT.CSV', '--check', 'brak.txt']).code, 1);
+        assert.equal(auto(['CT.CSV', '--apply', '1']).code, 1);
+        auto(['--save-config', 'ca.json']);
+        const r = auto(['CT.CSV', '--config', 'ca.json', '--check', 'ct.txt']);
+        assert.equal(r.code, 0, r.err);
+        assert.equal(r.out, auto(['CT.CSV', '--check', 'ct.txt']).out);
+        write('cb.json', '{ "input": "CT.CSV", "check": "ct.txt", "weights": { "large": 9 }, "unit": "MB" }');
+        assert.doesNotMatch(auto(['--config', 'cb.json']).out, /scal INCLUDE/);
     });
 });
 

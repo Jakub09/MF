@@ -24,8 +24,9 @@ interface Field {
     fits?: (v: Values) => boolean;
 }
 
-const search = (v: Values) => !v.build && !v.compact && v.quals === undefined && v.try === undefined;
-const combos = (v: Values) => !v.build && !v.compact && !search(v);
+const checked = (v: Values) => v.check !== undefined;
+const search = (v: Values) => !v.build && !v.compact && v.quals === undefined && v.try === undefined && !checked(v);
+const combos = (v: Values) => !v.build && !v.compact && !checked(v) && !search(v);
 const build = (v: Values) => !!v.build;
 const lists = (v: Values) => !!v.build || !!v.compact;
 
@@ -47,30 +48,31 @@ const GROUPS: [string, Field[]][] = [
         { name: 'scope', kind: 'text', value: 'sms=true dsorg=PS', doc: ['ktore zbiory w ogole brac pod uwage; warunki po spacji = wszystkie naraz (AND)', 'np. "sms=true dsorg=PS sg=SGEAV*"'] },
         { name: 'when', kind: 'text', value: 'allocTrk=315 usedTrk<=3', doc: ['ktory zbior jest maly; pozostale z zakresu to duze'] },
         { name: 'prefix', kind: 'text', value: null, doc: ['poczatek kazdej maski, np. "ABC%.**"; null = dowolny'] },
-        { name: 'unit', kind: 'text', value: 'GB', doc: ['jednostka alokacji w raportach: KB, MB, GB, TB'] },
+        { name: 'unit', kind: 'text', value: 'GB', doc: ['jednostka alokacji w raportach: MB, GB, TB'] },
     ]],
-    ['Tryb pracy: build albo compact albo quals / try; wszystkie wylaczone = zwykle szukanie masek', [
+    ['Tryb pracy: build albo compact albo check albo quals / try; wszystkie wylaczone = zwykle szukanie masek', [
         { name: 'build', kind: 'flag', value: false, doc: ['lista budowana maska po masce wg wag (weights)'] },
         { name: 'compact', kind: 'flag', value: false, doc: ['najmniej masek przy najwiekszym pokryciu (krzywa)'] },
+        { name: 'check', kind: 'text', value: null, doc: ['plik FILTLIST (albo lista masek): test calej listy na danych i propozycje krotszej'] },
         { name: 'quals', kind: 'text', value: null, doc: ['zamiast masek: najczestsze kombinacje 1..N kwalifikatorow, N = 1-4'] },
         { name: 'try', kind: 'text', value: null, doc: ['zamiast masek: sprawdza podane kombinacje, np. "PROD+SYSOUT, TMP*"'] },
         { name: 'masks', kind: 'text', value: null, doc: ['plik z lista masek do sprawdzenia; nowe maski tylko dla zbiorow spoza niej'], fits: v => search(v) || combos(v) },
     ]],
     ['Granice', [
         { name: 'min-purity', kind: 'text', value: null, doc: ['najmniejsza czesc malych wsrod zbiorow maski, 0-1', 'null = 0.95 (compact: 0.5 przed EXCLUDE, quals i try: bez progu)'] },
-        { name: 'min-count', kind: 'text', value: null, doc: ['ile co najmniej malych ma dac maska', 'null = 10 (compact: 0,5% malych)'] },
+        { name: 'min-count', kind: 'text', value: null, doc: ['ile co najmniej malych ma dac maska', 'null = 10 (compact: 0,5% malych)'], fits: v => !checked(v) },
         { name: 'max-masks', kind: 'text', value: 100, doc: ['najwiecej masek (build i compact: INCLUDE i EXCLUDE razem, najwyzej 255)'] },
-        { name: 'max-large', kind: 'text', value: '5%', doc: ['ile duzych moze zostac w liscie: % alokacji objetych malych albo np. "200GB" (build, compact)'], fits: lists },
+        { name: 'max-large', kind: 'text', value: '5%', doc: ['ile duzych moze zostac w liscie: % alokacji objetych malych albo np. "200GB" (build, compact, check)'], fits: v => lists(v) || checked(v) },
         { name: 'time', kind: 'text', value: 600, doc: ['limit czasu w sekundach; potem wynik czesciowy (build, compact, quals)'], fits: v => lists(v) || combos(v) },
     ]],
     ['EXCLUDE', [
         { name: 'exclude', kind: 'flag', value: false, doc: ['maski EXCLUDE do znalezionych masek (zwykle szukanie i masks; build i compact dobieraja je same)'], fits: search },
         { name: 'exclude-min', kind: 'text', value: 2, doc: ['ile co najmniej duzych ma wylaczyc maska EXCLUDE'] },
         { name: 'exclude-gain', kind: 'text', value: null, doc: ['jaka czesc alokacji objetych duzych ma wylaczyc EXCLUDE; null = 0.5% (z exclude i compact)'], fits: v => !!v.compact || (search(v) && !!v.exclude) },
-        { name: 'exclude-loss', kind: 'text', value: null, doc: ['jaka czesc objetych malych moga razem zabrac EXCLUDE', 'null = 1% (build, compact) albo 0% (exclude)'], fits: v => lists(v) || (search(v) && !!v.exclude) },
+        { name: 'exclude-loss', kind: 'text', value: null, doc: ['jaka czesc objetych malych moga razem zabrac EXCLUDE', 'null = 1% (build, compact, check) albo 0% (exclude)'], fits: v => lists(v) || checked(v) || (search(v) && !!v.exclude) },
     ]],
     ['build: maska po masce', [
-        { name: 'weights', kind: 'weights', value: null, doc: ['priorytety; 1 punkt = 1% malych przy small = 1'], fits: build },
+        { name: 'weights', kind: 'weights', value: null, doc: ['priorytety (build, check); 1 punkt = 1% malych przy small = 1'], fits: v => build(v) || checked(v) },
         { name: 'next', kind: 'text', value: null, doc: ['plik FILTLIST, do ktorego kazdy przebieg dopisuje kolejna maske dla zbiorow jeszcze nie objetych', 'null = cala lista od nowa'], fits: build },
         { name: 'steps', kind: 'text', value: 1, doc: ['z next: ile masek w jednym przebiegu; "max" = do konca'], fits: v => build(v) && v.next !== undefined && !v.ask },
         { name: 'beam', kind: 'text', value: 8, doc: ['ile wersji maski naraz; wiecej = dluzej'], fits: build },
@@ -84,7 +86,7 @@ const GROUPS: [string, Field[]][] = [
         { name: 'any-start', kind: 'flag', value: false, doc: ['INCLUDE moze zaczynac sie od ** i *'], fits: v => !!v.compact },
     ]],
     ['Ksztalt masek, quals i try', [
-        { name: 'wild', kind: 'text', value: 3, doc: ['ile * i ** w masce (nie w build)'], fits: v => !build(v) },
+        { name: 'wild', kind: 'text', value: 3, doc: ['ile * i ** w masce (nie w build i check)'], fits: v => !build(v) && !checked(v) },
         { name: 'partial', kind: 'text', value: 3, doc: ['ile znakow stalych ma miec kwalifikator niepelny (ABC*), 2-7; 0 = tylko pelne (build, quals, try)'], fits: v => build(v) || combos(v) },
         { name: 'top', kind: 'text', value: 20, doc: ['wierszy w kazdej tabeli (quals)'], fits: combos },
     ]],
@@ -92,6 +94,7 @@ const GROUPS: [string, Field[]][] = [
         { name: 'verify', kind: 'text', value: null, doc: ['drugi CSV (np. nowszy) do sprawdzenia listy (build, compact)'], fits: lists },
         { name: 'out', kind: 'text', value: null, doc: ['CSV z maskami'] },
         { name: 'filtlist', kind: 'text', value: null, doc: ['FILTLIST do rutyny ACS, za kazdym razem od nowa (nie z next, quals, try)'], fits: v => !combos(v) && !(build(v) && v.next !== undefined) },
+        { name: 'apply', kind: 'text', value: null, doc: ['z check: propozycje wprowadzane do filtlist i tests: "safe" = bez strat (null), "all", N = pierwsze N, 0 = zadnej'], fits: v => checked(v) && (v.filtlist !== undefined || v.tests !== undefined) },
         { name: 'tests', kind: 'text', value: null, doc: ['testy ISMF do masek, wejscie IEBUPDTE (nie z quals i try)'], fits: v => !combos(v) },
         { name: 'per-mask', kind: 'text', value: 1, doc: ['testow kazdego rodzaju na maske'] },
         { name: 'test-prefix', kind: 'text', value: 'ACM', doc: ['prefiks memberow testow, 1-4 litery'] },
@@ -99,7 +102,7 @@ const GROUPS: [string, Field[]][] = [
 ];
 
 const FIELDS = GROUPS.flatMap(([, f]) => f);
-const MODES = ['build', 'compact', 'quals', 'try'];
+const MODES = ['build', 'compact', 'check', 'quals', 'try'];
 /** nazwy opcji w pliku (bez input to dokladnie opcje wiersza polecen) */
 export const CONFIG_NAMES = FIELDS.map(f => f.name);
 
