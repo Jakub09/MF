@@ -6,6 +6,8 @@ const PCT = 37;
 const STAR = 42;
 /** krawedz '**' w drzewie masek (wzorce kwalifikatorow maja numery od 1) */
 const ANY_QUALS = 0;
+/** odwiedzone (wezel, kwalifikator nazwy): nazwa ma najwyzej 22 kwalifikatory */
+const STRIDE = 24;
 
 /** Lista masek jako drzewo kwalifikatorow; kwalifikatory z * i % - drzewo znakow. */
 export class MaskTree {
@@ -23,10 +25,13 @@ export class MaskTree {
     private readonly from = new Int32Array(256);
     private readonly to = new Int32Array(256);
     private out: number[] = [];
+    /** runda, w ktorej (wezel masek, pozycja) byl juz sprawdzony; bez tego kilka ** daje wykladniczo wiele drog */
+    private seen = new Int32Array(0);
 
     constructor(masks: string[][]) {
         this.charLeaf.push(0);
         this.stamp = new Int32Array(masks.length);
+        // runda 0 = nic nie odwiedzone
         const ids = new Map<string, number>([['**', ANY_QUALS]]);
         masks.forEach((quals, m) => {
             let node = 0;
@@ -79,6 +84,11 @@ export class MaskTree {
     }
 
     private walk(buf: Uint8Array, node: number, i: number, n: number): void {
+        if (n < STRIDE) {
+            const at = node * STRIDE + i;
+            if (this.seen[at] === this.round) return;
+            this.seen[at] = this.round;
+        }
         const more = this.child.get(node, ANY_QUALS);
         if (more >= 0) for (let k = i; k <= n; k++) this.walk(buf, more, k, n);
         if (i === n) {
@@ -103,6 +113,7 @@ export class MaskTree {
     /** Numery masek pasujacych do nazwy buf[s..e), rosnaco; tablica wazna do nastepnego wywolania. */
     match(buf: Uint8Array, s: number, e: number): number[] {
         this.round++;
+        if (this.seen.length < this.ends.length * STRIDE) this.seen = new Int32Array(this.ends.length * STRIDE);
         this.pats.n = 0;
         this.out = [];
         let n = 0;

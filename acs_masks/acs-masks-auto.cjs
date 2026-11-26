@@ -271,6 +271,8 @@ const PCT = 37;
 const STAR = 42;
 /** krawedz '**' w drzewie masek (wzorce kwalifikatorow maja numery od 1) */
 const ANY_QUALS = 0;
+/** odwiedzone (wezel, kwalifikator nazwy): nazwa ma najwyzej 22 kwalifikatory */
+const STRIDE = 24;
 /** Lista masek jako drzewo kwalifikatorow; kwalifikatory z * i % - drzewo znakow. */
 class MaskTree {
     /** (wezel znakow, bajt) -> wezel; na koncu wzorca jego numer */
@@ -287,9 +289,12 @@ class MaskTree {
     from = new Int32Array(256);
     to = new Int32Array(256);
     out = [];
+    /** runda, w ktorej (wezel masek, pozycja) byl juz sprawdzony; bez tego kilka ** daje wykladniczo wiele drog */
+    seen = new Int32Array(0);
     constructor(masks) {
         this.charLeaf.push(0);
         this.stamp = new Int32Array(masks.length);
+        // runda 0 = nic nie odwiedzone
         const ids = new Map([['**', ANY_QUALS]]);
         masks.forEach((quals, m) => {
             let node = 0;
@@ -345,6 +350,12 @@ class MaskTree {
             this.patterns(buf, p + 1, e, same);
     }
     walk(buf, node, i, n) {
+        if (n < STRIDE) {
+            const at = node * STRIDE + i;
+            if (this.seen[at] === this.round)
+                return;
+            this.seen[at] = this.round;
+        }
         const more = this.child.get(node, ANY_QUALS);
         if (more >= 0)
             for (let k = i; k <= n; k++)
@@ -373,6 +384,8 @@ class MaskTree {
     /** Numery masek pasujacych do nazwy buf[s..e), rosnaco; tablica wazna do nastepnego wywolania. */
     match(buf, s, e) {
         this.round++;
+        if (this.seen.length < this.ends.length * STRIDE)
+            this.seen = new Int32Array(this.ends.length * STRIDE);
         this.pats.n = 0;
         this.out = [];
         let n = 0;
@@ -2364,8 +2377,9 @@ function tryCombos(input, tries, partial, head, tick) {
 MODULES["./auto-build"] = function (exports, require, module) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Builder = exports.Space = exports.POINTS = void 0;
+exports.targetRungs = exports.reached = exports.Builder = exports.Space = exports.POINTS = void 0;
 exports.shapeCost = shapeCost;
+exports.buildTarget = buildTarget;
 exports.enough = enough;
 exports.makeSpace = makeSpace;
 exports.buildList = buildList;
@@ -2644,6 +2658,7 @@ function shapeCost(text, w, head = 0) {
 class Builder {
     space;
     opt;
+    /** wagi; --target zmienia je miedzy etapami */
     w;
     all;
     deadline;
@@ -3299,11 +3314,11 @@ class Builder {
         return out.sort((a, b) => b.after.score - a.after.score);
     }
     /** EXCLUDE wspolne dla calej listy, dopoki daja punkty. */
-    excludes(list, journal) {
+    excludes(list, journal, enough) {
         const { space, opt } = this;
         const { tokens } = space.q;
         let cur = list;
-        while (!this.full(cur) && !this.late()) {
+        while (!this.full(cur) && !this.late() && !enough?.(cur)) {
             const l = this.live(cur);
             const before = this.score(cur, l);
             const cov = space.mark.map(m => m & OLD_INC);
@@ -3489,6 +3504,74 @@ class Builder {
         const clean = this.excludes(list, journal);
         return clean === list ? null : one(clean) ?? clean;
     }
+    /**
+     * --target: maski az do pokrycia malych, od najczystszych - kazdy szczebel (purity maski po jej EXCLUDE, od najwyzszego)
+     * daje maski, dopoki sa; potem wspolne EXCLUDE az do purity listy; jesli EXCLUDE zabraly pokrycie, znowu maski.
+     * Liczby w sztukach (dane z allocKb = 1). Waga large na szczeblu p: p / (1 - p), wiec oplaca sie maska o purity od p.
+     */
+    target(goal, rungs, tick) {
+        this.byStep = true;
+        const journal = [];
+        const steps = [];
+        const base = this.w;
+        let list = { inc: [], exc: [] };
+        const reach = (l) => (0, exports.reached)(this.live(l).t, this.space.np);
+        const note = (what, floor, from) => {
+            const added = list.inc.length - from.inc.length + list.exc.length - from.exc.length;
+            if (added)
+                steps.push({ what, floor, include: list.inc.length, exclude: list.exc.length, reached: reach(list) });
+        };
+        let rung = 0;
+        for (let cycle = 0; cycle < CYCLES && !this.late(); cycle++) {
+            for (; rung < rungs.length && reach(list).small < goal.small - 1e-12 && !this.late(); rung++) {
+                const floor = rungs[rung];
+                this.opt.minPurity = floor;
+                this.w = { ...base, large: largeWeight(floor) };
+                const from = list;
+                for (let r = reach(list); r.small < goal.small - 1e-12 && !this.late(); r = reach(list)) {
+                    tick(Math.min(0.95, r.small / goal.small), `prog maski ${Math.round(100 * floor)}%, masek: ${list.inc.length + list.exc.length}, pokrycie ${(100 * r.small).toFixed(1)}%`);
+                    const next = this.step(list, journal);
+                    if (!next)
+                        break;
+                    list = next;
+                }
+                note('maski', floor, from);
+                // cel osiagniety na tym szczeblu: kolejne maski (po EXCLUDE) tez z niego
+                if (reach(list).small >= goal.small - 1e-12)
+                    break;
+            }
+            this.w = { ...base, large: largeWeight(goal.purity) };
+            const from = list;
+            list = this.excludes(list, journal, l => reach(l).purity >= goal.purity - 1e-12);
+            note('EXCLUDE', null, from);
+            if (reach(list).small >= goal.small - 1e-12 || rung >= rungs.length || from === list)
+                break;
+        }
+        this.w = base;
+        return { result: this.result(list, journal), steps };
+    }
+    /** Lista bez masek INCLUDE o najnizszej purity, az purity listy dojdzie do celu (albo bez masek). */
+    trimmed(r, purity) {
+        let list = { inc: r.include.map(t => this.item(this.space.parse(t))), exc: r.exclude.map(t => this.item(this.space.parse(t))) };
+        const pur = (l) => (0, exports.reached)(this.live(l).t, this.space.np).purity;
+        if (pur(list) >= purity - 1e-12)
+            return null;
+        while (list.inc.length && pur(list) < purity - 1e-12) {
+            const l = this.live(list);
+            const own = (i) => {
+                let ns = 0;
+                let nl = 0;
+                for (let x = 0; x < i.seqs.length; x++) {
+                    ns += l.ns[i.seqs[x]];
+                    nl += l.nl[i.seqs[x]];
+                }
+                return (0, auto_mine_1.purityOf)(ns, nl);
+            };
+            const worst = list.inc.reduce((a, b) => (own(b) < own(a) ? b : a));
+            list = { ...list, inc: list.inc.filter(x => x !== worst) };
+        }
+        return this.result(list, []);
+    }
     /** Kolejne maski (--next), najwyzej steps; done po kazdej. */
     steps(steps, done, tick) {
         this.byStep = true;
@@ -3520,6 +3603,29 @@ class Builder {
     }
 }
 exports.Builder = Builder;
+/** ile razy najwyzej maski -> EXCLUDE -> maski */
+const CYCLES = 5;
+const reached = (t, np) => ({ small: np ? t.small / np : 0, purity: (0, auto_mine_1.purityOf)(t.small, t.large) });
+exports.reached = reached;
+/** Waga duzych, przy ktorej oplaca sie maska (albo EXCLUDE) o purity od p. */
+const largeWeight = (p) => Math.min(1000, p / Math.max(1e-9, 1 - p));
+/** Szczeble purity maski: cel purity, 90, 80, 70, 50% (nie wyzej niz cel), od najwyzszego. */
+const targetRungs = (purity) => [...new Set([purity, 0.9, 0.8, 0.7, 0.5].filter(x => x <= purity))].sort((a, b) => b - a);
+exports.targetRungs = targetRungs;
+/** Lista do celu (--target). */
+function buildTarget(input, opt, goal, rungs, stages) {
+    // sztuki zamiast KB: kazdy zbior wazy tyle samo
+    const ones = { ...input, allocKb: new Float64Array(input.allocKb.length).fill(1) };
+    const o = { ...opt, minCount: enough(input.pos.length, opt), maxLarge: opt.maxLarge };
+    // EXCLUDE musza byc dostepne takze dla wagi celu purity
+    const space = makeSpace(ones, { ...o, weights: { ...opt.weights, large: largeWeight(goal.purity) } }, stages.names);
+    const b = new Builder(space, { ...o, minPurity: rungs[0] });
+    const { result, steps } = b.target(goal, rungs, stages.build());
+    const r = (0, exports.reached)(result.totals, space.np);
+    const ok = r.small >= goal.small - 1e-12 && r.purity >= goal.purity - 1e-12;
+    const t = b.trimmed(result, goal.purity);
+    return { result, steps, reached: r, ok, trimmed: t && { result: t, reached: (0, exports.reached)(t.totals, space.np) } };
+}
 /** KB duzych, ktore musi wylaczyc EXCLUDE, zeby sie oplacil. */
 function needKb(input, w) {
     let kb = 0;
@@ -4534,18 +4640,23 @@ const auto_build_1 = require("./auto-build");
 const auto_check_1 = require("./auto-check");
 const auto_mine_1 = require("./auto-mine");
 const auto_tree_1 = require("./auto-tree");
+const auto_util_1 = require("./auto-util");
 /** najwiecej kandydatow do scalenia na raz, osobno INCLUDE i EXCLUDE */
 const MAX_CAND = 1000;
 /** ile razy najwyzej scalane sa maski juz scalone */
 const ROUNDS = 4;
 /** najmniej znakow stalych maski od * albo ** */
 const MIN_LITERAL = 3;
+/** najwiecej *, ** i kwalifikatorow z * w kandydacie, chyba ze maski, z ktorych powstal, maja wiecej */
+const MAX_WILD = 3;
 const MAX_NOTE = 4;
 /** ile masek najwyzej zastepuje jedna (zamien) */
 const MAX_SWAP = 3;
 /** dla ilu masek z duzymi szukane sa wezsze i jaka najmniejsza czesc duzych listy maja obejmowac */
 const MAX_DIRTY = 15;
 const MIN_DIRTY = 0.01;
+/** najwiecej zbiorow, w ktorych szukane sa wezsze maski jednej maski (wiecej = probka) */
+const MAX_SAMPLE = 100_000;
 const TINY = 1e-9;
 const zero = () => ({ small: 0, large: 0, smallKb: 0, largeKb: 0 });
 const add = (a, b) => {
@@ -4612,8 +4723,7 @@ function generalize(ta, tb) {
     const b = tb.split('.');
     const out = new Set();
     const put = (quals) => {
-        const q = quals.filter((x, i) => x !== '**' || quals[i - 1] !== '**');
-        const text = q.join('.');
+        const text = squeeze(quals).join('.');
         if (text !== '**' && text.length <= auto_mine_1.MAX_LEN)
             out.add(text);
     };
@@ -4630,12 +4740,13 @@ function generalize(ta, tb) {
         put([s, '**']);
         // dalsze wspolne kwalifikatory z ** (albo tyloma samymi *) w miejscu roznic
         const pairs = common(a.slice(1), b.slice(1));
-        const build = (until) => {
+        // odstepy jako tyle samo * albo zawsze ** (krotszy zapis, bez limitu *)
+        const build = (until, loose) => {
             const quals = [s];
             let i = 0;
             let j = 0;
             for (const [x, y] of pairs.slice(0, until)) {
-                quals.push(...gap(a.slice(1 + i, 1 + x), b.slice(1 + j, 1 + y)), a[1 + x]);
+                quals.push(...(loose ? ['**'] : gap(a.slice(1 + i, 1 + x), b.slice(1 + j, 1 + y))), a[1 + x]);
                 i = x + 1;
                 j = y + 1;
             }
@@ -4649,7 +4760,8 @@ function generalize(ta, tb) {
                     put([...quals, q, '**']);
         };
         for (let k = 0; k <= pairs.length; k++)
-            build(k);
+            for (const loose of [false, true])
+                build(k, loose);
     }
     // ---- jeden wspolny kwalifikator
     for (const q of a) {
@@ -4666,7 +4778,31 @@ function gap(ga, gb) {
         return ga.map(() => '*');
     return ['**'];
 }
+/**
+ * Ciag samych * i ** z choc jednym ** -> jedno ** (szersze, wiec nadal obejmuje obie maski): A.**.*.**.*.** to prawie A.**,
+ * a takie maski pasuja do kazdej nazwy i bardzo spowalniaja porownanie.
+ */
+function squeeze(quals) {
+    const out = [];
+    for (let i = 0; i < quals.length;) {
+        let j = i;
+        while (j < quals.length && (quals[j] === '*' || quals[j] === '**'))
+            j++;
+        if (j > i && quals.slice(i, j).includes('**')) {
+            out.push('**');
+            i = j;
+        }
+        else {
+            out.push(quals[i++]);
+        }
+    }
+    return out;
+}
+/** *, ** (poza koncowym) i kwalifikatory z * */
+const wildOf = (text) => text.split('.').filter((q, i, a) => q.includes('*') && !(q === '**' && i === a.length - 1)).length;
 function usable(text, parents) {
+    if (wildOf(text) > Math.max(MAX_WILD, ...parents.map(wildOf)))
+        return false;
     if ((0, auto_acs_1.acsProblem)(text) || (0, auto_mine_1.literalChars)(text) === 0 || /^[0-9]/.test(text))
         return false;
     const first = text.split('.')[0];
@@ -4725,8 +4861,8 @@ class Model {
         const total = pos.length + neg.length;
         const scan = (rows, small, done) => {
             for (let x = 0; x < rows.length; x++) {
-                if ((x & 0x3fff) === 0)
-                    tick((done + x) / total);
+                if ((x & 0xfff) === 0)
+                    tick((done + x) / total, `nazwy: ${(0, auto_util_1.thousands)(done + x)} z ${(0, auto_util_1.thousands)(total)}, masek i kandydatow: ${(0, auto_util_1.thousands)(this.items.length)}`);
                 const s = names.start[rows[x]];
                 const kb = allocKb[rows[x]];
                 if (small)
@@ -4997,10 +5133,12 @@ class Model {
             this.groups[k][x.inc ? 'inc' : 'exc'] += on ? 1 : -1;
     }
     /** Kroki od dajacego najwiecej punktow, az zaden nic nie da; true = bylo scalenie. */
-    run(trade, fixes, tick) {
+    run(trade, fixes, tick, late) {
         let merged = false;
         for (;;) {
             tick();
+            if (late())
+                return false;
             const t = this.totals();
             const good = this.moves().filter(m => (trade ? m.points > TINY && this.allowed(m, t)
                 : m.out.small === 0 && m.in.large === 0 && m.add.length <= m.remove.length && (m.add.length === 0 || m.points > TINY)));
@@ -5076,7 +5214,7 @@ function looser(text, head) {
     return [...new Set([...texts, ...texts.map(starred)])].filter(t => t.length <= auto_mine_1.MAX_LEN);
 }
 /** Wezsze maski dla masek z duzymi (szukane w ich zbiorach) i nowe EXCLUDE. */
-function extras(input, lists, dirty, opt, tick) {
+function extras(input, lists, dirty, opt, tick, late) {
     const { names, pos, neg } = input;
     const total = dirty.reduce((x, r) => x + r.all.largeKb, 0);
     const list = dirty.filter(r => r.all.large > 0 && r.all.small > 0 && r.all.largeKb >= MIN_DIRTY * total).sort((a, b) => b.all.largeKb - a.all.largeKb).slice(0, MAX_DIRTY);
@@ -5087,8 +5225,8 @@ function extras(input, lists, dirty, opt, tick) {
         const rows = list.map(() => [[], []]);
         [pos, neg].forEach((from, side) => {
             for (let x = 0; x < from.length; x++) {
-                if ((x & 0x3fff) === 0)
-                    tick(0.3 * (side + x / from.length) / 2);
+                if ((x & 0xfff) === 0)
+                    tick(0.3 * (side + x / from.length) / 2, `zbiory masek z duzymi: ${(0, auto_util_1.thousands)(x)} z ${(0, auto_util_1.thousands)(from.length)}`);
                 const s = names.start[from[x]];
                 const e = s + names.len[from[x]];
                 for (const m of tree.match(names.pool, s, e).slice())
@@ -5097,12 +5235,20 @@ function extras(input, lists, dirty, opt, tick) {
             }
         });
         list.forEach((r, i) => {
-            const part = () => tick(0.3 + 0.4 * i / list.length);
+            if (late())
+                return;
+            const info = `wezsze maski: ${i + 1} z ${list.length}, ${r.text}`;
+            const part = () => tick(0.3 + 0.4 * i / list.length, info);
             part();
             const quals = r.text.split('.');
             const any = quals.indexOf('**');
-            const found = (0, auto_mine_1.mine)({ ...input, pos: Int32Array.from(rows[i][0]), neg: Int32Array.from(rows[i][1]) }, {
-                minPurity: opt.minPurity, minCount: Math.max(2, Math.ceil(0.01 * rows[i][0].length)), maxMasks: 2 * MAX_SWAP, maxWild: 3,
+            // probka: liczby wezszych masek i tak sa potem liczone na wszystkich zbiorach
+            const n = rows[i][0].length + rows[i][1].length;
+            const step = Math.max(1, Math.ceil(n / MAX_SAMPLE));
+            const every = (l) => Int32Array.from(step === 1 ? l : l.filter((_, k) => k % step === 0));
+            const sample = { ...input, pos: every(rows[i][0]), neg: every(rows[i][1]) };
+            const found = (0, auto_mine_1.mine)(sample, {
+                minPurity: opt.minPurity, minCount: Math.max(2, Math.ceil(0.01 * sample.pos.length)), maxMasks: 2 * MAX_SWAP, maxWild: 2,
                 head: any < 0 ? quals : quals.slice(0, any),
             }, { prepare: part, search: () => part, select: () => part });
             for (const { text } of found.masks)
@@ -5111,26 +5257,30 @@ function extras(input, lists, dirty, opt, tick) {
                         out.add(t);
         });
     }
-    tick(0.7);
-    const ex = total > 0 ? (0, auto_acs_1.findExcludes)(input, lists.include, lists.exclude, { minCount: 2, maxWild: 3, gain: 0.005, loss: opt.loss }, p => tick(0.7 + 0.3 * p)) : null;
+    tick(0.7, 'nowe EXCLUDE');
+    const ex = total > 0 && !late() ? (0, auto_acs_1.findExcludes)(input, lists.include, lists.exclude, { minCount: 2, maxWild: 3, gain: 0.005, loss: opt.loss }, p => tick(0.7 + 0.3 * p, 'nowe EXCLUDE')) : null;
     return { include: [...out], exclude: [...new Set([...lists.exclude, ...(ex?.masks ?? []).map(m => m.text).filter(t => !(0, auto_acs_1.acsProblem)(t))])] };
 }
 function audit(input, lists, opt, tick) {
+    const deadline = Date.now() + opt.seconds * 1000;
+    let stopped = false;
+    const late = () => (stopped ||= Date.now() > deadline);
     let no = 1;
     // przejscia przez dane: pierwsze to szukanie wezszych masek; zwykle 3-5, najwyzej tyle
     const passes = 6;
     const make = (from, l, extra, known) => {
         const base = Math.min(no++, passes - 1);
-        return new Model(from, l, extra, opt, known, p => tick((base + 0.9 * p) / passes));
+        return new Model(from, l, extra, opt, known, (p, info) => tick((base + 0.9 * p) / passes, `przejscie ${base}: ${info}`));
     };
     const improve = (from, model, extra, known, trade, fixes) => {
         let m = model;
-        for (let r = 0; m.run(trade, fixes, () => tick(Math.min(1, no / passes))) && r < ROUNDS && m.fresh(); r++)
+        const step = () => tick(Math.min(1, no / passes), `${trade ? 'kosztem malych albo duzych' : 'bez strat'}: krokow ${fixes.length}`);
+        for (let r = 0; m.run(trade, fixes, step, late) && r < ROUNDS && m.fresh() && !late(); r++)
             m = make(from, m.lists(), extra, known);
         return m;
     };
     const plain = checkRows(input, lists, p => tick(0.5 * p / passes));
-    const extra = extras(input, lists, plain, opt, p => tick((0.5 + 0.5 * p) / passes));
+    const extra = extras(input, lists, plain, opt, (p, info) => tick((0.5 + 0.5 * p) / passes, info), late);
     const known = new Set();
     let m = make(input, lists, extra, known);
     const out = {
@@ -5143,9 +5293,9 @@ function audit(input, lists, opt, tick) {
     const small = { ...input, neg: new Int32Array(0) };
     const kn = new Set();
     const none = { include: [], exclude: [] };
-    const last = improve(small, make(small, { include: lists.include, exclude: [] }, none, kn), none, kn, false, []);
+    const last = late() ? null : improve(small, make(small, { include: lists.include, exclude: [] }, none, kn), none, kn, false, []);
     const used = new Set([...out.safe, ...out.trade].flatMap(f => f.add));
-    return { ...out, blocked: blocked.filter(b => !used.has(b.text)), noLarge: last.lists() };
+    return { ...out, blocked: blocked.filter(b => !used.has(b.text)), noLarge: last?.lists() ?? { include: lists.include, exclude: [] }, stopped };
 }
 /** Maski INCLUDE na danych, po EXCLUDE (bez only). */
 function checkRows(input, lists, tick) {
@@ -5610,8 +5760,8 @@ const GROUPS = [
             { name: 'min-purity', kind: 'text', value: null, doc: ['najmniejsza czesc malych wsrod zbiorow maski, 0-1', 'null = 0.95 (compact: 0.5 przed EXCLUDE, quals i try: bez progu)'] },
             { name: 'min-count', kind: 'text', value: null, doc: ['ile co najmniej malych ma dac maska', 'null = 10 (compact: 0,5% malych)'], fits: v => !checked(v) },
             { name: 'max-masks', kind: 'text', value: 100, doc: ['najwiecej masek (build i compact: INCLUDE i EXCLUDE razem, najwyzej 255)'] },
-            { name: 'max-large', kind: 'text', value: '5%', doc: ['ile duzych moze zostac w liscie: % alokacji objetych malych albo np. "200GB" (build, compact, check)'], fits: v => lists(v) || checked(v) },
-            { name: 'time', kind: 'text', value: 600, doc: ['limit czasu w sekundach; potem wynik czesciowy (build, compact, quals)'], fits: v => lists(v) || combos(v) },
+            { name: 'max-large', kind: 'text', value: null, doc: ['ile duzych moze zostac w liscie: % alokacji objetych malych albo np. "200GB" (build, compact, check)', 'null = 5% (z target: bez granicy)'], fits: v => lists(v) || checked(v) },
+            { name: 'time', kind: 'text', value: 600, doc: ['limit czasu w sekundach; potem wynik czesciowy (build, compact, check, quals)'], fits: v => lists(v) || checked(v) || combos(v) },
         ]],
     ['EXCLUDE', [
             { name: 'exclude', kind: 'flag', value: false, doc: ['maski EXCLUDE do znalezionych masek (zwykle szukanie i masks; build i compact dobieraja je same)'], fits: search },
@@ -5622,9 +5772,10 @@ const GROUPS = [
     ['build: maska po masce', [
             { name: 'weights', kind: 'weights', value: null, doc: ['priorytety (build, check); 1 punkt = 1% malych przy small = 1'], fits: v => build(v) || checked(v) },
             { name: 'next', kind: 'text', value: null, doc: ['plik FILTLIST, do ktorego kazdy przebieg dopisuje kolejna maske dla zbiorow jeszcze nie objetych', 'null = cala lista od nowa'], fits: build },
+            { name: 'target', kind: 'text', value: null, doc: ['cel w sztukach zamiast samych wag, np. "small=90% purity=95%": maski az do pokrycia malych, potem EXCLUDE az do purity', 'null = bez celu'], fits: v => build(v) && v.next === undefined && !v.ask },
             { name: 'steps', kind: 'text', value: 1, doc: ['z next: ile masek w jednym przebiegu; "max" = do konca'], fits: v => build(v) && v.next !== undefined && !v.ask },
             { name: 'beam', kind: 'text', value: 8, doc: ['ile wersji maski naraz; wiecej = dluzej'], fits: build },
-            { name: 'rounds', kind: 'text', value: 2, doc: ['ile razy najwyzej druga runda, czyli maski budowane od nowa (nie z next)'], fits: v => build(v) && v.next === undefined },
+            { name: 'rounds', kind: 'text', value: 2, doc: ['ile razy najwyzej druga runda, czyli maski budowane od nowa (nie z next i target)'], fits: v => build(v) && v.next === undefined && v.target === undefined },
             { name: 'ask', kind: 'flag', value: false, doc: ['pytanie po kazdej masce'], fits: build },
             { name: 'what-if', kind: 'flag', value: false, doc: ['takze wyniki dla zmienionych wag (7 razy dluzej; nie z next)'], fits: v => build(v) && v.next === undefined },
             { name: 'log', kind: 'text', value: null, doc: ['plik na dziennik krokow; null = na ekran'], fits: build },
@@ -6622,6 +6773,9 @@ exports.check = check;
 exports.auditList = auditList;
 exports.quals = quals;
 exports.compact = compact;
+exports.buildToTarget = buildToTarget;
+exports.parseTarget = parseTarget;
+exports.targetReport = targetReport;
 exports.build = build;
 exports.report = report;
 exports.freshReport = freshReport;
@@ -6705,6 +6859,10 @@ exports.main = main;
  *   --next PLIK        kolejna maska do FILTLIST z pliku: wczytuje ja (brak pliku = zaczyna od zera), dobiera maske dla malych
  *                      zbiorow, ktorych FILTLIST jeszcze nie obejmuje, i dopisuje INCLUDE (i EXCLUDE) do tego pliku;
  *                      poprzednia wersja zostaje w PLIK.bak. Masek z pliku nie zmienia; granice i punkty dotycza calej listy
+ *   --target CELE      z --build: cel zamiast samych wag, w sztukach, np. "small=90% purity=95%": najpierw maski az do pokrycia
+ *                      malych, potem EXCLUDE az do purity listy (i znowu maski, gdy EXCLUDE zabraly pokrycie). Sprawdza kilka
+ *                      progow purity maski (50, 70, 80, 90% i cel; --min-purity = jeden prog) i wybiera najkrotsza liste, ktora
+ *                      spelnia oba cele. Waga large wynika z progu; --max-large tylko, gdy podane
  *   --steps N          z --next: ile masek w jednym przebiegu; max = do konca     (domyslnie 1)
  *                      Z --build takze: --max-large, --exclude-min, --exclude-loss (1%), --max-masks, --partial, --verify, --time
  *
@@ -6713,7 +6871,7 @@ exports.main = main;
  *                      Takze kwalifikatory niepelne: ABC* *ABC *ABC* AB%% D%%%%%%. Z --masks: tylko zbiory spoza listy
  *   --partial N        ile znakow stalych ma miec kwalifikator niepelny, 2-7; 0 = tylko pelne    (domyslnie 3)
  *   --top N            wierszy w kazdej tabeli                                   (domyslnie 20)
- *   --time SEK         limit czasu --quals i --compact; potem wynik czesciowy                     (domyslnie 600)
+ *   --time SEK         limit czasu --quals, --compact, --build i --check; potem wynik czesciowy                     (domyslnie 600)
  *   --try LISTA        sprawdza podane kombinacje i ich skrocenia, np. "PROD+SYSOUT, LOGDAY, TMP*"
  *                      Z --quals i --try: --min-purity tylko, gdy podane (domyslnie bez progu); --out: CSV z maskami
  *
@@ -6786,6 +6944,8 @@ const USAGE = 'Uzycie: node acs-masks-auto.cjs DCOLLECT.CSV [--scope "sms=true d
     + '         [--filtlist filtlist.txt] (najmniej masek INCLUDE i EXCLUDE, najwieksze pokrycie)\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --build [--weights "masks=1 large=4"] [--ask] [--what-if] [--log dziennik.txt]\n'
     + '         [--verify NOWSZY.CSV] [--filtlist filtlist.txt] (maska po masce, priorytety jako wagi)\n'
+    + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --build --target "small=90% purity=95%" [--filtlist filtlist.txt]\n'
+    + '         (maski az do pokrycia malych, potem EXCLUDE az do purity; w sztukach zbiorow)\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --build --next filtlist.txt [--steps 1] [opcje jak wyzej]\n'
     + '         (kazdy przebieg dopisuje do filtlist.txt kolejna maske dla zbiorow jeszcze nie objetych)\n'
     + '   albo: node acs-masks-auto.cjs DCOLLECT.CSV --quals 4 [--partial 3] [--top 20] [--time 600] [--try "PROD+SYSOUT, TMP*"]\n'
@@ -6814,6 +6974,8 @@ Przyklady (DC = DCOLLECT.CSV; w pliku .bat kazdy % podwojnie, w PowerShell apost
   node acs-masks-auto.cjs DC --build --weights "masks=1 large=4"                   mniej masek, jeszcze mniej duzych
   node acs-masks-auto.cjs DC --build --what-if                                     co zmieni kazda waga
   node acs-masks-auto.cjs DC --build --ask                                         kazda maska do zatwierdzenia
+  node acs-masks-auto.cjs DC --build --target "small=90% purity=95%"               do celu pokrycia i purity
+  node acs-masks-auto.cjs DC --build --target "small=80% purity=99%" --filtlist f.txt
   node acs-masks-auto.cjs DC --build --next f.txt                                  kolejna maska dopisana do f.txt
   node acs-masks-auto.cjs DC --build --next f.txt --steps 5 --log dziennik.txt     piec kolejnych masek
   node acs-masks-auto.cjs DC --build --weights "masks=1" --save-config u.json      zapis ustawien (i przebieg)
@@ -7096,6 +7258,76 @@ const VARIANTS = [
     { name: 'large', keys: ['large'], by: 0.5 }, { name: 'large', keys: ['large'], by: 2 },
     { name: 'start', keys: ['start'], by: 0.5 }, { name: 'start', keys: ['start'], by: 2 },
 ];
+/** --build --target */
+function buildToTarget(file, scope, when, o, goal, rungs, bar, io) {
+    const st = load(file, scope, when, bar, io.err);
+    const tick = bar.stage('Kryteria');
+    const { pos, neg } = classify(st, scope, when, o.head, p => tick(p));
+    bar.done(`malych: ${(0, auto_util_1.thousands)(pos.length)}, duzych: ${(0, auto_util_1.thousands)(neg.length)}`);
+    const input = { names: st.names, allocKb: st.allocKb, pos, neg };
+    const r = (0, auto_build_1.buildTarget)(input, o, goal, rungs, {
+        names: bar.stage('Kwalifikatory'),
+        build: () => {
+            bar.done();
+            return bar.stage('Do celu');
+        },
+    });
+    bar.done(`masek: ${r.result.include.length + r.result.exclude.length}, pokrycie ${pct(r.reached.small)}, purity ${pct(r.reached.purity)}${r.ok ? ', cel osiagniety' : ''}`);
+    return { ...r, goal, list: (0, auto_check_1.checkMasks)(input, r.result.include, r.result.exclude, () => { }), input };
+}
+/** "small=90% purity=95%" (takze 0.9) */
+function parseTarget(text) {
+    const g = {};
+    for (const x of text.trim().split(/[\s,]+(?=[a-zA-Z])/).filter(Boolean)) {
+        const m = /^(small|purity)=([0-9.,]+)(%?)$/i.exec(x);
+        if (!m)
+            throw new ArgError(`--target: "${x}" - podaj small=PROCENT i purity=PROCENT, np. "small=90% purity=95%"`);
+        const v = Number(m[2].replace(',', '.'));
+        const part = m[3] || v > 1 ? v / 100 : v;
+        if (!Number.isFinite(part) || part <= 0 || part > 1)
+            throw new ArgError(`--target: ${x} - zakres 0-100%`);
+        g[m[1].toLowerCase()] = part;
+    }
+    if (g.small === undefined || g.purity === undefined)
+        throw new ArgError('--target: podaj oba cele, np. "small=90% purity=95%"');
+    return g;
+}
+function targetReport(r, o, u = 'GB') {
+    const { list, goal } = r;
+    const out = [`Zbiorow w zakresie: ${list.small + list.large}, malych: ${list.small}, duzych: ${list.large}`,
+        `Cel: pokrycie malych ${pctOf(goal.small)}, purity listy ${pctOf(goal.purity)} (w sztukach)   male stracone przez EXCLUDE: do ${pctOf(o.loss)}`
+            + `${Number.isFinite('part' in o.maxLarge ? o.maxLarge.part : 0) ? `   duze w liscie: do ${limitText(o.maxLarge, u)}` : ''}`, ''];
+    const row = (x) => x[0].padEnd(24) + x.slice(1).map(y => y.padStart(11)).join('');
+    out.push('Etapy (maski od najczystszych; prog = najmniejsza purity maski po jej EXCLUDE)', '', row(['', 'INCLUDE', 'EXCLUDE', 'Pokrycie', 'Purity']));
+    for (const x of r.steps) {
+        out.push(row([x.what === 'EXCLUDE' ? 'wspolne EXCLUDE' : `maski, prog ${pctOf(x.floor)}`, String(x.include), String(x.exclude), pct(x.reached.small), pct(x.reached.purity)]));
+    }
+    if (r.result.stopped)
+        out.push('', 'Uwaga: przerwano po czasie --time; lista moze byc niepelna.');
+    const best = r;
+    if (!r.ok) {
+        const miss = [r.reached.small < goal.small - 1e-12 ? `pokrycie ${pct(r.reached.small)} z ${pctOf(goal.small)}` : '',
+            r.reached.purity < goal.purity - 1e-12 ? `purity ${pct(r.reached.purity)} z ${pctOf(goal.purity)}` : ''].filter(Boolean).join(', ');
+        out.push('', `Celu nie osiagnieto: ${miss}. Wiecej da wiekszy --exclude-loss, mniejsze --min-count albo nizszy cel; maski, ktore przeszkadzaja, pokaze --check.`);
+        if (r.trimmed) {
+            const t = r.trimmed;
+            out.push(`Purity ${pctOf(goal.purity)} jest przy pokryciu ${pct(t.reached.small)}: bez masek ${r.result.include.filter(m => !t.result.include.includes(m)).join('  ')}`);
+        }
+    }
+    if (best.result.include.length === 0)
+        return out.join('\n') + '\n';
+    out.push('', `Lista: masek ${best.result.include.length + best.result.exclude.length} (INCLUDE ${best.result.include.length}, EXCLUDE ${best.result.exclude.length})`, '', line([...heads(u), 'Tylko ta']));
+    for (const m of list.rows)
+        out.push(line([...cells(m, u), String(m.only)]));
+    out.push(line(cells(list.total, u)), '', `Obejmuja ${part(list.total.small, list.small)} malych (${list.total.small} z ${list.small}), po EXCLUDE; `
+        + `purity ${pct(list.total.purity)}; duze ${part(list.total.largeKb, list.total.smallKb)} alokacji objetych malych`);
+    if (list.excludes.length) {
+        out.push('', wide(['Maska EXCLUDE', 'Duzych', `Duzych ${u}`, 'Malych']));
+        for (const m of list.excludes)
+            out.push(wide([m.text, String(m.large), inUnit(m.largeKb, u), String(m.small)]));
+    }
+    return out.join('\n') + '\n';
+}
 /** Lista budowana po jednej masce. */
 function build(file, scope, when, o, extra, bar, io) {
     const read = (name) => {
@@ -7353,13 +7585,18 @@ function fixLines(f, no, list, u) {
         `       ${change.join(', ') || 'pokrycie bez zmian'}; punkty ${points(f.points)}; lista: INCLUDE ${f.after.include}, EXCLUDE ${f.after.exclude}, `
             + `malych ${f.after.small} (${part(f.after.small, list.small)}), duzych ${f.after.large}`];
 }
+/** Od maski, ktora obejmuje najwiecej zbiorow (male i duze), potem najwiecej malych. */
+const byCount = (l) => l.slice().sort((a, b) => b.small + b.large - a.small - a.large || b.small - a.small || (a.text < b.text ? -1 : 1));
 /** Raport --check. */
 function auditReport(r, file, lists, o, u = 'GB') {
     const { list, result: a } = r;
     const b = a.before;
     const kbOf = (kb, all) => [inUnit(kb, u), part(kb, all)];
     const row5 = (c) => c[0].padEnd(34) + c.slice(1).map(x => x.padStart(12)).join('');
-    const out = [`FILTLIST ${file}: INCLUDE ${b.include}, EXCLUDE ${b.exclude}`, '', row5(['', 'Zbiorow', '%', u, '%'])];
+    const out = [`FILTLIST ${file}: INCLUDE ${b.include}, EXCLUDE ${b.exclude}`, ''];
+    if (a.stopped)
+        out.push('Uwaga: przerwano po czasie --time; propozycje i test bez duzych sa niepelne (dluzej: --time 3600).', '');
+    out.push(row5(['', 'Zbiorow', '%', u, '%']));
     const whole = (name, n, kb, get) => {
         const [inN, inKb] = get(b);
         const [exN, exKb] = get(b.lost);
@@ -7374,14 +7611,16 @@ function auditReport(r, file, lists, o, u = 'GB') {
     const cap = 'kb' in o.maxLarge ? o.maxLarge.kb : o.maxLarge.part * b.smallKb;
     out.push('', `Purity: ${part(b.small, b.small + b.large)}; duze to ${part(b.largeKb, b.smallKb)} alokacji objetych malych`
         + ` (granica --max-large ${limitText(o.maxLarge, u)}: ${b.largeKb <= cap + 1e-6 ? 'miesci sie' : 'PRZEKROCZONA'})`, '');
-    out.push(line([...heads(u), 'Tylko ta']));
-    for (const m of list.rows)
-        out.push(line([...cells(m, u), String(m.only)]));
-    out.push(line(cells(list.total, u)));
+    // od maski, ktora obejmuje (wylacza) najwiecej zbiorow
+    const sets = (m) => String(m.small + m.large);
+    out.push(line(['Maska', 'Zbiorow', ...heads(u).slice(1), 'Tylko ta']));
+    for (const m of byCount(list.rows))
+        out.push(line([m.text, sets(m), ...cells(m, u).slice(1), String(m.only)]));
+    out.push(line([list.total.text, sets(list.total), ...cells(list.total, u).slice(1)]));
     if (list.excludes.length) {
-        out.push('', wide(['Maska EXCLUDE (wylacza)', 'Duzych', `Duzych ${u}`, 'Malych']));
-        for (const m of list.excludes)
-            out.push(wide([m.text, String(m.large), inUnit(m.largeKb, u), String(m.small)]));
+        out.push('', wide(['Maska EXCLUDE (wylacza)', 'Zbiorow', 'Duzych', `Duzych ${u}`, 'Malych']));
+        for (const m of byCount(list.excludes))
+            out.push(wide([m.text, sets(m), String(m.large), inUnit(m.largeKb, u), String(m.small)]));
     }
     // ---- 1
     out.push('', '1. TEST NA SAMYCH DUZYCH', '', `Z ${list.large} duzych filtlista obejmuje ${b.large} (${part(b.large, list.large)}), ${inUnit(b.largeKb, u)} ${u}; EXCLUDE zdejmuje ${b.lost.large} (${inUnit(b.lost.largeKb, u)} ${u}).`);
@@ -7482,8 +7721,9 @@ function auditCsv(r, u = 'GB') {
         const f = fixes[i];
         return `${i + 1}: ${f.add.length === 0 ? 'usun' : f.remove.length > 1 ? `scal w ${f.add[0]}` : `zamien na ${f.add.join('  ')}`}${i < r.result.safe.length ? '' : ' (kosztem malych albo duzych)'}`;
     };
-    return [`${csvHead(u)};tylko_ta;stan;propozycja`, ...r.list.rows.map(m => [...csvCells(m, u), m.only, '', fix('INCLUDE', m.text)].join(';')),
-        ...r.list.excludes.map(m => [...csvCells(m, u), '', 'exclude', fix('EXCLUDE', m.text)].join(';'))].join('\n') + '\n';
+    const cols = (m) => { const c = csvCells(m, u); return [c[0], m.small + m.large, ...c.slice(1)]; };
+    return [`${csvHead(u).replace(';', ';zbiorow;')};tylko_ta;stan;propozycja`, ...byCount(r.list.rows).map(m => [...cols(m), m.only, '', fix('INCLUDE', m.text)].join(';')),
+        ...byCount(r.list.excludes).map(m => [...cols(m), '', 'exclude', fix('EXCLUDE', m.text)].join(';'))].join('\n') + '\n';
 }
 const comboText = (c) => c.join(' + ');
 const MAX_ALSO = 3;
@@ -7749,7 +7989,7 @@ exports.OPTIONS = {
     scope: text, when: text, prefix: text, 'min-purity': text, 'min-count': text, 'max-masks': text, wild: text, masks: text, quals: text, partial: text,
     top: text, time: text, try: text, unit: text, out: { type: 'string', short: 'o' }, exclude: flag, 'exclude-min': text, 'exclude-gain': text,
     'exclude-loss': text, compact: flag, 'max-large': text, pick: text, 'any-start': flag, verify: text, build: flag, weights: text, beam: text, rounds: text,
-    ask: flag, 'what-if': flag, log: text, next: text, steps: text, check: text, apply: text, filtlist: text, tests: text, 'per-mask': text, 'test-prefix': text,
+    ask: flag, 'what-if': flag, log: text, next: text, target: text, steps: text, check: text, apply: text, filtlist: text, tests: text, 'per-mask': text, 'test-prefix': text,
     config: text, 'save-config': text, help: { type: 'boolean', short: 'h' },
 };
 const DEFAULTS = {
@@ -7813,7 +8053,7 @@ function main(argv, io = STDIO) {
         };
         const exGain = percent(o['exclude-gain'] ?? '0.5', 'exclude-gain');
         const loss = percent(o['exclude-loss'] ?? (o.compact || o.build || o.check !== undefined ? '1' : '0'), 'exclude-loss');
-        const onlyBuild = ['ask', 'what-if'].find(x => o[x]) ?? ['beam', 'rounds', 'log', 'next', 'weights'].find(x => o[x] !== undefined);
+        const onlyBuild = ['ask', 'what-if'].find(x => o[x]) ?? ['beam', 'rounds', 'log', 'next', 'target', 'weights'].find(x => o[x] !== undefined);
         const checked = o.check !== undefined;
         if (onlyBuild && !o.build && !(checked && onlyBuild === 'weights'))
             throw new ArgError(`--${onlyBuild}: tylko z --build${onlyBuild === 'weights' ? ' albo --check' : ''}`);
@@ -7833,7 +8073,7 @@ function main(argv, io = STDIO) {
             throw new ArgError('--apply: tylko z --check i --filtlist albo --tests');
         if (checked) {
             const other = ['build', 'compact', 'exclude', 'any-start'].find(x => o[x])
-                ?? ['masks', 'quals', 'try', 'partial', 'top', 'time', 'pick', 'wild', 'min-count', 'exclude-gain', 'verify'].find(x => o[x] !== undefined);
+                ?? ['masks', 'quals', 'try', 'partial', 'top', 'pick', 'wild', 'min-count', 'exclude-gain', 'verify'].find(x => o[x] !== undefined);
             if (other)
                 throw new ArgError(`--${other}: nie z --check`);
         }
@@ -7865,8 +8105,8 @@ function main(argv, io = STDIO) {
             const lone = o.top !== undefined ? 'top' : o.partial !== undefined && !o.build ? 'partial' : null;
             if (lone)
                 throw new ArgError(`--${lone}: tylko z --quals albo --try${lone === 'partial' ? ' albo --build' : ''}`);
-            if (o.time !== undefined && !o.compact && !o.build)
-                throw new ArgError('--time: tylko z --quals, --compact albo --build');
+            if (o.time !== undefined && !o.compact && !o.build && o.check === undefined)
+                throw new ArgError('--time: tylko z --quals, --compact, --build albo --check');
         }
         else {
             const other = o.exclude ? 'exclude' : ['filtlist', 'tests'].find(x => o[x] !== undefined);
@@ -7934,7 +8174,10 @@ function main(argv, io = STDIO) {
             for (const w of list.warnings)
                 io.err(`Uwaga: ${w}\n`);
             const lists = { include: list.masks, exclude: list.excludes };
-            const a = { weights: parseWeights(o.weights ?? ''), maxLarge: largeLimit(o['max-large'] ?? '5%'), minPurity: opt.minPurity, loss, head: opt.head.length };
+            const a = {
+                weights: parseWeights(o.weights ?? ''), maxLarge: largeLimit(o['max-large'] ?? '5%'), minPurity: opt.minPurity, loss, head: opt.head.length,
+                seconds: num(o.time ?? '600', 'time', 1, 1e6, true),
+            };
             const p = progress(3 + Number(o.tests !== undefined));
             const r = auditList(positionals[0], scope, when, lists, a, opt.head, p, io.err);
             const fixes = [...r.result.safe, ...r.result.trade];
@@ -7963,6 +8206,32 @@ function main(argv, io = STDIO) {
                 maxLarge: largeLimit(o['max-large'] ?? '5%'), loss, exMin: excludeMin, partial, beam: num(o.beam ?? '8', 'beam', 1, 1000, true),
                 rounds: num(o.rounds ?? '2', 'rounds', 0, 100, true), head: opt.head, seconds: num(o.time ?? '600', 'time', 1, 1e6, true),
             };
+            if (o.target !== undefined) {
+                const other = o.ask ? 'ask' : o['what-if'] ? 'what-if' : ['next', 'rounds', 'verify', 'steps'].find(x => o[x] !== undefined);
+                if (other)
+                    throw new ArgError(`--${other}: nie z --target`);
+                const goal = parseTarget(o.target);
+                const rungs = o['min-purity'] === undefined ? (0, auto_build_1.targetRungs)(goal.purity) : (0, auto_build_1.targetRungs)(goal.purity).filter(x => x >= opt.minPurity);
+                if (typeof own.weights === 'string' && /large=/i.test(own.weights))
+                    io.err('Uwaga: z --target waga large wynika z progu purity; podana jest pominieta\n');
+                const t = { ...b, maxLarge: o['max-large'] === undefined ? { part: Infinity } : b.maxLarge };
+                const r = buildToTarget(positionals[0], scope, when, t, goal, rungs.length ? rungs : [opt.minPurity], progress(4 + Number(o.tests !== undefined)), io);
+                io.out(`Zakres: ${o.scope}   kryterium: ${o.when}${opt.head.length ? `   poczatek masek: ${opt.head.join('.')}` : ''}\n`);
+                io.out(targetReport(r, t, unit));
+                const journal = journalText(r.result);
+                if (o.log === undefined)
+                    io.out(`\n${journal}`);
+                else
+                    save(o.log, journal);
+                const ok = (l) => l.filter(m => !(0, auto_acs_1.acsProblem)(m));
+                const { include, exclude } = r.result;
+                if (ok(include).length && o.filtlist === undefined)
+                    io.out(`\n${(0, auto_acs_1.filtlistText)('MALE', ok(include), ok(exclude)).join('\n')}\n`);
+                if (include.length)
+                    finish(bar, r.input, include, exclude);
+                save(o.out, compactCsv(r, unit));
+                return 0;
+            }
             const p = progress(4 + 2 * VARIANTS.length * Number(o['what-if']) + 2 * Number(o.verify !== undefined) + Number(o.tests !== undefined));
             if (o.next !== undefined) {
                 const { next } = o;

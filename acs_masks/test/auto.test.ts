@@ -5,8 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { check, journalText, main as autoMain, OPTIONS, parseConds, parseHead, parseWeights, search, SearchResult } from '../src/auto';
-import { Answer, BuildOptions, BuildResult, Builder, buildList, enough, makeSpace, Pattern, POINTS, Points, Proposal, shapeCost, Space } from '../src/auto-build';
+import { check, journalText, main as autoMain, OPTIONS, parseConds, parseHead, parseTarget, parseWeights, search, SearchResult } from '../src/auto';
+import { Answer, BuildOptions, BuildResult, Builder, buildList, enough, makeSpace, Pattern, POINTS, Points, Proposal, shapeCost, Space, targetRungs } from '../src/auto-build';
 import { audit, AuditOptions, generalize, mergeCandidates } from '../src/auto-audit';
 import { acsProblem, filtlistText, findExcludes, maskTests } from '../src/auto-acs';
 import { parseMaskList } from '../src/auto-check';
@@ -1952,8 +1952,78 @@ describe('--build', () => {
     });
 });
 
+describe('--build --target', () => {
+    const row = (dsn: string, small: boolean) => dline({ dsn, f1: '48', allkb: kbForTrk(315), usekb: small ? 40 : kbForTrk(315) - 100 });
+    const some = (pre: string, small: boolean, n: number) => Array.from({ length: n }, (_, i) => row(`${pre}.D${240101 + i}`, small));
+    /** czyste PAY i HR, brudne TMP (70%) i OLD (50%) */
+    const mixed = (pre: string, n: number, small: number) => Array.from({ length: n }, (_, i) => row(`${pre}.D${240101 + i}`, i % 10 < small));
+    const data = () => write('TG.CSV', csv([...some('PAY.LOG', true, 200), ...some('HR.LIST', true, 100), ...mixed('TMP.WORK', 100, 7),
+        ...mixed('OLD.ARCH', 100, 5), ...some('FIN.X', false, 300)]));
+
+    it('cele: parsowanie i szczeble', () => {
+        assert.deepEqual(parseTarget('small=90% purity=95%'), { small: 0.9, purity: 0.95 });
+        assert.deepEqual(parseTarget('purity=0.99, small=80'), { small: 0.8, purity: 0.99 });
+        for (const t of ['small=90%', 'small=0% purity=95%', 'small=120% purity=95%', 'cover=90% purity=95%', '90% 95%']) assert.throws(() => parseTarget(t), /--target/, t);
+        assert.deepEqual(targetRungs(0.95), [0.95, 0.9, 0.8, 0.7, 0.5]);
+        assert.deepEqual(targetRungs(0.75), [0.75, 0.7, 0.5]);
+    });
+
+    it('najpierw czyste maski, brudniejsze dopiero do celu pokrycia; liczby jak na zbiorach', () => {
+        data();
+        // czyste: 300 z 420 = 71%; do 85% potrzebna TMP.** (70%)
+        let r = auto(['TG.CSV', '--build', '--target', 'small=85% purity=80%', '--filtlist', 'tg.txt', '--out', 'tg.csv']);
+        assert.equal(r.code, 0, r.err);
+        const steps = [...r.out.matchAll(/^maski, prog (\d+)% +(\d+) +(\d+) +([\d,]+)% +([\d,]+)%$/gm)].map(m => Number(m[1]));
+        assert.ok(steps.length >= 2 && steps.every((x, i) => i === 0 || x < steps[i - 1]), r.out);
+        assert.equal(steps[0], 80);
+        assert.match(r.err, /cel osiagniety/);
+        assert.doesNotMatch(r.out, /Celu nie osiagnieto/);
+        const list = parseMaskList(fs.readFileSync(path.join(dir, 'tg.txt'), 'utf-8'), 'tg');
+        assert.ok(list.masks.some(m => m.startsWith('TMP')) && !list.masks.some(m => m.startsWith('OLD')), list.masks.join(' '));
+        // pokrycie i purity z raportu = porownanie masek z nazwami
+        const rows = rowsOf('tg.csv').filter(x => x[0] !== '' && x[7] !== 'exclude');
+        const small = rows.reduce((t, x) => t + Number(x[1]), 0);
+        assert.ok(small / 420 >= 0.85, String(small));
+        // cel nieosiagalny: purity 99% przy pokryciu 85% (TMP i OLD sa brudne)
+        r = auto(['TG.CSV', '--build', '--target', 'small=85% purity=99%']);
+        assert.match(r.out, /Celu nie osiagnieto: purity [\d,]+% z 99%/);
+        assert.match(r.out, /Purity 99% jest przy pokryciu 71,4%: bez masek TMP/);
+        r = auto(['TG.CSV', '--build', '--target', 'small=99% purity=50%']);
+        assert.match(r.out, /Celu nie osiagnieto: pokrycie/);
+        // jeden szczebel: --min-purity
+        r = auto(['TG.CSV', '--build', '--target', 'small=85% purity=80%', '--min-purity', '0.8']);
+        assert.doesNotMatch(r.out, /prog 70%/);
+        assert.match(r.out, /Celu nie osiagnieto: pokrycie/);
+    });
+
+    it('EXCLUDE az do purity', () => {
+        // PAY.** z duzymi pod PAY.DUMP: maska ma 80%, cel 99% robi EXCLUDE
+        const quals = Array.from({ length: 40 }, (_, i) => `Q${String.fromCharCode(65 + (i % 26))}${String.fromCharCode(65 + Math.floor(i / 26))}${i}`);
+        write('TX.CSV', csv([...quals.flatMap(q => some(`PAY.${q}`, true, 10)), ...some('PAY.DUMP', false, 100), ...some('FIN.X', false, 100)]));
+        const r = auto(['TX.CSV', '--build', '--target', 'small=95% purity=99%', '--min-count', '50']);
+        assert.equal(r.code, 0, r.err);
+        assert.doesNotMatch(r.out, /Celu nie osiagnieto/, r.out);
+        assert.match(r.out, /\*\*\.DUMP\.\*\*|PAY\.DUMP/);
+    });
+
+    it('bledy i ustawienia', () => {
+        data();
+        for (const x of [['--next', 'n.txt'], ['--ask'], ['--rounds', '1'], ['--what-if'], ['--verify', 'TG.CSV'], ['--steps', '2']]) {
+            const r = auto(['TG.CSV', '--build', '--target', 'small=85% purity=80%', ...x]);
+            assert.equal(r.code, 1, x.join(' '));
+            assert.match(r.err, /Blad: /);
+        }
+        assert.match(auto(['TG.CSV', '--target', 'small=85% purity=80%']).err, /tylko z --build/);
+        assert.match(auto(['TG.CSV', '--build', '--target', 'small=85% purity=80%', '--weights', 'large=5']).err, /waga large wynika z progu/);
+        auto(['--save-config', 'tg.json']);
+        const a = auto(['TG.CSV', '--config', 'tg.json', '--build', '--target', 'small=85% purity=80%']);
+        assert.equal(a.code, 0, a.err);
+        assert.equal(a.out, auto(['TG.CSV', '--build', '--target', 'small=85% purity=80%']).out);
+    });
+});
+
 describe('--check', () => {
-    const OPT: AuditOptions = { weights: POINTS, maxLarge: { part: 0.05 }, minPurity: 0.95, loss: 0.01, head: 0 };
+    const OPT: AuditOptions = { weights: POINTS, maxLarge: { part: 0.05 }, minPurity: 0.95, loss: 0.01, head: 0, seconds: 600 };
     const pickOf = (r: () => number) => <T>(a: T[]) => a[Math.floor(r() * a.length)];
 
     /** zbiory o krotkich nazwach z malego slownika */
@@ -2019,18 +2089,48 @@ describe('--check', () => {
                 n++;
             }
         }
-        assert.ok(n > 2000, String(n));
+        assert.ok(n > 1000, String(n));
         const has = (a: string, b: string, ...want: string[]) => {
             const g = generalize(a, b);
             for (const w of want) assert.ok(g.includes(w), `${a} + ${b}: ${w} nie ma w ${g}`);
         };
-        has('PAY.LOG.X', 'PAY.TMP.X', 'PAY.*.X', 'PAY.**', 'PAY.**'.replace('**', '*.**'));
+        has('PAY.LOG.X', 'PAY.TMP.X', 'PAY.*.X', 'PAY.**', 'PAY.**.X');
         has('PAY.LOG1.**', 'PAY.LOG2.**', 'PAY.LOG%.**', 'PAY.LOG*.**');
         has('PAY.LOGA.**', 'PAY.LOGB.X', 'PAY.LOG*.**');
         has('GXU.**.LIST.**', 'WTZ.LIST.**', '**.LIST.**');
         has('A1.Q.LIST', 'B2.LIST', '**.LIST');
         has('A.B.D241001.T1', 'A.X.D241002.T2', 'A.*.D24100%.T%', 'A.*.D24100*.T*');
         has('A.B.C.D', 'A.X.Y.C.D', 'A.**.C.D');
+    });
+
+    it('kandydaci bez ciagow * i **, najwyzej 3 * (chyba ze maski maja wiecej)', () => {
+        assert.ok(generalize('PRD.A.**.B.X.**', 'PRD.**.C.**.D.Y').every(g => !/\*\*\.\*(\.|$)|(^|\.)\*\.\*\*/.test(g)), generalize('PRD.A.**.B.X.**', 'PRD.**.C.**.D.Y').join(' '));
+        const c = mergeCandidates(['PRD.A1.B.C.D.E', 'PRD.A2.X.Y.Z.E'], new Set());
+        assert.ok(c.includes('PRD.**.E') && !c.includes('PRD.*.*.*.*.E') && c.includes('PRD.A%.*.*.*.E'), c.join(' '));
+        const many = mergeCandidates(['P.*.*.*.*.A1', 'P.*.*.*.*.A2'], new Set());
+        assert.ok(many.includes('P.*.*.*.*.A%') && !many.includes('P.*.*.*.*.*'), many.join(' '));
+    });
+
+    it('drzewo masek z wieloma ** na dlugich nazwach: szybko i zgodnie z matches()', () => {
+        const r = rng(4);
+        const pick = pickOf(r);
+        const q = ['A', 'B', 'C', 'D', 'E'];
+        const masks = Array.from({ length: 300 }, () => ['A', ...Array.from({ length: 10 }, () => (r() < 0.5 ? '**' : pick([...q, '*'])))].join('.').replace(/(\.\*\*)+/g, '.**'));
+        const tree = new MaskTree(masks.map(m => m.split('.')));
+        const parsed = masks.map(m => parseMask(m));
+        const names = Array.from({ length: 200 }, () => ['A', ...Array.from({ length: 21 }, () => pick(q))].join('.'));
+        const t = Date.now();
+        const got = names.map(n => tree.match(Buffer.from(n), 0, n.length).slice());
+        assert.ok(Date.now() - t < 2000, `${Date.now() - t} ms`);
+        names.forEach((n, i) => assert.deepEqual(got[i], [...masks.keys()].filter(m => matches(parsed[m], n))));
+    });
+
+    it('limit czasu: wynik czesciowy z uwaga', () => {
+        const s = sample(3, 100);
+        const a = audit(s.input, { include: ['PAY.**', 'PAY.LOG.**', 'HR.**'], exclude: [] }, { ...OPT, seconds: 0 }, () => {});
+        assert.ok(a.stopped);
+        assert.deepEqual([a.safe, a.trade], [[], []]);
+        assert.ok(!audit(s.input, { include: ['PAY.**'], exclude: [] }, OPT, () => {}).stopped);
     });
 
     it('kandydaci: bez masek z listy, z "-" i bez znaczacego poczatku', () => {
@@ -2193,9 +2293,20 @@ describe('--check', () => {
         const out = fs.readFileSync(path.join(dir, 'ck.csv'), 'utf-8').trim().split('\n').map(l => l.split(';'));
         assert.deepEqual(out[0].slice(-3), ['tylko_ta', 'stan', 'propozycja']);
         const of = (m: string) => out.find(x => x[0] === m)!;
-        assert.match(of('PAY.LOG0.**')[8], /^\d: scal w PAY\./);
+        assert.match(of('PAY.LOG0.**')[9], /^\d: scal w PAY\./);
         assert.deepEqual(of('HR.TMP.**').slice(-2), ['', '']);
-        assert.equal(of('**.MASTER.A%')[7], 'exclude');
+        assert.equal(of('**.MASTER.A%')[8], 'exclude');
+        assert.deepEqual(out[0].slice(0, 3), ['maska', 'zbiorow', 'malych']);
+        assert.deepEqual(of('PAY.LOG0.**').slice(1, 4), ['10', '10', '0']);
+        // od najwiekszej liczby zbiorow, w raporcie i w CSV
+        const order = out.slice(1).filter(x => x[8] !== 'exclude').map(x => Number(x[1]));
+        assert.deepEqual(order, order.slice().sort((a, b) => b - a));
+        const table = r.out.slice(r.out.indexOf('Maska  '), r.out.indexOf('RAZEM'));
+        assert.deepEqual([...table.matchAll(/^(\S+) +(\d+) +\d+ +\d+ /gm)].map(m => m[1]), out.slice(1).filter(x => x[8] !== 'exclude').map(x => x[0]));
+        assert.match(r.out, /^Maska +Zbiorow +Malych +Duzych +Purity /m);
+        assert.match(r.out, /^NIC\.\*\* +0 +0 +0 /m);
+        assert.match(r.out, /^Maska EXCLUDE \(wylacza\) +Zbiorow +Duzych/m);
+        assert.match(r.out, /^\*\*\.MASTER\.\*\* +3 +3 /m);
         // wynik nadaje sie na liste
         assert.deepEqual(parseMaskList(fs.readFileSync(path.join(dir, 'ck.csv'), 'utf-8'), 'x').excludes, ['**.MASTER.**', '**.MASTER.A%']);
 
@@ -2333,7 +2444,7 @@ describe('--check', () => {
     });
 
     it('bledy i ustawienia z pliku', () => {
-        for (const x of [['--build'], ['--compact'], ['--masks', 'ct.txt'], ['--quals', '2'], ['--exclude'], ['--wild', '1'], ['--min-count', '5'], ['--time', '5'], ['--verify', 'CT.CSV'], ['--next', 'f.txt'],
+        for (const x of [['--build'], ['--compact'], ['--masks', 'ct.txt'], ['--quals', '2'], ['--exclude'], ['--wild', '1'], ['--min-count', '5'], ['--time', '0'], ['--verify', 'CT.CSV'], ['--next', 'f.txt'],
             ['--apply', 'all'], ['--filtlist', 'ckn.txt', '--apply', '99'], ['--filtlist', 'ckn.txt', '--apply', 'x']]) {
             const r = auto(['CT.CSV', '--check', 'ct.txt', ...x]);
             assert.equal(r.code, 1, x.join(' '));

@@ -440,7 +440,8 @@ export function shapeCost(text: string, w: Points, head = 0): number {
 }
 
 export class Builder {
-    private readonly w: Points;
+    /** wagi; --target zmienia je miedzy etapami */
+    private w: Points;
     private readonly all: Int32Array;
     private readonly deadline: number;
     stopped = false;
@@ -1049,11 +1050,11 @@ export class Builder {
     }
 
     /** EXCLUDE wspolne dla calej listy, dopoki daja punkty. */
-    private excludes(list: List, journal: Change[]): List {
+    private excludes(list: List, journal: Change[], enough?: (l: List) => boolean): List {
         const { space, opt } = this;
         const { tokens } = space.q;
         let cur = list;
-        while (!this.full(cur) && !this.late()) {
+        while (!this.full(cur) && !this.late() && !enough?.(cur)) {
             const l = this.live(cur);
             const before = this.score(cur, l);
             const cov = space.mark.map(m => m & OLD_INC);
@@ -1228,6 +1229,71 @@ export class Builder {
         return clean === list ? null : one(clean) ?? clean;
     }
 
+    /**
+     * --target: maski az do pokrycia malych, od najczystszych - kazdy szczebel (purity maski po jej EXCLUDE, od najwyzszego)
+     * daje maski, dopoki sa; potem wspolne EXCLUDE az do purity listy; jesli EXCLUDE zabraly pokrycie, znowu maski.
+     * Liczby w sztukach (dane z allocKb = 1). Waga large na szczeblu p: p / (1 - p), wiec oplaca sie maska o purity od p.
+     */
+    target(goal: Goal, rungs: number[], tick: Tick): { result: BuildResult; steps: TargetStep[] } {
+        this.byStep = true;
+        const journal: Change[] = [];
+        const steps: TargetStep[] = [];
+        const base = this.w;
+        let list: List = { inc: [], exc: [] };
+        const reach = (l: List) => reached(this.live(l).t, this.space.np);
+        const note = (what: TargetStep['what'], floor: number | null, from: List) => {
+            const added = list.inc.length - from.inc.length + list.exc.length - from.exc.length;
+            if (added) steps.push({ what, floor, include: list.inc.length, exclude: list.exc.length, reached: reach(list) });
+        };
+        let rung = 0;
+        for (let cycle = 0; cycle < CYCLES && !this.late(); cycle++) {
+            for (; rung < rungs.length && reach(list).small < goal.small - 1e-12 && !this.late(); rung++) {
+                const floor = rungs[rung];
+                (this.opt as { minPurity: number }).minPurity = floor;
+                this.w = { ...base, large: largeWeight(floor) };
+                const from = list;
+                for (let r = reach(list); r.small < goal.small - 1e-12 && !this.late(); r = reach(list)) {
+                    tick(Math.min(0.95, r.small / goal.small), `prog maski ${Math.round(100 * floor)}%, masek: ${list.inc.length + list.exc.length}, pokrycie ${(100 * r.small).toFixed(1)}%`);
+                    const next = this.step(list, journal);
+                    if (!next) break;
+                    list = next;
+                }
+                note('maski', floor, from);
+                // cel osiagniety na tym szczeblu: kolejne maski (po EXCLUDE) tez z niego
+                if (reach(list).small >= goal.small - 1e-12) break;
+            }
+            this.w = { ...base, large: largeWeight(goal.purity) };
+            const from = list;
+            list = this.excludes(list, journal, l => reach(l).purity >= goal.purity - 1e-12);
+            note('EXCLUDE', null, from);
+            if (reach(list).small >= goal.small - 1e-12 || rung >= rungs.length || from === list) break;
+        }
+        this.w = base;
+        return { result: this.result(list, journal), steps };
+    }
+
+    /** Lista bez masek INCLUDE o najnizszej purity, az purity listy dojdzie do celu (albo bez masek). */
+    trimmed(r: BuildResult, purity: number): BuildResult | null {
+        let list: List = { inc: r.include.map(t => this.item(this.space.parse(t)!)), exc: r.exclude.map(t => this.item(this.space.parse(t)!)) };
+        const pur = (l: List) => reached(this.live(l).t, this.space.np).purity;
+        if (pur(list) >= purity - 1e-12) return null;
+        while (list.inc.length && pur(list) < purity - 1e-12) {
+            const l = this.live(list);
+            const own = (i: Item) => {
+                let ns = 0;
+                let nl = 0;
+                for (let x = 0; x < i.seqs.length; x++) {
+                    ns += l.ns[i.seqs[x]];
+                    nl += l.nl[i.seqs[x]];
+                }
+                return purityOf(ns, nl);
+            };
+            const worst = list.inc.reduce((a, b) => (own(b) < own(a) ? b : a));
+            list = { ...list, inc: list.inc.filter(x => x !== worst) };
+        }
+        return this.result(list, []);
+    }
+
     /** Kolejne maski (--next), najwyzej steps; done po kazdej. */
     steps(steps: number, done: (r: BuildResult) => void, tick: Tick): BuildResult {
         this.byStep = true;
@@ -1257,6 +1323,56 @@ export class Builder {
             left: { small: this.space.np - t.small - t.lost, dead: l.dead },
         };
     }
+}
+
+/** --target: czesc malych objetych lista i purity listy (0-1), w sztukach. */
+export interface Goal {
+    small: number;
+    purity: number;
+}
+
+/** ile razy najwyzej maski -> EXCLUDE -> maski */
+const CYCLES = 5;
+
+export const reached = (t: Totals, np: number): Goal => ({ small: np ? t.small / np : 0, purity: purityOf(t.small, t.large) });
+
+/** Waga duzych, przy ktorej oplaca sie maska (albo EXCLUDE) o purity od p. */
+const largeWeight = (p: number) => Math.min(1000, p / Math.max(1e-9, 1 - p));
+
+/** Etap --target: maski z jednego szczebla albo EXCLUDE; stan listy po nim. */
+export interface TargetStep {
+    what: 'maski' | 'EXCLUDE';
+    floor: number | null;
+    include: number;
+    exclude: number;
+    reached: Goal;
+}
+
+export interface TargetResult {
+    result: BuildResult;
+    steps: TargetStep[];
+    reached: Goal;
+    ok: boolean;
+    /** gdy purity nie doszla do celu: lista bez najbrudniejszych masek, ktora ja spelnia */
+    trimmed: { result: BuildResult; reached: Goal } | null;
+}
+
+/** Szczeble purity maski: cel purity, 90, 80, 70, 50% (nie wyzej niz cel), od najwyzszego. */
+export const targetRungs = (purity: number) => [...new Set([purity, 0.9, 0.8, 0.7, 0.5].filter(x => x <= purity))].sort((a, b) => b - a);
+
+/** Lista do celu (--target). */
+export function buildTarget(input: CheckInput, opt: BuildOptions, goal: Goal, rungs: number[], stages: { names: Tick; build: () => Tick }): TargetResult {
+    // sztuki zamiast KB: kazdy zbior wazy tyle samo
+    const ones: CheckInput = { ...input, allocKb: new Float64Array(input.allocKb.length).fill(1) };
+    const o = { ...opt, minCount: enough(input.pos.length, opt), maxLarge: opt.maxLarge };
+    // EXCLUDE musza byc dostepne takze dla wagi celu purity
+    const space = makeSpace(ones, { ...o, weights: { ...opt.weights, large: largeWeight(goal.purity) } }, stages.names);
+    const b = new Builder(space, { ...o, minPurity: rungs[0] });
+    const { result, steps } = b.target(goal, rungs, stages.build());
+    const r = reached(result.totals, space.np);
+    const ok = r.small >= goal.small - 1e-12 && r.purity >= goal.purity - 1e-12;
+    const t = b.trimmed(result, goal.purity);
+    return { result, steps, reached: r, ok, trimmed: t && { result: t, reached: reached(t.totals, space.np) } };
 }
 
 /** KB duzych, ktore musi wylaczyc EXCLUDE, zeby sie oplacil. */

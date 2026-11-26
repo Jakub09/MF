@@ -18,7 +18,7 @@ import { CheckInput, checkMasks } from './auto-check';
 import { LargeLimit } from './auto-compact';
 import { literalChars, MAX_LEN, mine, purityOf } from './auto-mine';
 import { MaskTree, within } from './auto-tree';
-import { Tick } from './auto-util';
+import { thousands, Tick } from './auto-util';
 
 /** najwiecej kandydatow do scalenia na raz, osobno INCLUDE i EXCLUDE */
 const MAX_CAND = 1000;
@@ -26,12 +26,16 @@ const MAX_CAND = 1000;
 const ROUNDS = 4;
 /** najmniej znakow stalych maski od * albo ** */
 const MIN_LITERAL = 3;
+/** najwiecej *, ** i kwalifikatorow z * w kandydacie, chyba ze maski, z ktorych powstal, maja wiecej */
+const MAX_WILD = 3;
 const MAX_NOTE = 4;
 /** ile masek najwyzej zastepuje jedna (zamien) */
 const MAX_SWAP = 3;
 /** dla ilu masek z duzymi szukane sa wezsze i jaka najmniejsza czesc duzych listy maja obejmowac */
 const MAX_DIRTY = 15;
 const MIN_DIRTY = 0.01;
+/** najwiecej zbiorow, w ktorych szukane sa wezsze maski jednej maski (wiecej = probka) */
+const MAX_SAMPLE = 100_000;
 const TINY = 1e-9;
 
 export interface AuditOptions {
@@ -40,6 +44,8 @@ export interface AuditOptions {
     minPurity: number;
     loss: number;
     head: number;
+    /** limit czasu propozycji (s): potem wynik czesciowy */
+    seconds: number;
 }
 
 export interface Counts {
@@ -103,6 +109,8 @@ export interface AuditResult {
     blocked: Blocked[];
     /** lista, gdyby duzych nie bylo (te same zasady, bez strat) */
     noLarge: MaskLists;
+    /** przerwano po czasie: propozycje i test bez duzych moga byc niepelne */
+    stopped: boolean;
 }
 
 const zero = (): Counts => ({ small: 0, large: 0, smallKb: 0, largeKb: 0 });
@@ -163,8 +171,7 @@ export function generalize(ta: string, tb: string): string[] {
     const b = tb.split('.');
     const out = new Set<string>();
     const put = (quals: string[]) => {
-        const q = quals.filter((x, i) => x !== '**' || quals[i - 1] !== '**');
-        const text = q.join('.');
+        const text = squeeze(quals).join('.');
         if (text !== '**' && text.length <= MAX_LEN) out.add(text);
     };
     // ---- te same miejsca: rozne kwalifikatory zastapione wzorcem
@@ -179,12 +186,13 @@ export function generalize(ta: string, tb: string): string[] {
         put([s, '**']);
         // dalsze wspolne kwalifikatory z ** (albo tyloma samymi *) w miejscu roznic
         const pairs = common(a.slice(1), b.slice(1));
-        const build = (until: number) => {
+        // odstepy jako tyle samo * albo zawsze ** (krotszy zapis, bez limitu *)
+        const build = (until: number, loose: boolean) => {
             const quals = [s];
             let i = 0;
             let j = 0;
             for (const [x, y] of pairs.slice(0, until)) {
-                quals.push(...gap(a.slice(1 + i, 1 + x), b.slice(1 + j, 1 + y)), a[1 + x]);
+                quals.push(...(loose ? ['**'] : gap(a.slice(1 + i, 1 + x), b.slice(1 + j, 1 + y))), a[1 + x]);
                 i = x + 1;
                 j = y + 1;
             }
@@ -195,7 +203,7 @@ export function generalize(ta: string, tb: string): string[] {
             // wzorzec na nastepnym miejscu: PAY.LOGA.** i PAY.LOGB.X -> PAY.LOG*.**
             if (ga.length && gb.length && ga[0] !== '**' && gb[0] !== '**') for (const q of wider(ga[0], gb[0])) put([...quals, q, '**']);
         };
-        for (let k = 0; k <= pairs.length; k++) build(k);
+        for (let k = 0; k <= pairs.length; k++) for (const loose of [false, true]) build(k, loose);
     }
     // ---- jeden wspolny kwalifikator
     for (const q of a) {
@@ -211,7 +219,30 @@ function gap(ga: string[], gb: string[]): string[] {
     return ['**'];
 }
 
+/**
+ * Ciag samych * i ** z choc jednym ** -> jedno ** (szersze, wiec nadal obejmuje obie maski): A.**.*.**.*.** to prawie A.**,
+ * a takie maski pasuja do kazdej nazwy i bardzo spowalniaja porownanie.
+ */
+function squeeze(quals: string[]): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < quals.length;) {
+        let j = i;
+        while (j < quals.length && (quals[j] === '*' || quals[j] === '**')) j++;
+        if (j > i && quals.slice(i, j).includes('**')) {
+            out.push('**');
+            i = j;
+        } else {
+            out.push(quals[i++]);
+        }
+    }
+    return out;
+}
+
+/** *, ** (poza koncowym) i kwalifikatory z * */
+const wildOf = (text: string) => text.split('.').filter((q, i, a) => q.includes('*') && !(q === '**' && i === a.length - 1)).length;
+
 function usable(text: string, parents: string[]): boolean {
+    if (wildOf(text) > Math.max(MAX_WILD, ...parents.map(wildOf))) return false;
     if (acsProblem(text) || literalChars(text) === 0 || /^[0-9]/.test(text)) return false;
     const first = text.split('.')[0];
     // poczatek od * albo samych %: tylko z kwalifikatorem, ktory cos mowi
@@ -290,7 +321,7 @@ class Model {
         const total = pos.length + neg.length;
         const scan = (rows: Int32Array, small: boolean, done: number) => {
             for (let x = 0; x < rows.length; x++) {
-                if ((x & 0x3fff) === 0) tick((done + x) / total);
+                if ((x & 0xfff) === 0) tick((done + x) / total, `nazwy: ${thousands(done + x)} z ${thousands(total)}, masek i kandydatow: ${thousands(this.items.length)}`);
                 const s = names.start[rows[x]];
                 const kb = allocKb[rows[x]];
                 if (small) this.allKb += kb;
@@ -535,10 +566,11 @@ class Model {
     }
 
     /** Kroki od dajacego najwiecej punktow, az zaden nic nie da; true = bylo scalenie. */
-    run(trade: boolean, fixes: Fix[], tick: () => void): boolean {
+    run(trade: boolean, fixes: Fix[], tick: () => void, late: () => boolean): boolean {
         let merged = false;
         for (;;) {
             tick();
+            if (late()) return false;
             const t = this.totals();
             const good = this.moves().filter(m => (trade ? m.points > TINY && this.allowed(m, t)
                 : m.out.small === 0 && m.in.large === 0 && m.add.length <= m.remove.length && (m.add.length === 0 || m.points > TINY)));
@@ -608,7 +640,7 @@ function looser(text: string, head: number): string[] {
 }
 
 /** Wezsze maski dla masek z duzymi (szukane w ich zbiorach) i nowe EXCLUDE. */
-function extras(input: CheckInput, lists: MaskLists, dirty: LargeRow[], opt: AuditOptions, tick: Tick): MaskLists {
+function extras(input: CheckInput, lists: MaskLists, dirty: LargeRow[], opt: AuditOptions, tick: Tick, late: () => boolean): MaskLists {
     const { names, pos, neg } = input;
     const total = dirty.reduce((x, r) => x + r.all.largeKb, 0);
     const list = dirty.filter(r => r.all.large > 0 && r.all.small > 0 && r.all.largeKb >= MIN_DIRTY * total).sort((a, b) => b.all.largeKb - a.all.largeKb).slice(0, MAX_DIRTY);
@@ -619,44 +651,55 @@ function extras(input: CheckInput, lists: MaskLists, dirty: LargeRow[], opt: Aud
         const rows = list.map(() => [[] as number[], [] as number[]]);
         [pos, neg].forEach((from, side) => {
             for (let x = 0; x < from.length; x++) {
-                if ((x & 0x3fff) === 0) tick(0.3 * (side + x / from.length) / 2);
+                if ((x & 0xfff) === 0) tick(0.3 * (side + x / from.length) / 2, `zbiory masek z duzymi: ${thousands(x)} z ${thousands(from.length)}`);
                 const s = names.start[from[x]];
                 const e = s + names.len[from[x]];
                 for (const m of tree.match(names.pool, s, e).slice()) if (!exc?.match(names.pool, s, e).length) rows[m][side].push(from[x]);
             }
         });
         list.forEach((r, i) => {
-            const part = () => tick(0.3 + 0.4 * i / list.length);
+            if (late()) return;
+            const info = `wezsze maski: ${i + 1} z ${list.length}, ${r.text}`;
+            const part = () => tick(0.3 + 0.4 * i / list.length, info);
             part();
             const quals = r.text.split('.');
             const any = quals.indexOf('**');
-            const found = mine({ ...input, pos: Int32Array.from(rows[i][0]), neg: Int32Array.from(rows[i][1]) }, {
-                minPurity: opt.minPurity, minCount: Math.max(2, Math.ceil(0.01 * rows[i][0].length)), maxMasks: 2 * MAX_SWAP, maxWild: 3,
+            // probka: liczby wezszych masek i tak sa potem liczone na wszystkich zbiorach
+            const n = rows[i][0].length + rows[i][1].length;
+            const step = Math.max(1, Math.ceil(n / MAX_SAMPLE));
+            const every = (l: number[]) => Int32Array.from(step === 1 ? l : l.filter((_, k) => k % step === 0));
+            const sample = { ...input, pos: every(rows[i][0]), neg: every(rows[i][1]) };
+            const found = mine(sample, {
+                minPurity: opt.minPurity, minCount: Math.max(2, Math.ceil(0.01 * sample.pos.length)), maxMasks: 2 * MAX_SWAP, maxWild: 2,
                 head: any < 0 ? quals : quals.slice(0, any),
             }, { prepare: part, search: () => part, select: () => part });
             for (const { text } of found.masks) for (const t of looser(text, any < 0 ? quals.length : any)) if (!acsProblem(t) && literalChars(t) >= MIN_LITERAL) out.add(t);
         });
     }
-    tick(0.7);
-    const ex = total > 0 ? findExcludes(input, lists.include, lists.exclude, { minCount: 2, maxWild: 3, gain: 0.005, loss: opt.loss }, p => tick(0.7 + 0.3 * p)) : null;
+    tick(0.7, 'nowe EXCLUDE');
+    const ex = total > 0 && !late() ? findExcludes(input, lists.include, lists.exclude, { minCount: 2, maxWild: 3, gain: 0.005, loss: opt.loss }, p => tick(0.7 + 0.3 * p, 'nowe EXCLUDE')) : null;
     return { include: [...out], exclude: [...new Set([...lists.exclude, ...(ex?.masks ?? []).map(m => m.text).filter(t => !acsProblem(t))])] };
 }
 
 export function audit(input: CheckInput, lists: MaskLists, opt: AuditOptions, tick: Tick): AuditResult {
+    const deadline = Date.now() + opt.seconds * 1000;
+    let stopped = false;
+    const late = () => (stopped ||= Date.now() > deadline);
     let no = 1;
     // przejscia przez dane: pierwsze to szukanie wezszych masek; zwykle 3-5, najwyzej tyle
     const passes = 6;
     const make = (from: CheckInput, l: MaskLists, extra: MaskLists, known: Set<string>) => {
         const base = Math.min(no++, passes - 1);
-        return new Model(from, l, extra, opt, known, p => tick((base + 0.9 * p) / passes));
+        return new Model(from, l, extra, opt, known, (p, info) => tick((base + 0.9 * p) / passes, `przejscie ${base}: ${info}`));
     };
     const improve = (from: CheckInput, model: Model, extra: MaskLists, known: Set<string>, trade: boolean, fixes: Fix[]): Model => {
         let m = model;
-        for (let r = 0; m.run(trade, fixes, () => tick(Math.min(1, no / passes))) && r < ROUNDS && m.fresh(); r++) m = make(from, m.lists(), extra, known);
+        const step = () => tick(Math.min(1, no / passes), `${trade ? 'kosztem malych albo duzych' : 'bez strat'}: krokow ${fixes.length}`);
+        for (let r = 0; m.run(trade, fixes, step, late) && r < ROUNDS && m.fresh() && !late(); r++) m = make(from, m.lists(), extra, known);
         return m;
     };
     const plain = checkRows(input, lists, p => tick(0.5 * p / passes));
-    const extra = extras(input, lists, plain, opt, p => tick((0.5 + 0.5 * p) / passes));
+    const extra = extras(input, lists, plain, opt, (p, info) => tick((0.5 + 0.5 * p) / passes, info), late);
     const known = new Set<string>();
     let m = make(input, lists, extra, known);
     const out = {
@@ -669,9 +712,9 @@ export function audit(input: CheckInput, lists: MaskLists, opt: AuditOptions, ti
     const small = { ...input, neg: new Int32Array(0) };
     const kn = new Set<string>();
     const none = { include: [], exclude: [] };
-    const last = improve(small, make(small, { include: lists.include, exclude: [] }, none, kn), none, kn, false, []);
+    const last = late() ? null : improve(small, make(small, { include: lists.include, exclude: [] }, none, kn), none, kn, false, []);
     const used = new Set([...out.safe, ...out.trade].flatMap(f => f.add));
-    return { ...out, blocked: blocked.filter(b => !used.has(b.text)), noLarge: last.lists() };
+    return { ...out, blocked: blocked.filter(b => !used.has(b.text)), noLarge: last?.lists() ?? { include: lists.include, exclude: [] }, stopped };
 }
 
 /** Maski INCLUDE na danych, po EXCLUDE (bez only). */

@@ -62,8 +62,8 @@ const GROUPS: [string, Field[]][] = [
         { name: 'min-purity', kind: 'text', value: null, doc: ['najmniejsza czesc malych wsrod zbiorow maski, 0-1', 'null = 0.95 (compact: 0.5 przed EXCLUDE, quals i try: bez progu)'] },
         { name: 'min-count', kind: 'text', value: null, doc: ['ile co najmniej malych ma dac maska', 'null = 10 (compact: 0,5% malych)'], fits: v => !checked(v) },
         { name: 'max-masks', kind: 'text', value: 100, doc: ['najwiecej masek (build i compact: INCLUDE i EXCLUDE razem, najwyzej 255)'] },
-        { name: 'max-large', kind: 'text', value: '5%', doc: ['ile duzych moze zostac w liscie: % alokacji objetych malych albo np. "200GB" (build, compact, check)'], fits: v => lists(v) || checked(v) },
-        { name: 'time', kind: 'text', value: 600, doc: ['limit czasu w sekundach; potem wynik czesciowy (build, compact, quals)'], fits: v => lists(v) || combos(v) },
+        { name: 'max-large', kind: 'text', value: null, doc: ['ile duzych moze zostac w liscie: % alokacji objetych malych albo np. "200GB" (build, compact, check)', 'null = 5% (z target: bez granicy)'], fits: v => lists(v) || checked(v) },
+        { name: 'time', kind: 'text', value: 600, doc: ['limit czasu w sekundach; potem wynik czesciowy (build, compact, check, quals)'], fits: v => lists(v) || checked(v) || combos(v) },
     ]],
     ['EXCLUDE', [
         { name: 'exclude', kind: 'flag', value: false, doc: ['maski EXCLUDE do znalezionych masek (zwykle szukanie i masks; build i compact dobieraja je same)'], fits: search },
@@ -74,9 +74,10 @@ const GROUPS: [string, Field[]][] = [
     ['build: maska po masce', [
         { name: 'weights', kind: 'weights', value: null, doc: ['priorytety (build, check); 1 punkt = 1% malych przy small = 1'], fits: v => build(v) || checked(v) },
         { name: 'next', kind: 'text', value: null, doc: ['plik FILTLIST, do ktorego kazdy przebieg dopisuje kolejna maske dla zbiorow jeszcze nie objetych', 'null = cala lista od nowa'], fits: build },
+        { name: 'target', kind: 'text', value: null, doc: ['cel w sztukach zamiast samych wag, np. "small=90% purity=95%": maski az do pokrycia malych, potem EXCLUDE az do purity', 'null = bez celu'], fits: v => build(v) && v.next === undefined && !v.ask },
         { name: 'steps', kind: 'text', value: 1, doc: ['z next: ile masek w jednym przebiegu; "max" = do konca'], fits: v => build(v) && v.next !== undefined && !v.ask },
         { name: 'beam', kind: 'text', value: 8, doc: ['ile wersji maski naraz; wiecej = dluzej'], fits: build },
-        { name: 'rounds', kind: 'text', value: 2, doc: ['ile razy najwyzej druga runda, czyli maski budowane od nowa (nie z next)'], fits: v => build(v) && v.next === undefined },
+        { name: 'rounds', kind: 'text', value: 2, doc: ['ile razy najwyzej druga runda, czyli maski budowane od nowa (nie z next i target)'], fits: v => build(v) && v.next === undefined && v.target === undefined },
         { name: 'ask', kind: 'flag', value: false, doc: ['pytanie po kazdej masce'], fits: build },
         { name: 'what-if', kind: 'flag', value: false, doc: ['takze wyniki dla zmienionych wag (7 razy dluzej; nie z next)'], fits: v => build(v) && v.next === undefined },
         { name: 'log', kind: 'text', value: null, doc: ['plik na dziennik krokow; null = na ekran'], fits: build },
